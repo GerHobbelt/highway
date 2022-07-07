@@ -233,7 +233,7 @@
 #define HWY_TARGET_STR "+neon-vfpv4"
 #else
 #define HWY_TARGET_STR "+crypto"
-#endif  // HWY_ARCH_ARM*
+#endif  // HWY_ARCH_ARM_V7
 #else
 // HWY_TARGET_STR remains undefined
 #endif
@@ -349,7 +349,7 @@
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
-#if defined(__riscv_zfh)
+#if defined(__riscv_zvfh)
 #define HWY_HAVE_FLOAT16 1
 #else
 #define HWY_HAVE_FLOAT16 0
