@@ -229,15 +229,11 @@ static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 16;
 // Match [u]int##_t naming scheme so rvv-inl.h macros can obtain the type name
 // by concatenating base type and bits.
 
-#if HWY_ARCH_ARM_A64 && (__ARM_FP & 2)
-#define HWY_NATIVE_FLOAT16 1
-#else
-#define HWY_NATIVE_FLOAT16 0
-#endif
-
 #pragma pack(push, 1)
 
-#if HWY_NATIVE_FLOAT16
+#if defined(__riscv_zfh)
+using float16_t = _Float16;
+#elif HWY_ARCH_ARM_A64 && (__ARM_FP & 2)
 using float16_t = __fp16;
 // Clang does not allow __fp16 arguments, but scalar.h requires LaneType
 // arguments, so use a wrapper.
