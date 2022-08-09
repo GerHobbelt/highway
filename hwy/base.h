@@ -229,19 +229,17 @@ static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 16;
 // Match [u]int##_t naming scheme so rvv-inl.h macros can obtain the type name
 // by concatenating base type and bits.
 
-#if HWY_ARCH_ARM_A64 && (__ARM_FP & 2)
-#define HWY_NATIVE_FLOAT16 1
-#else
-#define HWY_NATIVE_FLOAT16 0
-#endif
-
 #pragma pack(push, 1)
 
-#if HWY_NATIVE_FLOAT16
+// ACLE (https://gcc.gnu.org/onlinedocs/gcc/Half-Precision.html):
+// always supported on aarch64, for v7 only if -mfp16-format is given.
+#if ((HWY_ARCH_ARM_A64 || (__ARM_FP & 2)) && HWY_COMPILER_GCC)
 using float16_t = __fp16;
-// Clang does not allow __fp16 arguments, but scalar.h requires LaneType
-// arguments, so use a wrapper.
-// TODO(janwas): replace with _Float16 when that is supported?
+// C11 extension ISO/IEC TS 18661-3:2015 but not supported on all targets.
+// Required for Clang RVV if the float16 extension is used.
+#elif HWY_ARCH_RVV && HWY_COMPILER_CLANG && defined(__riscv_zvfh)
+using float16_t = _Float16;
+// Otherwise emulate
 #else
 struct float16_t {
   uint16_t bits;
@@ -741,7 +739,7 @@ HWY_API size_t Num0BitsAboveMS1Bit_Nonzero64(const uint64_t x) {
 }
 
 HWY_API size_t PopCount(uint64_t x) {
-#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#if HWY_COMPILER_GCC  // includes clang
   return static_cast<size_t>(__builtin_popcountll(x));
   // This instruction has a separate feature flag, but is often called from
   // non-SIMD code, so we don't want to require dynamic dispatch. It was first
