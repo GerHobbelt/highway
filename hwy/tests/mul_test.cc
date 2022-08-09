@@ -27,6 +27,9 @@ HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
 
+// Temporarily disabled until #908 goes in.
+#if 0
+
 struct TestUnsignedMul {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
@@ -105,6 +108,8 @@ HWY_NOINLINE void TestAllMul() {
   test_signed(int32_t());
   // No i64.
 }
+
+#endif
 
 struct TestMulHigh {
   template <typename T, class D>
@@ -426,7 +431,7 @@ HWY_AFTER_NAMESPACE();
 
 namespace hwy {
 HWY_BEFORE_TEST(HwyMulTest);
-HWY_EXPORT_AND_TEST_P(HwyMulTest, TestAllMul);
+// HWY_EXPORT_AND_TEST_P(HwyMulTest, TestAllMul);
 HWY_EXPORT_AND_TEST_P(HwyMulTest, TestAllMulHigh);
 HWY_EXPORT_AND_TEST_P(HwyMulTest, TestAllMulFixedPoint15);
 HWY_EXPORT_AND_TEST_P(HwyMulTest, TestAllMulEven);
