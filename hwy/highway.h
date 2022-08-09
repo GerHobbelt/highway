@@ -27,8 +27,8 @@
 namespace hwy {
 
 // API version (https://semver.org/); keep in sync with CMakeLists.txt.
-#define HWY_MAJOR 0
-#define HWY_MINOR 17
+#define HWY_MAJOR 1
+#define HWY_MINOR 0
 #define HWY_PATCH 0
 
 //------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ namespace hwy {
 #elif HWY_STATIC_TARGET == HWY_RVV
 #define HWY_STATIC_DISPATCH(FUNC_NAME) N_RVV::FUNC_NAME
 #elif HWY_STATIC_TARGET == HWY_WASM_EMU256
-#define HWY_STATIC_DISPATCH(FUNC_NAME) N_WASM2::FUNC_NAME
+#define HWY_STATIC_DISPATCH(FUNC_NAME) N_WASM_EMU256::FUNC_NAME
 #elif HWY_STATIC_TARGET == HWY_WASM
 #define HWY_STATIC_DISPATCH(FUNC_NAME) N_WASM::FUNC_NAME
 #elif HWY_STATIC_TARGET == HWY_NEON
@@ -113,9 +113,9 @@ namespace hwy {
 #endif
 
 #if HWY_TARGETS & HWY_WASM_EMU256
-#define HWY_CHOOSE_WASM2(FUNC_NAME) &N_WASM2::FUNC_NAME
+#define HWY_CHOOSE_WASM_EMU256(FUNC_NAME) &N_WASM_EMU256::FUNC_NAME
 #else
-#define HWY_CHOOSE_WASM2(FUNC_NAME) nullptr
+#define HWY_CHOOSE_WASM_EMU256(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_WASM

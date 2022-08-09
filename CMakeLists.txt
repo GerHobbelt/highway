@@ -19,7 +19,7 @@ if(POLICY CMP0083)
   cmake_policy(SET CMP0083 NEW)
 endif()
 
-project(hwy VERSION 0.17.0)  # Keep in sync with highway.h version
+project(hwy VERSION 1.0.0)  # Keep in sync with highway.h version
 
 # Directly define the ABI version from the cmake project() version values:
 set(LIBRARY_VERSION "${hwy_VERSION}")
@@ -230,6 +230,12 @@ else()
 
   if (HWY_WARNINGS_ARE_ERRORS)
     list(APPEND HWY_FLAGS -Werror)
+  endif()
+
+  # Prevent "wasm-ld: error: --shared-memory is disallowed by targets.cc.o
+  # because it was not compiled with 'atomics' or 'bulk-memory' features."
+  if (HWY_EMSCRIPTEN)
+    list(APPEND HWY_FLAGS -matomics)
   endif()
 
 endif()  # !MSVC
@@ -474,6 +480,8 @@ set(HWY_TEST_FILES
   hwy/tests/crypto_test.cc
   hwy/tests/demote_test.cc
   hwy/tests/float_test.cc
+  hwy/tests/if_test.cc
+  hwy/tests/interleaved_test.cc
   hwy/tests/logical_test.cc
   hwy/tests/mask_test.cc
   hwy/tests/mask_mem_test.cc

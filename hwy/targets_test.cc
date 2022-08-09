@@ -22,7 +22,7 @@ namespace fake {
 #define DECLARE_FUNCTION(TGT)                                                \
   namespace N_##TGT {                                                        \
     /* Function argument is just to ensure/demonstrate they are possible. */ \
-    uint32_t FakeFunction(int) { return HWY_##TGT; }                         \
+    int64_t FakeFunction(int) { return HWY_##TGT; }                          \
   }
 
 DECLARE_FUNCTION(AVX3_DL)
@@ -43,7 +43,7 @@ DECLARE_FUNCTION(EMU128)
 
 HWY_EXPORT(FakeFunction);
 
-void CallFunctionForTarget(uint32_t target, int line) {
+void CallFunctionForTarget(int64_t target, int line) {
   if ((HWY_TARGETS & target) == 0) return;
   hwy::SetSupportedTargetsForTest(target);
 
@@ -109,20 +109,22 @@ class HwyTargetsTest : public testing::Test {
 TEST_F(HwyTargetsTest, ChosenTargetOrderTest) { fake::CheckFakeFunction(); }
 
 TEST_F(HwyTargetsTest, DisabledTargetsTest) {
-  DisableTargets(~0u);
+  DisableTargets(~0LL);
   // Check that disabling everything at least leaves the static target.
   HWY_ASSERT(HWY_STATIC_TARGET == SupportedTargets());
 
   DisableTargets(0);  // Reset the mask.
-  uint32_t current_targets = SupportedTargets();
-  if ((current_targets & ~static_cast<uint32_t>(HWY_ENABLED_BASELINE)) == 0) {
+  const int64_t current_targets = SupportedTargets();
+  const int64_t enabled_baseline = static_cast<int64_t>(HWY_ENABLED_BASELINE);
+  // Exclude these two because they are always returned by SupportedTargets.
+  const int64_t fallback = HWY_SCALAR | HWY_EMU128;
+  if ((current_targets & ~enabled_baseline & ~fallback) == 0) {
     // We can't test anything else if the only compiled target is the baseline.
     return;
   }
+
   // Get the lowest bit in the mask (the best target) and disable that one.
-  uint32_t best_target = current_targets & (~current_targets + 1);
-  // The lowest target shouldn't be one in the baseline.
-  HWY_ASSERT((best_target & ~static_cast<uint32_t>(HWY_ENABLED_BASELINE)) != 0);
+  const int64_t best_target = current_targets & (~current_targets + 1);
   DisableTargets(best_target);
 
   // Check that the other targets are still enabled.
