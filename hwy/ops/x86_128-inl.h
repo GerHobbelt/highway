@@ -38,6 +38,7 @@ HWY_DIAGNOSTICS_OFF(disable : 4703 6001 26494, ignored "-Wmaybe-uninitialized")
 #endif
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>  // memcpy
 
 #include "hwy/ops/shared-inl.h"
 
@@ -1920,7 +1921,7 @@ template <typename T>
 HWY_API Vec64<T> Load(Full64<T> /* tag */, const T* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128i v = _mm_setzero_si128();
-  CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);  // not same size
   return Vec64<T>{v};
 #else
   return Vec64<T>{_mm_loadl_epi64(reinterpret_cast<const __m128i*>(p))};
@@ -1931,7 +1932,7 @@ HWY_API Vec128<float, 2> Load(Full64<float> /* tag */,
                               const float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);  // not same size
   return Vec128<float, 2>{v};
 #else
   const __m128 hi = _mm_setzero_ps();
@@ -1943,7 +1944,7 @@ HWY_API Vec64<double> Load(Full64<double> /* tag */,
                            const double* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128d v = _mm_setzero_pd();
-  CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);  // not same size
   return Vec64<double>{v};
 #else
   return Vec64<double>{_mm_load_sd(p)};
@@ -1954,7 +1955,7 @@ HWY_API Vec128<float, 1> Load(Full32<float> /* tag */,
                               const float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  CopyBytes<4>(p, &v);
+  CopyBytes<4>(p, &v);  // not same size
   return Vec128<float, 1>{v};
 #else
   return Vec128<float, 1>{_mm_load_ss(p)};
@@ -1967,11 +1968,11 @@ HWY_API Vec128<T, N> Load(Simd<T, N, 0> /* tag */, const T* HWY_RESTRICT p) {
   constexpr size_t kSize = sizeof(T) * N;
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  CopyBytes<kSize>(p, &v);
+  CopyBytes<kSize>(p, &v);  // not same size
   return Vec128<T, N>{v};
 #else
   int32_t bits = 0;
-  CopyBytes<kSize>(p, &bits);
+  CopyBytes<kSize>(p, &bits);  // not same size
   return Vec128<T, N>{_mm_cvtsi32_si128(bits)};
 #endif
 }
@@ -2121,7 +2122,7 @@ HWY_API void StoreU(const Vec128<double> v, Full128<double> /* tag */,
 template <typename T>
 HWY_API void Store(Vec64<T> v, Full64<T> /* tag */, T* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);  // not same size
 #else
   _mm_storel_epi64(reinterpret_cast<__m128i*>(p), v.raw);
 #endif
@@ -2129,7 +2130,7 @@ HWY_API void Store(Vec64<T> v, Full64<T> /* tag */, T* HWY_RESTRICT p) {
 HWY_API void Store(const Vec128<float, 2> v, Full64<float> /* tag */,
                    float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);  // not same size
 #else
   _mm_storel_pi(reinterpret_cast<__m64*>(p), v.raw);
 #endif
@@ -2137,7 +2138,7 @@ HWY_API void Store(const Vec128<float, 2> v, Full64<float> /* tag */,
 HWY_API void Store(const Vec64<double> v, Full64<double> /* tag */,
                    double* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);  // not same size
 #else
   _mm_storel_pd(p, v.raw);
 #endif
@@ -2146,12 +2147,12 @@ HWY_API void Store(const Vec64<double> v, Full64<double> /* tag */,
 // Any <= 32 bit except <float, 1>
 template <typename T, size_t N, HWY_IF_LE32(T, N)>
 HWY_API void Store(Vec128<T, N> v, Simd<T, N, 0> /* tag */, T* HWY_RESTRICT p) {
-  CopyBytes<sizeof(T) * N>(&v, p);
+  CopyBytes<sizeof(T) * N>(&v, p);  // not same size
 }
 HWY_API void Store(const Vec128<float, 1> v, Full32<float> /* tag */,
                    float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  CopyBytes<4>(&v, p);
+  CopyBytes<4>(&v, p);  // not same size
 #else
   _mm_store_ss(p, v.raw);
 #endif
@@ -2182,7 +2183,7 @@ HWY_API void ScalarMaskedStore(Vec128<T, N> v, Mask128<T, N> m, Simd<T, N, 0> d,
   Store(BitCast(di, VecFromMask(d, m)), di, mask);
   for (size_t i = 0; i < N; ++i) {
     if (mask[i]) {
-      CopyBytes<sizeof(T)>(buf + i, p + i);
+      CopySameSize(buf + i, p + i);
     }
   }
 }
@@ -3645,9 +3646,9 @@ HWY_INLINE float ExtractLane(const Vec128<float, N> v) {
   return lanes[kLane];
 #else
   // Bug in the intrinsic, returns int but should be float.
-  const int bits = _mm_extract_ps(v.raw, kLane);
+  const int32_t bits = _mm_extract_ps(v.raw, kLane);
   float ret;
-  CopyBytes<4>(&bits, &ret);
+  CopySameSize(&bits, &ret);
   return ret;
 #endif
 }
@@ -3824,7 +3825,7 @@ HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
   return Load(d, lanes);
 #else
   MakeSigned<T> ti;
-  CopyBytes<sizeof(T)>(&t, &ti);  // don't just cast because T might be float.
+  CopySameSize(&t, &ti);  // don't just cast because T might be float.
   return Vec128<T, N>{_mm_insert_epi32(v.raw, ti, kLane)};
 #endif
 }
@@ -3840,7 +3841,7 @@ HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
   return Load(d, lanes);
 #else
   MakeSigned<T> ti;
-  CopyBytes<sizeof(T)>(&t, &ti);  // don't just cast because T might be float.
+  CopySameSize(&t, &ti);  // don't just cast because T might be float.
   return Vec128<T, N>{_mm_insert_epi64(v.raw, ti, kLane)};
 #endif
 }
@@ -5593,6 +5594,26 @@ HWY_API Vec128<float, N> ConvertTo(Simd<float, N, 0> /* tag */,
 }
 
 template <size_t N>
+HWY_API Vec128<float, N> ConvertTo(HWY_MAYBE_UNUSED Simd<float, N, 0> df,
+                                   const Vec128<uint32_t, N> v) {
+#if HWY_TARGET <= HWY_AVX3
+  return Vec128<float, N>{_mm_cvtepu32_ps(v.raw)};
+#else
+  // Based on wim's approach (https://stackoverflow.com/questions/34066228/)
+  const RebindToUnsigned<decltype(df)> du32;
+  const RebindToSigned<decltype(df)> d32;
+
+  const auto msk_lo = Set(du32, 0xFFFF);
+  const auto cnst2_16_flt = Set(df, 65536.0f); // 2^16
+
+  // Extract the 16 lowest/highest significant bits of v and cast to signed int
+  const auto v_lo = BitCast(d32, And(v, msk_lo));
+  const auto v_hi = BitCast(d32, ShiftRight<16>(v));
+  return MulAdd(cnst2_16_flt, ConvertTo(df, v_hi), ConvertTo(df, v_lo));
+#endif
+}
+
+template <size_t N>
 HWY_API Vec128<double, N> ConvertTo(Simd<double, N, 0> dd,
                                     const Vec128<int64_t, N> v) {
 #if HWY_TARGET <= HWY_AVX3
@@ -5613,6 +5634,34 @@ HWY_API Vec128<double, N> ConvertTo(Simd<double, N, 0> dd,
 
   const auto k84_63_52 = BitCast(dd, Set(d64, 0x4530000080100000ULL));
   return (v_upper - k84_63_52) + v_lower;  // order matters!
+#endif
+}
+
+template <size_t N>
+HWY_API Vec128<double, N> ConvertTo(HWY_MAYBE_UNUSED Simd<double, N, 0> dd,
+                                    const Vec128<uint64_t, N> v) {
+#if HWY_TARGET <= HWY_AVX3
+  return Vec128<double, N>{_mm_cvtepu64_pd(v.raw)};
+#else
+  // Based on wim's approach (https://stackoverflow.com/questions/41144668/)
+  const RebindToUnsigned<decltype(dd)> d64;
+  using VU = VFromD<decltype(d64)>;
+
+  const VU msk_lo = Set(d64, 0xFFFFFFFF);
+  const auto cnst2_32_dbl = Set(dd, 4294967296.0); // 2^32
+
+  // Extract the 32 lowest/highest significant bits of v
+  const VU v_lo = And(v, msk_lo);
+  const VU v_hi = ShiftRight<32>(v);
+
+  auto uint64_to_double128_fast = [&dd](VU w) HWY_ATTR
+  {
+    w = Or(w, VU{detail::BitCastToInteger(Set(dd, 0x0010000000000000).raw)});
+    return BitCast(dd, w) - Set(dd, 0x0010000000000000);
+  };
+
+  const auto v_lo_dbl = uint64_to_double128_fast(v_lo);
+  return MulAdd(cnst2_32_dbl, uint64_to_double128_fast(v_hi), v_lo_dbl);
 #endif
 }
 
@@ -7273,64 +7322,6 @@ HWY_API V Min128Upper(D d, const V a, const V b) {
 template <class D, class V = VFromD<D>>
 HWY_API V Max128Upper(D d, const V a, const V b) {
   return IfVecThenElse(detail::Lt128UpperVec(d, b, a), a, b);
-}
-
-// ================================================== Operator wrapper
-
-// These apply to all x86_*-inl.h because there are no restrictions on V.
-
-template <class V>
-HWY_API V Add(V a, V b) {
-  return a + b;
-}
-template <class V>
-HWY_API V Sub(V a, V b) {
-  return a - b;
-}
-
-template <class V>
-HWY_API V Mul(V a, V b) {
-  return a * b;
-}
-template <class V>
-HWY_API V Div(V a, V b) {
-  return a / b;
-}
-
-template <class V>
-V Shl(V a, V b) {
-  return a << b;
-}
-template <class V>
-V Shr(V a, V b) {
-  return a >> b;
-}
-
-template <class V>
-HWY_API auto Eq(V a, V b) -> decltype(a == b) {
-  return a == b;
-}
-template <class V>
-HWY_API auto Ne(V a, V b) -> decltype(a == b) {
-  return a != b;
-}
-template <class V>
-HWY_API auto Lt(V a, V b) -> decltype(a == b) {
-  return a < b;
-}
-
-template <class V>
-HWY_API auto Gt(V a, V b) -> decltype(a == b) {
-  return a > b;
-}
-template <class V>
-HWY_API auto Ge(V a, V b) -> decltype(a == b) {
-  return a >= b;
-}
-
-template <class V>
-HWY_API auto Le(V a, V b) -> decltype(a == b) {
-  return a <= b;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

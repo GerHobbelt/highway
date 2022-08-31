@@ -161,7 +161,10 @@ lane count, thus avoiding the need for a second loop to handle remainders.
     masking in `Load` etc. `kCount` must be a power of two not exceeding
     `HWY_LANES(T)`, which is one for `HWY_SCALAR`. This tag can be used when the
     `HWY_SCALAR` target is anyway disabled (superseded by a higher baseline) or
-    unusable (due to use of ops such as `TableLookupBytes`).
+    unusable (due to use of ops such as `TableLookupBytes`). As a convenience,
+    we also provide `Full128<T>`, `Full64<T>` and `Full32<T>` aliases which are
+    equivalent to `FixedTag<T, 16 / sizeof(T)>`, `FixedTag<T, 8 / sizeof(T)>`
+    and `FixedTag<T, 4 / sizeof(T)>`.
 
 *   The result of `UpperHalf`/`LowerHalf` has half the lanes. To obtain a
     corresponding `d`, use `Half<decltype(d)>`; the opposite is `Twice<>`.
@@ -244,6 +247,12 @@ instructions (implying the target CPU must support them).
     mode. For dynamic dispatch, this changes before each re-inclusion and
     finally reverts to `HWY_STATIC_TARGET`. Can be used in `#if` expressions to
     provide an alternative to functions which are not supported by `HWY_SCALAR`.
+
+    In particular, for x86 we sometimes wish to specialize functions for AVX-512
+    because it provides many new instructions. This can be accomplished via `#if
+    HWY_TARGET <= HWY_AVX3`, which means AVX-512 or better (e.g. `HWY_AVX3_DL`).
+    This is because numerically lower targets are better, and no other platform
+    has targets numerically less than those of x86.
 
 *   `HWY_WANT_SSSE3`, `HWY_WANT_SSE4`: add SSSE3 and SSE4 to the baseline even
     if they are not marked as available by the compiler. On MSVC, the only ways
@@ -403,7 +412,7 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 
 #### Multiply
 
-*   `V`: `{u,i}{16,32}` \
+*   `V`: `{u,i}{16,32,64}` \
     <code>V <b>operator*</b>(V a, V b)</code>: returns the lower half of `a[i] *
     b[i]` in each lane. Currently unavailable on SVE/RVV; use the equivalent
     `Mul` instead.

@@ -155,7 +155,7 @@ struct TestPromoteTo {
     for (size_t rep = 0; rep < AdjustedReps(200); ++rep) {
       for (size_t i = 0; i < N; ++i) {
         const uint64_t bits = rng();
-        memcpy(&from[i], &bits, sizeof(T));
+        CopyBytes<sizeof(T)>(&bits, &from[i]);  // not same size
         expected[i] = from[i];
       }
 
@@ -387,10 +387,13 @@ HWY_NOINLINE void TestAllTruncate() {
 struct TestIntFromFloatHuge {
   template <typename TF, class DF>
   HWY_NOINLINE void operator()(TF /*unused*/, const DF df) {
-    // Still does not work, although ARMv7 manual says that float->int
-    // saturates, i.e. chooses the nearest representable value. Also causes
-    // out-of-memory for MSVC.
-#if HWY_TARGET != HWY_NEON && !HWY_COMPILER_MSVC
+    // The ARMv7 manual says that float->int saturates, i.e. chooses the
+    // nearest representable value. This works correctly on armhf with GCC, but
+    // not android arm32 with clang. For reasons unknown, MSVC also runs into an
+    // out-of-memory here.
+#if (HWY_ARCH_ARM_V7 && HWY_COMPILER_CLANG) || HWY_COMPILER_MSVC
+    (void)df;
+#else
     using TI = MakeSigned<TF>;
     const Rebind<TI, DF> di;
 
@@ -406,8 +409,6 @@ struct TestIntFromFloatHuge {
     // Huge negative
     Store(Set(di, LimitsMin<TI>()), di, expected.get());
     HWY_ASSERT_VEC_EQ(di, expected.get(), ConvertTo(di, Set(df, TF(-1E20))));
-#else
-    (void)df;
 #endif
   }
 };
@@ -451,7 +452,7 @@ class TestIntFromFloat {
       for (size_t i = 0; i < N; ++i) {
         do {
           const uint64_t bits = rng();
-          memcpy(&from[i], &bits, sizeof(TF));
+          CopyBytes<sizeof(TF)>(&bits, &from[i]);  // not same size
         } while (!std::isfinite(from[i]));
         if (from[i] >= max) {
           expected[i] = LimitsMax<TI>();
@@ -532,6 +533,34 @@ HWY_NOINLINE void TestAllFloatFromInt() {
   ForFloatTypes(ForPartialVectors<TestFloatFromInt>());
 }
 
+struct TestFloatFromUint {
+  template <typename TF, class DF>
+  HWY_NOINLINE void operator()(TF /*unused*/, const DF df) {
+    using TU = MakeUnsigned<TF>;
+    const RebindToUnsigned<DF> du;
+
+    // Integer positive
+    HWY_ASSERT_VEC_EQ(df, Iota(df, TF(4.0)), ConvertTo(df, Iota(du, TU(4))));
+    HWY_ASSERT_VEC_EQ(df, Iota(df, TF(65535.0)),
+                      ConvertTo(df, Iota(du, 65535)));  // 2^16-1
+    if (sizeof(TF) > 4) {
+      HWY_ASSERT_VEC_EQ(df, Iota(df, TF(4294967295.0)),
+                        ConvertTo(df, Iota(du, 4294967295ULL)));  // 2^32-1
+    }
+
+    // Max positive
+    HWY_ASSERT_VEC_EQ(df, Set(df, TF(LimitsMax<TU>())),
+                      ConvertTo(df, Set(du, LimitsMax<TU>())));
+
+    // Zero
+    HWY_ASSERT_VEC_EQ(df, Zero(df), ConvertTo(df, Zero(du)));
+  }
+};
+
+HWY_NOINLINE void TestAllFloatFromUint() {
+  ForFloatTypes(ForPartialVectors<TestFloatFromUint>());
+}
+
 struct TestI32F64 {
   template <typename TF, class DF>
   HWY_NOINLINE void operator()(TF /*unused*/, const DF df) {
@@ -591,6 +620,7 @@ HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllConvertU8);
 HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllTruncate);
 HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllIntFromFloat);
 HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllFloatFromInt);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllFloatFromUint);
 HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllI32F64);
 }  // namespace hwy
 

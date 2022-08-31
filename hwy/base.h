@@ -24,6 +24,9 @@
 #include "hwy/detect_compiler_arch.h"
 #include "hwy/highway_export.h"
 
+#if HWY_COMPILER_MSVC
+#include <string.h>  // memcpy
+#endif
 #if HWY_ARCH_X86
 #include <atomic>
 #endif
@@ -863,8 +866,16 @@ HWY_API void CopyBytes(const From* from, To* to) {
 #if HWY_COMPILER_MSVC
   memcpy(to, from, kBytes);
 #else
-  __builtin_memcpy(to, from, kBytes);
+  __builtin_memcpy(
+      static_cast<void*>(to), static_cast<const void*>(from), kBytes);
 #endif
+}
+
+// Same as CopyBytes, but for same-sized objects; avoids a size argument.
+template <typename From, typename To>
+HWY_API void CopySameSize(const From* HWY_RESTRICT from, To* HWY_RESTRICT to) {
+  static_assert(sizeof(From) == sizeof(To), "");
+  CopyBytes<sizeof(From)>(from, to);
 }
 
 template <size_t kBytes, typename To>
@@ -880,13 +891,13 @@ HWY_API float F32FromBF16(bfloat16_t bf) {
   uint32_t bits = bf.bits;
   bits <<= 16;
   float f;
-  CopyBytes<4>(&bits, &f);
+  CopySameSize(&bits, &f);
   return f;
 }
 
 HWY_API bfloat16_t BF16FromF32(float f) {
   uint32_t bits;
-  CopyBytes<4>(&f, &bits);
+  CopySameSize(&f, &bits);
   bfloat16_t bf;
   bf.bits = static_cast<uint16_t>(bits >> 16);
   return bf;

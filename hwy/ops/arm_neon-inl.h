@@ -3288,6 +3288,16 @@ HWY_API Vec128<float, N> ConvertTo(Simd<float, N, 0> /* tag */,
   return Vec128<float, N>(vcvt_f32_s32(v.raw));
 }
 
+HWY_API Vec128<float> ConvertTo(Full128<float> /* tag */,
+                                const Vec128<uint32_t> v) {
+  return Vec128<float>(vcvtq_f32_u32(v.raw));
+}
+template <size_t N, HWY_IF_LE64(uint32_t, N)>
+HWY_API Vec128<float, N> ConvertTo(Simd<float, N, 0> /* tag */,
+                                   const Vec128<uint32_t, N> v) {
+  return Vec128<float, N>(vcvt_f32_u32(v.raw));
+}
+
 // Truncates (rounds toward zero).
 HWY_API Vec128<int32_t> ConvertTo(Full128<int32_t> /* tag */,
                                   const Vec128<float> v) {
@@ -3308,6 +3318,15 @@ HWY_API Vec128<double> ConvertTo(Full128<double> /* tag */,
 HWY_API Vec64<double> ConvertTo(Full64<double> /* tag */,
                                 const Vec64<int64_t> v) {
   return Vec64<double>(vcvt_f64_s64(v.raw));
+}
+
+HWY_API Vec128<double> ConvertTo(Full128<double> /* tag */,
+                                 const Vec128<uint64_t> v) {
+  return Vec128<double>(vcvtq_f64_u64(v.raw));
+}
+HWY_API Vec64<double> ConvertTo(Full64<double> /* tag */,
+                                const Vec64<uint64_t> v) {
+  return Vec64<double>(vcvt_f64_u64(v.raw));
 }
 
 // Truncates (rounds toward zero).
@@ -6385,64 +6404,6 @@ HWY_INLINE VFromD<D> Min128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
 template <class D>
 HWY_INLINE VFromD<D> Max128Upper(D d, const VFromD<D> a, const VFromD<D> b) {
   return IfThenElse(Lt128Upper(d, b, a), a, b);
-}
-
-// ================================================== Operator wrapper
-
-// These apply to all x86_*-inl.h because there are no restrictions on V.
-
-template <class V>
-HWY_API V Add(V a, V b) {
-  return a + b;
-}
-template <class V>
-HWY_API V Sub(V a, V b) {
-  return a - b;
-}
-
-template <class V>
-HWY_API V Mul(V a, V b) {
-  return a * b;
-}
-template <class V>
-HWY_API V Div(V a, V b) {
-  return a / b;
-}
-
-template <class V>
-V Shl(V a, V b) {
-  return a << b;
-}
-template <class V>
-V Shr(V a, V b) {
-  return a >> b;
-}
-
-template <class V>
-HWY_API auto Eq(V a, V b) -> decltype(a == b) {
-  return a == b;
-}
-template <class V>
-HWY_API auto Ne(V a, V b) -> decltype(a == b) {
-  return a != b;
-}
-template <class V>
-HWY_API auto Lt(V a, V b) -> decltype(a == b) {
-  return a < b;
-}
-
-template <class V>
-HWY_API auto Gt(V a, V b) -> decltype(a == b) {
-  return a > b;
-}
-template <class V>
-HWY_API auto Ge(V a, V b) -> decltype(a == b) {
-  return a >= b;
-}
-
-template <class V>
-HWY_API auto Le(V a, V b) -> decltype(a == b) {
-  return a <= b;
 }
 
 namespace detail {  // for code folding
