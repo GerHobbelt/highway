@@ -4244,8 +4244,7 @@ HWY_API Vec256<double> ConvertTo(HWY_MAYBE_UNUSED Full256<double> dd,
   const VU v_lo = And(v, msk_lo);
   const VU v_hi = ShiftRight<32>(v);
 
-  auto uint64_to_double256_fast = [&dd](Vec256<uint64_t> w)
-                                      HWY_ATTR -> Vec256<double> {
+  auto uint64_to_double256_fast = [&dd](Vec256<uint64_t> w) HWY_ATTR {
     w = Or(w, Vec256<uint64_t>{
                   detail::BitCastToInteger(Set(dd, 0x0010000000000000).raw)});
     return BitCast(dd, w) - Set(dd, 0x0010000000000000);
@@ -4445,8 +4444,8 @@ HWY_API size_t StoreMaskBits(const Full256<T> /* tag */, const Mask256<T> mask,
 
   // Non-full byte, need to clear the undefined upper bits.
   if (N < 8) {
-    const int mask = static_cast<int>((1ull << N) - 1);
-    bits[0] = static_cast<uint8_t>(bits[0] & mask);
+    const int mask_bits = static_cast<int>((1ull << N) - 1);
+    bits[0] = static_cast<uint8_t>(bits[0] & mask_bits);
   }
   return kNumBytes;
 }

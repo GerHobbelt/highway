@@ -19,7 +19,7 @@ if(POLICY CMP0083)
   cmake_policy(SET CMP0083 NEW)
 endif()
 
-project(hwy VERSION 1.0.0)  # Keep in sync with highway.h version
+project(hwy VERSION 1.0.1)  # Keep in sync with highway.h version
 
 # Directly define the ABI version from the cmake project() version values:
 set(LIBRARY_VERSION "${hwy_VERSION}")
@@ -225,8 +225,11 @@ else()
   endif()  # HWY_CMAKE_ARM7
 
   if(HWY_RISCV)
-    list(APPEND HWY_FLAGS -march=rv64gcv1p0)
     if(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+      # Not yet supported by GCC. When runtime dispatch is supported and
+      # implemented, we will remove v from the required flags. Until then, using
+      # clang for RISC-V will require the CPU to support the V extension (1.0).
+      list(APPEND HWY_FLAGS -march=rv64gcv1p0)
       list(APPEND HWY_FLAGS -menable-experimental-extensions)
     endif()
   endif()
@@ -278,8 +281,8 @@ target_compile_features(hwy PUBLIC cxx_std_11)
 set_target_properties(hwy PROPERTIES
   LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hwy/hwy.version)
 if(UNIX AND NOT APPLE)
-  if(NOT HWY_EMSCRIPTEN)
-    # For GCC __atomic_store_8, see #887
+  # For GCC __atomic_store_8, see #887
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT HWY_EMSCRIPTEN)
     target_link_libraries(hwy atomic)
   endif()
   # not supported by MSVC/Clang, safe to skip (we use DLLEXPORT annotations)

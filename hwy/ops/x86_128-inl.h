@@ -5654,8 +5654,7 @@ HWY_API Vec128<double, N> ConvertTo(HWY_MAYBE_UNUSED Simd<double, N, 0> dd,
   const VU v_lo = And(v, msk_lo);
   const VU v_hi = ShiftRight<32>(v);
 
-  auto uint64_to_double128_fast = [&dd](VU w) HWY_ATTR
-  {
+  auto uint64_to_double128_fast = [&dd](VU w) HWY_ATTR {
     w = Or(w, VU{detail::BitCastToInteger(Set(dd, 0x0010000000000000).raw)});
     return BitCast(dd, w) - Set(dd, 0x0010000000000000);
   };
@@ -6018,8 +6017,8 @@ HWY_API size_t StoreMaskBits(const Simd<T, N, 0> /* tag */,
 
   // Non-full byte, need to clear the undefined upper bits.
   if (N < 8) {
-    const int mask = (1 << N) - 1;
-    bits[0] = static_cast<uint8_t>(bits[0] & mask);
+    const int mask_bits = (1 << N) - 1;
+    bits[0] = static_cast<uint8_t>(bits[0] & mask_bits);
   }
 
   return kNumBytes;

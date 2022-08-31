@@ -50,6 +50,12 @@
 #define HWY_COMPILER_ICC 0
 #endif
 
+#ifdef __INTEL_LLVM_COMPILER
+#define HWY_COMPILER_ICX __INTEL_LLVM_COMPILER
+#else
+#define HWY_COMPILER_ICX 0
+#endif
+
 // HWY_COMPILER_GCC is a generic macro for all compilers implementing the GNU
 // compiler extensions (eg. Clang, Intel...)
 #ifdef __GNUC__
@@ -63,7 +69,7 @@
 // In case of Apple LLVM (whose version number is unrelated to that of LLVM) or
 // an invalid version number, deduce it from the presence of warnings.
 // Adapted from https://github.com/simd-everywhere/simde/ simde-detect-clang.h.
-#if defined(__APPLE__) || __clang_major__ >= 999
+#if defined(__apple_build_version__) || __clang_major__ >= 999
 #if __has_warning("-Wbitwise-instead-of-logical")
 #define HWY_COMPILER_CLANG 1400
 #elif __has_warning("-Wreserved-identifier")
@@ -79,7 +85,12 @@
 #elif __has_warning("-Wextra-semi-stmt") || \
     __has_builtin(__builtin_rotateleft32)
 #define HWY_COMPILER_CLANG 800
-#elif __has_warning("-Wc++98-compat-extra-semi")
+// For reasons unknown, XCode 10.3 (Apple LLVM version 10.0.1) is apparently
+// based on Clang 7, but does not support the warning we test.
+// See https://en.wikipedia.org/wiki/Xcode#Toolchain_versions and
+// https://trac.macports.org/wiki/XcodeVersionInfo.
+#elif __has_warning("-Wc++98-compat-extra-semi") || \
+    (defined(__apple_build_version__) && __apple_build_version__ >= 10010000)
 #define HWY_COMPILER_CLANG 700
 #else  // Anything older than 7.0 is not recommended for Highway.
 #define HWY_COMPILER_CLANG 600
