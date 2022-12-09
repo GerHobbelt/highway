@@ -49,7 +49,9 @@ The public headers are:
 *   hwy/tests/test_util-inl.h: defines macros for invoking tests on all
     available targets, plus per-target functions useful in tests.
 
-SIMD implementations must be preceded and followed by the following:
+Highway provides helper macros to simplify your vector code and ensure support
+for dynamic dispatch. To use these, add the following to the start and end of
+any vector code:
 
 ```
 #include "hwy/highway.h"
@@ -64,6 +66,10 @@ namespace HWY_NAMESPACE {
 }  // namespace project - optional
 HWY_AFTER_NAMESPACE();
 ```
+
+If you choose not to use the `BEFORE/AFTER` lines, you must prefix any function
+that calls Highway ops such as `Load` with `HWY_ATTR`. You can omit the
+`HWY_NAMESPACE` lines if not using dynamic dispatch.
 
 ## Notation in this doc
 
@@ -645,6 +651,11 @@ encoding depends on the platform).
 
 *   <code>intptr_t **FindFirstTrue**(D, M m)</code>: returns the index of the
     first (i.e. lowest index) `m[i]` that is true, or -1 if none are.
+
+*   <code>size_t **FindKnownFirstTrue**(D, M m)</code>: returns the index of the
+    first (i.e. lowest index) `m[i]` that is true. Requires `!AllFalse(d, m)`,
+    otherwise results are undefined. This is typically more efficient than
+    `FindFirstTrue`.
 
 #### Ternary operator
 
@@ -1438,6 +1449,14 @@ may violate the one-definition rule and cause crashes. Instead, we use
 target-specific attributes introduced via #pragma. Function using SIMD must
 reside between `HWY_BEFORE_NAMESPACE` and `HWY_AFTER_NAMESPACE`. Alternatively,
 individual functions or lambdas may be prefixed with `HWY_ATTR`.
+
+If you know the SVE vector width and are using static dispatch, you can specify
+`-march=armv9-a+sve2-aes -msve-vector-bits=128` and Highway will then use
+`HWY_SVE2_128` as the baseline. Similarly, `-march=armv8.2-a+sve
+-msve-vector-bits=256` enables the `HWY_SVE_256` specialization for Neoverse V1.
+Note that these flags are unnecessary when using dynamic dispatch. Highway will
+automatically detect and dispatch to the best available target, including
+`HWY_SVE2_128` or `HWY_SVE_256`.
 
 Immediates (compile-time constants) are specified as template arguments to avoid
 constant-propagation issues with Clang on ARM.
