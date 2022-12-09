@@ -902,6 +902,9 @@ HWY_INLINE const char* PivotResultString(PivotResult result) {
       return "first";
     case PivotResult::kWasLast:
       return "last";
+	// warning C4715: 'hwy::N_AVX2::detail::PivotResultString': not all control paths return a value
+	default:
+		return "???";
   }
   return "unknown";
 }
