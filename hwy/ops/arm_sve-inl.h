@@ -473,7 +473,7 @@ HWY_API V AndNot(const V a, const V b) {
 
 // ------------------------------ Xor3
 
-#if HWY_TARGET == HWY_SVE2_128 || HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 
 HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGVVV, Xor3, eor3)
 
@@ -676,7 +676,7 @@ HWY_SVE_FOREACH_U64(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
 
 // ------------------------------ MulFixedPoint15
 HWY_API svint16_t MulFixedPoint15(svint16_t a, svint16_t b) {
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
   return svqrdmulh_s16(a, b);
 #else
   const DFromV<decltype(a)> d;
@@ -909,7 +909,7 @@ HWY_API VFromD<D> VecFromMask(const D d, svbool_t mask) {
 
 // ------------------------------ IfVecThenElse (MaskFromVec, IfThenElse)
 
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 
 #define HWY_SVE_IF_VEC(BASE, CHAR, BITS, HALF, NAME, OP)          \
   HWY_API HWY_SVE_V(BASE, BITS)                                   \
@@ -936,7 +936,7 @@ HWY_API V IfVecThenElse(const V mask, const V yes, const V no) {
   return Or(And(mask, yes), AndNot(mask, no));
 }
 
-#endif  // HWY_TARGET == HWY_SVE2
+#endif  // HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 
 // ------------------------------ Floating-point classification (Ne)
 
@@ -1429,7 +1429,7 @@ HWY_API svuint8_t TruncateTo(Simd<uint8_t, N, kPow2> /* tag */,
 
 template <size_t N, int kPow2>
 HWY_API svint8_t DemoteTo(Simd<int8_t, N, kPow2> dn, const svint16_t v) {
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
   const svint8_t vn = BitCast(dn, svqxtnb_s16(v));
 #else
   using TN = TFromD<decltype(dn)>;
@@ -1440,7 +1440,7 @@ HWY_API svint8_t DemoteTo(Simd<int8_t, N, kPow2> dn, const svint16_t v) {
 
 template <size_t N, int kPow2>
 HWY_API svint16_t DemoteTo(Simd<int16_t, N, kPow2> dn, const svint32_t v) {
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
   const svint16_t vn = BitCast(dn, svqxtnb_s32(v));
 #else
   using TN = TFromD<decltype(dn)>;
@@ -1452,7 +1452,7 @@ HWY_API svint16_t DemoteTo(Simd<int16_t, N, kPow2> dn, const svint32_t v) {
 template <size_t N, int kPow2>
 HWY_API svint8_t DemoteTo(Simd<int8_t, N, kPow2> dn, const svint32_t v) {
   const RepartitionToWide<decltype(dn)> d2;
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
   const svint16_t cast16 = BitCast(d2, svqxtnb_s16(svqxtnb_s32(v)));
 #else
   using TN = TFromD<decltype(dn)>;
@@ -1980,7 +1980,7 @@ HWY_API V DupOdd(const V v) {
 
 // ------------------------------ OddEven
 
-#if HWY_TARGET == HWY_SVE2_128 || HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 
 #define HWY_SVE_ODD_EVEN(BASE, CHAR, BITS, HALF, NAME, OP)          \
   HWY_API HWY_SVE_V(BASE, BITS)                                     \
@@ -2690,7 +2690,7 @@ HWY_API V IfNegativeThenElse(V v, V yes, V no) {
 
 // ------------------------------ AverageRound (ShiftRight)
 
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 HWY_SVE_FOREACH_U08(HWY_SVE_RETV_ARGPVV, AverageRound, rhadd)
 HWY_SVE_FOREACH_U16(HWY_SVE_RETV_ARGPVV, AverageRound, rhadd)
 #else
@@ -2698,7 +2698,7 @@ template <class V>
 V AverageRound(const V a, const V b) {
   return ShiftRight<1>(detail::AddN(Add(a, b), 1));
 }
-#endif  // HWY_TARGET == HWY_SVE2
+#endif  // HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 
 // ------------------------------ LoadMaskBits (TestBit)
 
@@ -2850,7 +2850,7 @@ HWY_API size_t CompressBitsStore(VFromD<D> v, const uint8_t* HWY_RESTRICT bits,
 
 // ------------------------------ MulEven (InterleaveEven)
 
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 namespace detail {
 #define HWY_SVE_MUL_EVEN(BASE, CHAR, BITS, HALF, NAME, OP)     \
   HWY_API HWY_SVE_V(BASE, BITS)                                \
@@ -2865,7 +2865,7 @@ HWY_SVE_FOREACH_UI64(HWY_SVE_MUL_EVEN, MulEvenNative, mullb)
 
 template <class V, class DW = RepartitionToWide<DFromV<V>>>
 HWY_API VFromD<DW> MulEven(const V a, const V b) {
-#if HWY_TARGET == HWY_SVE2
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
   return BitCast(DW(), detail::MulEvenNative(a, b));
 #else
   const auto lo = Mul(a, b);
@@ -2894,15 +2894,17 @@ HWY_API svfloat32_t ReorderWidenMulAccumulate(Simd<float, N, kPow2> df32,
                                               const svfloat32_t sum0,
                                               svfloat32_t& sum1) {
   // TODO(janwas): svbfmlalb_f32 if __ARM_FEATURE_SVE_BF16.
-  const Repartition<uint16_t, decltype(df32)> du16;
   const RebindToUnsigned<decltype(df32)> du32;
-  const svuint16_t zero = Zero(du16);
-  const svuint32_t a0 = ZipLower(du32, zero, BitCast(du16, a));
-  const svuint32_t a1 = ZipUpper(du32, zero, BitCast(du16, a));
-  const svuint32_t b0 = ZipLower(du32, zero, BitCast(du16, b));
-  const svuint32_t b1 = ZipUpper(du32, zero, BitCast(du16, b));
-  sum1 = MulAdd(BitCast(df32, a1), BitCast(df32, b1), sum1);
-  return MulAdd(BitCast(df32, a0), BitCast(df32, b0), sum0);
+  // Using shift/and instead of Zip leads to the odd/even order that
+  // RearrangeToOddPlusEven prefers.
+  using VU32 = VFromD<decltype(du32)>;
+  const VU32 odd = Set(du32, 0xFFFF0000u);
+  const VU32 ae = ShiftLeft<16>(BitCast(du32, a));
+  const VU32 ao = And(BitCast(du32, a), odd);
+  const VU32 be = ShiftLeft<16>(BitCast(du32, b));
+  const VU32 bo = And(BitCast(du32, b), odd);
+  sum1 = MulAdd(BitCast(df32, ao), BitCast(df32, bo), sum1);
+  return MulAdd(BitCast(df32, ae), BitCast(df32, be), sum0);
 }
 
 template <size_t N, int kPow2>
@@ -2916,20 +2918,22 @@ HWY_API svint32_t ReorderWidenMulAccumulate(Simd<int32_t, N, kPow2> d32,
   return svmlalb_s32(sum0, a, b);
 #else
   const svbool_t pg = detail::PTrue(d32);
-  const svint32_t a0 = svunpklo_s32(a);
-  const svint32_t b0 = svunpklo_s32(b);
-  svint32_t a1, b1;
-  if (detail::IsFull(d32)) {
-    a1 = svunpkhi_s32(a);
-    b1 = svunpkhi_s32(b);
-  } else {
-    const Rebind<int16_t, decltype(d32)> d16h;
-    a1 = svunpklo_s32(UpperHalf(d16h, a));
-    b1 = svunpklo_s32(UpperHalf(d16h, b));
-  }
-  sum1 = svmla_s32_x(pg, sum1, a1, b1);
-  return svmla_s32_x(pg, sum0, a0, b0);
+  // Shifting extracts the odd lanes as RearrangeToOddPlusEven prefers.
+  // Fortunately SVE has sign-extension for the even lanes.
+  const svint32_t ae = svexth_s32_x(pg, BitCast(d32, a));
+  const svint32_t be = svexth_s32_x(pg, BitCast(d32, b));
+  const svint32_t ao = ShiftRight<16>(BitCast(d32, a));
+  const svint32_t bo = ShiftRight<16>(BitCast(d32, b));
+  sum1 = svmla_s32_x(pg, sum1, ao, bo);
+  return svmla_s32_x(pg, sum0, ae, be);
 #endif
+}
+
+// ------------------------------ RearrangeToOddPlusEven
+template <class VW>
+HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
+  // sum0 is the sum of bottom/even lanes and sum1 of top/odd lanes.
+  return Add(sum0, sum1);
 }
 
 // ------------------------------ AESRound / CLMul
