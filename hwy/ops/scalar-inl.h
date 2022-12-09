@@ -362,7 +362,7 @@ HWY_API Vec1<T> ShiftRight(const Vec1<T> v) {
     // signed shifts are still implementation-defined.
     using TU = hwy::MakeUnsigned<T>;
     const Sisd<TU> du;
-    const TU shifted = BitCast(du, v).raw >> kBits;
+    const TU shifted = static_cast<TU>(BitCast(du, v).raw >> kBits);
     const TU sign = BitCast(du, BroadcastSignBit(v)).raw;
     const size_t sign_shift =
         static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - kBits);
@@ -423,7 +423,7 @@ HWY_API Vec1<T> ShiftRightSame(const Vec1<T> v, int bits) {
     // signed shifts are still implementation-defined.
     using TU = hwy::MakeUnsigned<T>;
     const Sisd<TU> du;
-    const TU shifted = BitCast(du, v).raw >> bits;
+    const TU shifted = static_cast<TU>(BitCast(du, v).raw >> bits);
     const TU sign = BitCast(du, BroadcastSignBit(v)).raw;
     const size_t sign_shift =
         static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - bits);
@@ -554,7 +554,7 @@ HWY_API Vec1<uint16_t> AverageRound(const Vec1<uint16_t> a,
 template <typename T>
 HWY_API Vec1<T> Abs(const Vec1<T> a) {
   const T i = a.raw;
-  return (i >= 0 || i == hwy::LimitsMin<T>()) ? a : Vec1<T>(-i);
+  return (i >= 0 || i == hwy::LimitsMin<T>()) ? a : Vec1<T>(static_cast<T>(-i));
 }
 HWY_API Vec1<float> Abs(const Vec1<float> a) {
   return Vec1<float>(fabsf(a.raw));
