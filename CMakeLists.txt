@@ -25,7 +25,7 @@ if(POLICY CMP0111)
   cmake_policy(SET CMP0111 OLD)
 endif()
 
-project(hwy VERSION 1.0.3)  # Keep in sync with highway.h version
+project(hwy VERSION 1.0.4)  # Keep in sync with highway.h version
 # `hwy` is lowercase to handle find_package() in Config mode:
 set(namespace "${PROJECT_NAME}::")
 
@@ -443,7 +443,8 @@ target_sources(hwy_benchmark PRIVATE
 # Try adding one of -DHWY_COMPILE_ONLY_SCALAR, -DHWY_COMPILE_ONLY_EMU128 or
 # -DHWY_COMPILE_ONLY_STATIC to observe the difference in targets printed.
 target_compile_options(hwy_benchmark PRIVATE ${HWY_FLAGS})
-target_link_libraries(hwy_benchmark hwy)
+target_link_libraries(hwy_benchmark PRIVATE hwy)
+target_link_libraries(hwy_benchmark PRIVATE ${ATOMICS_LIBRARIES})
 set_target_properties(hwy_benchmark
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "examples/")
 
