@@ -2526,7 +2526,7 @@ HWY_DIAGNOSTICS(pop)
 
 // ------------------------------ LowerHalf
 
-template <class D, typename T = TFromD<D>, HWY_IF_NOT_FLOAT(T)>
+template <class D, typename T = TFromD<D>>
 HWY_API Vec256<T> LowerHalf(D /* tag */, Vec512<T> v) {
   return Vec256<T>{_mm512_castsi512_si256(v.raw)};
 }
@@ -2565,6 +2565,14 @@ template <typename T>
 HWY_API T ExtractLane(const Vec512<T> v, size_t i) {
   const DFromV<decltype(v)> d;
   HWY_DASSERT(i < Lanes(d));
+
+#if !HWY_IS_DEBUG_BUILD && HWY_COMPILER_GCC  // includes clang
+  constexpr size_t kLanesPerBlock = 16 / sizeof(T);
+  if (__builtin_constant_p(i < kLanesPerBlock) && (i < kLanesPerBlock)) {
+    return ExtractLane(ResizeBitCast(Full128<T>(), v), i);
+  }
+#endif
+
   alignas(64) T lanes[64 / sizeof(T)];
   Store(v, d, lanes);
   return lanes[i];
@@ -6230,7 +6238,7 @@ HWY_API float ReduceSum(D, Vec512<float> v) {
 }
 template <class D>
 HWY_API double ReduceSum(D, Vec512<double> v) {
-  return  _mm512_reduce_add_pd(v.raw);
+  return _mm512_reduce_add_pd(v.raw);
 }
 template <class D>
 HWY_API uint16_t ReduceSum(D d, Vec512<uint16_t> v) {

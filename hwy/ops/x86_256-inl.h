@@ -48,8 +48,6 @@ HWY_DIAGNOSTICS_OFF(disable : 4701 4703 6001 26494,
 #include <smmintrin.h>
 #endif  // HWY_COMPILER_CLANGCL
 
-#include <string.h>  // memcpy
-
 // For half-width vectors. Already includes base.h.
 #include "hwy/ops/shared-inl.h"
 // Already included by shared-inl, but do it again to avoid IDE warnings.
@@ -2972,7 +2970,7 @@ HWY_DIAGNOSTICS(pop)
 
 // ------------------------------ LowerHalf
 
-template <class D, typename T = TFromD<D>, HWY_IF_NOT_FLOAT(T)>
+template <class D, typename T = TFromD<D>>
 HWY_API Vec128<T> LowerHalf(D /* tag */, Vec256<T> v) {
   return Vec128<T>{_mm256_castsi256_si128(v.raw)};
 }
@@ -3011,6 +3009,14 @@ template <typename T>
 HWY_API T ExtractLane(const Vec256<T> v, size_t i) {
   const DFromV<decltype(v)> d;
   HWY_DASSERT(i < Lanes(d));
+
+#if !HWY_IS_DEBUG_BUILD && HWY_COMPILER_GCC  // includes clang
+  constexpr size_t kLanesPerBlock = 16 / sizeof(T);
+  if (__builtin_constant_p(i < kLanesPerBlock) && (i < kLanesPerBlock)) {
+    return ExtractLane(LowerHalf(Half<decltype(d)>(), v), i);
+  }
+#endif
+
   alignas(32) T lanes[32 / sizeof(T)];
   Store(v, d, lanes);
   return lanes[i];
@@ -6505,7 +6511,7 @@ HWY_API size_t CompressBlendedStore(Vec256<T> v, Mask256<T> m, D d,
   // FirstN, so we can just copy.
   alignas(32) T buf[16];
   Store(compressed, d, buf);
-  memcpy(unaligned, buf, count * sizeof(T));
+  CopyBytes(buf, unaligned, count * sizeof(T));
 #else
   BlendedStore(compressed, FirstN(d, count), d, unaligned);
 #endif
@@ -7021,8 +7027,7 @@ HWY_INLINE Vec256<T> SumOfLanes(hwy::SizeTag<4> /* tag */,
   return v20_31_20_31 + v31_20_31_20;
 }
 template <typename T>
-HWY_INLINE T ReduceSum(hwy::SizeTag<4> /* tag */,
-                                const Vec256<T> v3210) {
+HWY_INLINE T ReduceSum(hwy::SizeTag<4> /* tag */, const Vec256<T> v3210) {
   return GetLane(SumOfLanes(hwy::SizeTag<4>(), v3210));
 }
 template <typename T>
@@ -7049,8 +7054,7 @@ HWY_INLINE Vec256<T> SumOfLanes(hwy::SizeTag<8> /* tag */,
   return v10 + v01;
 }
 template <typename T>
-HWY_INLINE T ReduceSum(hwy::SizeTag<8> /* tag */,
-                                const Vec256<T> v10) {
+HWY_INLINE T ReduceSum(hwy::SizeTag<8> /* tag */, const Vec256<T> v10) {
   return GetLane(SumOfLanes(hwy::SizeTag<8>(), v10));
 }
 template <typename T>
@@ -7066,8 +7070,7 @@ HWY_INLINE Vec256<T> MaxOfLanes(hwy::SizeTag<8> /* tag */,
   return Max(v10, v01);
 }
 
-HWY_API uint16_t ReduceSum(hwy::SizeTag<2> /* tag */,
-                                    Vec256<uint16_t> v) {
+HWY_API uint16_t ReduceSum(hwy::SizeTag<2> /* tag */, Vec256<uint16_t> v) {
   const Full256<uint16_t> d;
   const RepartitionToWide<decltype(d)> d32;
   const auto even = And(BitCast(d32, v), Set(d32, 0xFFFF));
@@ -7082,8 +7085,7 @@ HWY_API Vec256<uint16_t> SumOfLanes(hwy::SizeTag<2> /* tag */,
   return Set(d, ReduceSum(hwy::SizeTag<2>(), v));
 }
 
-HWY_API int16_t ReduceSum(hwy::SizeTag<2> /* tag */,
-                                   Vec256<int16_t> v) {
+HWY_API int16_t ReduceSum(hwy::SizeTag<2> /* tag */, Vec256<int16_t> v) {
   const Full256<int16_t> d;
   const RepartitionToWide<decltype(d)> d32;
   // Sign-extend

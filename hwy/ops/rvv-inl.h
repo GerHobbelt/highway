@@ -624,6 +624,22 @@ HWY_RVV_FOREACH(HWY_RVV_EXT, Ext, lmul_ext, _EXT)
 HWY_RVV_FOREACH(HWY_RVV_EXT_VIRT, Ext, lmul_ext, _VIRT)
 #undef HWY_RVV_EXT_VIRT
 
+#if !HWY_HAVE_FLOAT16
+template <class D, HWY_IF_F16_D(D)>
+VFromD<D> Ext(D d, VFromD<Half<D>> v) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Half<decltype(du)> duh;
+  return BitCast(d, Ext(du, BitCast(duh, v)));
+}
+#endif
+
+template <class D, HWY_IF_BF16_D(D)>
+VFromD<D> Ext(D d, VFromD<Half<D>> v) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Half<decltype(du)> duh;
+  return BitCast(d, Ext(du, BitCast(duh, v)));
+}
+
 // For BitCastToByte, the D arg is only to prevent duplicate definitions caused
 // by _ALL_VIRT.
 
@@ -4284,7 +4300,7 @@ HWY_API VFromD<D32> WidenMulPairwiseAdd(D32 df32, V16 a, V16 b) {
   const VU32 be = ShiftLeft<16>(BitCast(du32, b));
   const VU32 bo = And(BitCast(du32, b), odd);
   return MulAdd(BitCast(df32, ae), BitCast(df32, be),
-            Mul(BitCast(df32, ao), BitCast(df32, bo)));
+                Mul(BitCast(df32, ao), BitCast(df32, bo)));
 }
 
 template <class D, HWY_IF_I32_D(D), class VI16>

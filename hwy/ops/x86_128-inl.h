@@ -39,7 +39,6 @@ HWY_DIAGNOSTICS_OFF(disable : 4701 4703 6001 26494,
 #include <wmmintrin.h>  // CLMUL
 #endif
 #endif
-#include <string.h>  // memcpy
 
 #include "hwy/ops/shared-inl.h"
 
@@ -4060,9 +4059,8 @@ template <size_t kLane, typename T, size_t N, HWY_IF_T_SIZE(T, 4)>
 HWY_INLINE T ExtractLane(const Vec128<T, N> v) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3
-  alignas(16) T lanes[4];
-  Store(v, DFromV<decltype(v)>(), lanes);
-  return lanes[kLane];
+  return static_cast<T>(_mm_cvtsi128_si32(
+      (kLane == 0) ? v.raw : _mm_shuffle_epi32(v.raw, kLane)));
 #else
   return static_cast<T>(_mm_extract_epi32(v.raw, kLane));
 #endif
@@ -4087,9 +4085,8 @@ template <size_t kLane, size_t N>
 HWY_INLINE float ExtractLane(const Vec128<float, N> v) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3
-  alignas(16) float lanes[4];
-  Store(v, DFromV<decltype(v)>(), lanes);
-  return lanes[kLane];
+  return _mm_cvtss_f32((kLane == 0) ? v.raw
+                                    : _mm_shuffle_ps(v.raw, v.raw, kLane));
 #else
   // Bug in the intrinsic, returns int but should be float.
   const int32_t bits = _mm_extract_ps(v.raw, kLane);
@@ -5576,26 +5573,11 @@ HWY_API VFromD<D> Combine(D d, VH hi_half, VH lo_half) {
 
 // ------------------------------ ZeroExtendVector (Combine, IfThenElseZero)
 
-// Tag dispatch instead of SFINAE for MSVC 2017 compatibility
-namespace detail {
-
-template <class D, typename T = TFromD<D>>
-HWY_INLINE Vec128<T> ZeroExtendVector(hwy::NonFloatTag /*tag*/, D /* d */,
-                                      Vec64<T> lo) {
-  return Vec128<T>{_mm_move_epi64(lo.raw)};
-}
-
-template <class D, typename T = TFromD<D>>
-HWY_INLINE Vec128<T> ZeroExtendVector(hwy::FloatTag /*tag*/, D d, Vec64<T> lo) {
-  const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, ZeroExtendVector(du, BitCast(Half<decltype(du)>(), lo)));
-}
-
-}  // namespace detail
-
 template <class D, HWY_IF_V_SIZE_D(D, 16), typename T = TFromD<D>>
 HWY_API Vec128<T> ZeroExtendVector(D d, Vec64<T> lo) {
-  return detail::ZeroExtendVector(hwy::IsFloatTag<T>(), d, lo);
+  const RebindToUnsigned<decltype(d)> du;
+  const Half<decltype(du)> duh;
+  return BitCast(d, VFromD<decltype(du)>{_mm_move_epi64(BitCast(duh, lo).raw)});
 }
 
 template <class D, HWY_IF_V_SIZE_LE_D(D, 8)>
@@ -6895,7 +6877,6 @@ template <class D32, HWY_IF_I32_D(D32), HWY_IF_V_SIZE_LE_D(D32, 16),
 HWY_API VFromD<D32> WidenMulPairwiseAdd(D32 /* tag */, V16 a, V16 b) {
   return VFromD<D32>{_mm_madd_epi16(a.raw, b.raw)};
 }
-
 
 // ------------------------------ ReorderWidenMulAccumulate (MulAdd, ShiftLeft)
 
@@ -8594,7 +8575,7 @@ HWY_API size_t CompressBlendedStore(VFromD<D> v, MFromD<D> m, D d,
     // FirstN, so we can just copy.
     alignas(16) T buf[MaxLanes(d)];
     Store(compressed, d, buf);
-    memcpy(unaligned, buf, count * sizeof(T));
+    CopyBytes(buf, unaligned, count * sizeof(T));
 #else
     BlendedStore(compressed, FirstN(d, count), d, unaligned);
 #endif

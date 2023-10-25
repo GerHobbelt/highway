@@ -58,6 +58,21 @@ available implementation at runtime. Highway supports three ways of doing this:
 
 Examples of both static and dynamic dispatch are provided in examples/.
 
+Note that if your compiler is pre-configured to generate code only for a
+specific architecture, or your build flags include -m flags that specify a
+baseline CPU architecture, then this can interfere with dynamic dispatch, which
+aims to build code for all attainable targets. One example is specializing for a
+Raspberry Pi CPU that lacks AES, by specifying `-march=armv8-a+crc`. When we
+build the `HWY_NEON` target (which would only be used if the CPU actually does
+have AES), there is a conflict between the `arch=armv8-a+crypto` that is set via
+pragma only for the vector code, and the global `-march`. This results in a
+compile error, see #1570 and #1460. As a workaround, we recommend defining
+`HWY_COMPILE_ONLY_STATIC` when building Highway as well as any user code that
+includes Highway headers. As a result, only the baseline target is compiled.
+Note that it is fine for user code to still call `HWY_DYNAMIC_DISPATCH`. When
+Highway is only built for a single target, `HWY_DYNAMIC_DISPATCH` results in the
+same direct call that `HWY_STATIC_DISPATCH` would produce.
+
 ## Headers
 
 The public headers are:
@@ -1277,15 +1292,18 @@ These functions promote a half vector to a full vector. To obtain halves, use
 The following may be more convenient or efficient than also calling `LowerHalf`
 / `UpperHalf`:
 
-*   `V`,`D`: (`bf16,f32`) \
+*   Unsigned `V` to wider signed/unsigned `D`; signed to wider signed, `f16` to
+    `f32`, `bf16` to `f32`, `f32` to `f64` \
     <code>Vec&lt;D&gt; **PromoteLowerTo**(D, V v)</code>: returns `v[i]` widened
     to `MakeWide<T>`, for i in `[0, Lanes(D()))`. Note that `V` has twice as
     many lanes as `D` and the return value.
 
-*   `V`,`D`: (`bf16,f32`) \
+*   Unsigned `V` to wider signed/unsigned `D`; signed to wider signed, `f16` to
+    `f32`, `bf16` to `f32`, `f32` to `f64` \
     <code>Vec&lt;D&gt; **PromoteUpperTo**(D, V v)</code>: returns `v[i]` widened
     to `MakeWide<T>`, for i in `[Lanes(D()), 2 * Lanes(D()))`. Note that `V` has
-    twice as many lanes as `D` and the return value.
+    twice as many lanes as `D` and the return value. Only available if
+    `HWY_TARGET != HWY_SCALAR`.
 
 #### Two-vector demotion
 
@@ -1785,8 +1803,10 @@ instead of `HWY_HAVE_FLOAT64`, which describes the current target.
 
 The following indicate full support for certain lane types and expand to 1 or 0.
 Note that minimal support (`Zero`, `BitCast`, `Load`/`Store`,
-`PromoteTo`/`DemoteTo`) is always available for float16_t and bfloat16_t, plus
-`Neg` for float16_t.
+`PromoteTo`/`DemoteTo`, `PromoteUpper/LowerTo`, `Combine`) is still available
+for `float16_t` and `bfloat16_t`, plus `Neg` for float16_t. Exception:
+`UpperHalf`, and thus also `PromoteUpperTo`, are not supported for the
+`HWY_SCALAR` target.
 
 *   `HWY_HAVE_INTEGER64`: support for 64-bit signed/unsigned integer lanes.
 *   `HWY_HAVE_FLOAT16`: support for 16-bit floating-point lanes.
