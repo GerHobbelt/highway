@@ -484,12 +484,12 @@ from left to right, of the arguments passed to `Create{2-4}`.
 *   `V`: `{f}` \
     <code>V **Sqrt**(V a)</code>: returns `sqrt(a[i])`.
 
-*   `V`: `f32` \
+*   `V`: `{f}` \
     <code>V **ApproximateReciprocalSqrt**(V a)</code>: returns an approximation
     of `1.0 / sqrt(a[i])`. `sqrt(a) ~= ApproximateReciprocalSqrt(a) * a`. x86
     and PPC provide 12-bit approximations but the error on Arm is closer to 1%.
 
-*   `V`: `f32` \
+*   `V`: `{f}` \
     <code>V **ApproximateReciprocal**(V a)</code>: returns an approximation of
     `1.0 / a[i]`.
 
@@ -629,11 +629,11 @@ Shift all lanes by the same (not necessarily compile-time constant) amount:
 
 Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
 
-*   `V`: `{u}, {i}{16,32,64}` \
+*   `V`: `{u,i}` \
     <code>V **operator<<**(V a, V b)</code> returns `a[i] << b[i]`. Currently
     unavailable on SVE/RVV; use the equivalent `Shl` instead.
 
-*   `V`: `{u}, {i}{16,32,64}` \
+*   `V`: `{u,i}` \
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`. Currently
     unavailable on SVE/RVV; use the equivalent `Shr` instead.
 
@@ -856,6 +856,24 @@ false is zero, true has all bits set:
     choose not to provide NotOr/NotXor because x86 and SVE only define one of
     these operations. This op is for situations where the inputs are known to be
     mutually exclusive.
+
+*   <code>M **SetOnlyFirst**(M m)</code>: If none of `m[i]` are true, returns
+    all-false. Otherwise, only lane `k` is true, where `k` is equal to
+    `FindKnownFirstTrue(m)`. In other words, sets to false any lanes with index
+    greater than the first true lane, if it exists.
+
+*   <code>M **SetBeforeFirst**(M m)</code>: If none of `m[i]` are true, returns
+    all-true. Otherwise, returns mask with the first `k` lanes true and all
+    remaining lanes false, where `k` is equal to `FindKnownFirstTrue(m)`. In
+    other words, if at least one of `m[i]` is true, sets to true any lanes with
+    index less than the first true lane and all remaining lanes to false.
+
+*   <code>M **SetAtOrBeforeFirst**(M m)</code>: equivalent to
+    `Or(SetBeforeFirst(m), SetOnlyFirst(m))`, but `SetAtOrBeforeFirst(m)` is
+    usually more efficient than `Or(SetBeforeFirst(m), SetOnlyFirst(m))`.
+
+*   <code>M **SetAtOrAfterFirst**(M m)</code>: equivalent to
+    `Not(SetBeforeFirst(m))`.
 
 #### Compress
 
@@ -1445,8 +1463,7 @@ instead because they are more general:
     blocks are taken from `a` and the even blocks from `b`. Returns `b` if the
     vector has no more than one block (i.e. is 128 bits or scalar).
 
-*   `V`: `{u,i,f}{32,64}` \
-    <code>V **DupEven**(V v)</code>: returns `r`, the result of copying even
+*   <code>V **DupEven**(V v)</code>: returns `r`, the result of copying even
     lanes to the next higher-indexed lane. For each even lane index `i`,
     `r[i] == v[i]` and `r[i + 1] == v[i]`.
 
@@ -1505,6 +1522,28 @@ instead because they are more general:
     <code>V **ReverseBits**(V a)</code> returns a vector where the bits of each
     lane are reversed.
 
+*   <code>V **Per4LaneBlockShuffle**&lt;size_t kIdx3, size_t kIdx2,
+    size_t kIdx1, size_t kIdx0&gt;(V v)</code> does a per 4-lane block shuffle
+    of `v` if `Lanes(DFromV<V>())` is greater than or equal to 4 or a shuffle of
+    the full vector if `Lanes(DFromV<V>())` is less than 4.
+
+    `kIdx0`, `kIdx1`, `kIdx2`, and `kIdx3` must all be between 0 and 3.
+
+    Per4LaneBlockShuffle is equivalent to doing a TableLookupLanes with the
+    following indices (but Per4LaneBlockShuffle is more efficient than
+    TableLookupLanes on some platforms):
+    `{kIdx0, kIdx1, kIdx2, kIdx3, kIdx0+4, kIdx1+4, kIdx2+4, kIdx3+4, ...}`
+
+    If `Lanes(DFromV<V>())` is less than 4 and `kIdx0 >= Lanes(DFromV<V>())` is
+    true, Per4LaneBlockShuffle returns an unspecified value in the first lane of
+    the result. Otherwise, Per4LaneBlockShuffle returns `v[kIdx0]` in the first
+    lane of the result.
+
+    If `Lanes(DFromV<V>())` is equal to 2 and `kIdx1 >= 2` is true,
+    Per4LaneBlockShuffle returns an unspecified value in the second lane of the
+    result. Otherwise, Per4LaneBlockShuffle returns `v[kIdx1]` in the first lane
+    of the result.
+
 The following `ReverseN` must not be called if `Lanes(D()) < N`:
 
 *   <code>V **Reverse2**(D, V a)</code> returns a vector with each group of 2
@@ -1518,8 +1557,7 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
 
 All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 
-*   `V`: `{u,i,f}{32,64}` \
-    <code>V **DupOdd**(V v)</code>: returns `r`, the result of copying odd lanes
+*   <code>V **DupOdd**(V v)</code>: returns `r`, the result of copying odd lanes
     to the previous lower-indexed lane. For each odd lane index `i`, `r[i] ==
     v[i]` and `r[i - 1] == v[i]`.
 

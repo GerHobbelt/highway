@@ -40,6 +40,31 @@ constexpr size_t MLenFromD(Simd<T, N, kPow2> /* tag */) {
   return HWY_MIN(64, sizeof(T) * 8 * 8 / detail::ScaleByPower(8, kPow2));
 }
 
+namespace detail {
+
+template <class D>
+class AdjustSimdTagToMinVecPow2_t {};
+
+template <typename T, size_t N, int kPow2>
+class AdjustSimdTagToMinVecPow2_t<Simd<T, N, kPow2>> {
+ private:
+  using D = Simd<T, N, kPow2>;
+  static constexpr int kMinVecPow2 =
+      -3 + static_cast<int>(FloorLog2(sizeof(T)));
+  static constexpr size_t kNumMaxLanes = HWY_MAX_LANES_D(D);
+  static constexpr int kNewPow2 = HWY_MAX(kPow2, kMinVecPow2);
+  static constexpr size_t kNewN = D::template NewN<kNewPow2, kNumMaxLanes>();
+
+ public:
+  using type = Simd<T, kNewN, kNewPow2>;
+};
+
+template <class D>
+using AdjustSimdTagToMinVecPow2 =
+    typename AdjustSimdTagToMinVecPow2_t<RemoveConst<D>>::type;
+
+}  // namespace detail
+
 // ================================================== MACROS
 
 // Generate specializations and function definitions using X macros. Although
@@ -1027,13 +1052,25 @@ HWY_RVV_FOREACH_I16(HWY_RVV_RETV_ARGVV, MulFixedPoint15, smul, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVV, Div, fdiv, _ALL)
 
 // ------------------------------ ApproximateReciprocal
-HWY_RVV_FOREACH_F32(HWY_RVV_RETV_ARGV, ApproximateReciprocal, frec7, _ALL)
+#ifdef HWY_NATIVE_F64_APPROX_RECIP
+#undef HWY_NATIVE_F64_APPROX_RECIP
+#else
+#define HWY_NATIVE_F64_APPROX_RECIP
+#endif
+
+HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGV, ApproximateReciprocal, frec7, _ALL)
 
 // ------------------------------ Sqrt
 HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGV, Sqrt, fsqrt, _ALL)
 
 // ------------------------------ ApproximateReciprocalSqrt
-HWY_RVV_FOREACH_F32(HWY_RVV_RETV_ARGV, ApproximateReciprocalSqrt, frsqrt7, _ALL)
+#ifdef HWY_NATIVE_F64_APPROX_RSQRT
+#undef HWY_NATIVE_F64_APPROX_RSQRT
+#else
+#define HWY_NATIVE_F64_APPROX_RSQRT
+#endif
+
+HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGV, ApproximateReciprocalSqrt, frsqrt7, _ALL)
 
 // ------------------------------ MulAdd
 
@@ -2350,6 +2387,20 @@ HWY_API TFromV<V> ExtractLane(const V v, size_t i) {
   return GetLane(detail::SlideDown(v, i));
 }
 
+// ------------------------------ Additional mask logical operations
+
+HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGM, SetOnlyFirst, sof)
+HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGM, SetBeforeFirst, sbf)
+HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGM, SetAtOrBeforeFirst, sif)
+
+#define HWY_RVV_SET_AT_OR_AFTER_FIRST(SEW, SHIFT, MLEN, NAME, OP) \
+  HWY_API HWY_RVV_M(MLEN) SetAtOrAfterFirst(HWY_RVV_M(MLEN) m) {  \
+    return Not(SetBeforeFirst(m));                                \
+  }
+
+HWY_RVV_FOREACH_B(HWY_RVV_SET_AT_OR_AFTER_FIRST, _, _)
+#undef HWY_RVV_SET_AT_OR_AFTER_FIRST
+
 // ------------------------------ InsertLane
 
 template <class V, HWY_IF_NOT_T_SIZE_V(V, 1)>
@@ -2361,10 +2412,6 @@ HWY_API V InsertLane(const V v, size_t i, TFromV<V> t) {
   return IfThenElse(RebindMask(d, is_i), Set(d, t), v);
 }
 
-namespace detail {
-HWY_RVV_FOREACH_B(HWY_RVV_RETM_ARGM, SetOnlyFirst, sof)
-}  // namespace detail
-
 // For 8-bit lanes, Iota0 might overflow.
 template <class V, HWY_IF_T_SIZE_V(V, 1)>
 HWY_API V InsertLane(const V v, size_t i, TFromV<V> t) {
@@ -2372,7 +2419,7 @@ HWY_API V InsertLane(const V v, size_t i, TFromV<V> t) {
   const auto zero = Zero(d);
   const auto one = Set(d, 1);
   const auto ge_i = Eq(detail::SlideUp(zero, one, i), one);
-  const auto is_i = detail::SetOnlyFirst(ge_i);
+  const auto is_i = SetOnlyFirst(ge_i);
   return IfThenElse(RebindMask(d, is_i), Set(d, t), v);
 }
 
@@ -2572,54 +2619,24 @@ HWY_API VFromD<D> Reverse(D /* tag */, VFromD<D> v) {
 // Shifting and adding requires fewer instructions than blending, but casting to
 // u32 only works for LMUL in [1/2, 8].
 
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_POW2_GT_D(D, -3)>
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Repartition<uint16_t, D> du16;
-  return BitCast(d, RotateRight<8>(BitCast(du16, v)));
-}
-// For LMUL < 1/4, we can extend and then truncate.
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_POW2_LE_D(D, -3)>
-HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Twice<decltype(d)> d2;
-  const Repartition<uint16_t, decltype(d2)> du16;
-  const auto vx = detail::Ext(d2, v);
-  const auto rx = BitCast(d2, RotateRight<8>(BitCast(du16, vx)));
-  return detail::Trunc(rx);
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint16_t, D>> du16;
+  return ResizeBitCast(d, RotateRight<8>(ResizeBitCast(du16, v)));
 }
 
-template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_POW2_GT_D(D, -2)>
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Repartition<uint32_t, D> du32;
-  return BitCast(d, RotateRight<16>(BitCast(du32, v)));
-}
-// For LMUL < 1/2, we can extend and then truncate.
-template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_POW2_LE_D(D, -2)>
-HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Twice<decltype(d)> d2;
-  const Twice<decltype(d2)> d4;
-  const Repartition<uint32_t, decltype(d4)> du32;
-  const auto vx = detail::Ext(d4, detail::Ext(d2, v));
-  const auto rx = BitCast(d4, RotateRight<16>(BitCast(du32, vx)));
-  return detail::Trunc(detail::Trunc(rx));
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint32_t, D>> du32;
+  return ResizeBitCast(d, RotateRight<16>(ResizeBitCast(du32, v)));
 }
 
 // Shifting and adding requires fewer instructions than blending, but casting to
 // u64 does not work for LMUL < 1.
-template <class D, HWY_IF_T_SIZE_D(D, 4), HWY_IF_POW2_GT_D(D, -1)>
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
 HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Repartition<uint64_t, decltype(d)> du64;
-  return BitCast(d, RotateRight<32>(BitCast(du64, v)));
-}
-
-// For fractions, we can extend and then truncate.
-template <class D, HWY_IF_T_SIZE_D(D, 4), HWY_IF_POW2_LE_D(D, -1)>
-HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
-  const Twice<decltype(d)> d2;
-  const Twice<decltype(d2)> d4;
-  const Repartition<uint64_t, decltype(d4)> du64;
-  const auto vx = detail::Ext(d4, detail::Ext(d2, v));
-  const auto rx = BitCast(d4, RotateRight<32>(BitCast(du64, vx)));
-  return detail::Trunc(detail::Trunc(rx));
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint64_t, D>> du64;
+  return ResizeBitCast(d, RotateRight<32>(ResizeBitCast(du64, v)));
 }
 
 template <class D, class V = VFromD<D>, HWY_IF_T_SIZE_D(D, 8)>
@@ -2633,8 +2650,8 @@ HWY_API V Reverse2(D /* tag */, const V v) {
 
 template <class D, HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
-  const Repartition<uint16_t, D> du16;
-  return BitCast(d, Reverse2(du16, BitCast(du16, Reverse2(d, v))));
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint16_t, D>> du16;
+  return ResizeBitCast(d, Reverse2(du16, ResizeBitCast(du16, Reverse2(d, v))));
 }
 
 template <class D, HWY_IF_NOT_T_SIZE_D(D, 1)>
@@ -2648,8 +2665,8 @@ HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
 
 template <class D, HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse8(D d, const VFromD<D> v) {
-  const Repartition<uint32_t, D> du32;
-  return BitCast(d, Reverse2(du32, BitCast(du32, Reverse4(d, v))));
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint32_t, D>> du32;
+  return ResizeBitCast(d, Reverse2(du32, ResizeBitCast(du32, Reverse4(d, v))));
 }
 
 template <class D, HWY_IF_NOT_T_SIZE_D(D, 1)>
@@ -2662,13 +2679,13 @@ HWY_API VFromD<D> Reverse8(D d, const VFromD<D> v) {
 // ------------------------------ ReverseBlocks (Reverse, Shuffle01)
 template <class D, class V = VFromD<D>>
 HWY_API V ReverseBlocks(D d, V v) {
-  const Repartition<uint64_t, D> du64;
+  const detail::AdjustSimdTagToMinVecPow2<Repartition<uint64_t, D>> du64;
   const size_t N = Lanes(du64);
   const auto rev =
       detail::ReverseSubS(detail::Iota0(du64), static_cast<uint64_t>(N - 1));
   // Swap lo/hi u64 within each block
   const auto idx = detail::XorS(rev, 1);
-  return BitCast(d, TableLookupLanes(BitCast(du64, v), idx));
+  return ResizeBitCast(d, TableLookupLanes(ResizeBitCast(du64, v), idx));
 }
 
 // ------------------------------ Compress
