@@ -855,7 +855,14 @@ HWY_API Vec512<float> Abs(const Vec512<float> v) {
   return Vec512<float>{_mm512_abs_ps(v.raw)};
 }
 HWY_API Vec512<double> Abs(const Vec512<double> v) {
+// Workaround: _mm512_abs_pd expects __m512, so implement it ourselves.
+#if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 803
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+  return And(v, BitCast(d, Set(du, 0x7FFFFFFFFFFFFFFFULL)));
+#else
   return Vec512<double>{_mm512_abs_pd(v.raw)};
+#endif
 }
 // ------------------------------ ShiftLeft
 
@@ -964,28 +971,79 @@ HWY_API Vec512<uint64_t> RotateRight(const Vec512<uint64_t> v) {
 
 // ------------------------------ ShiftLeftSame
 
+// GCC and older Clang do not follow the Intel documentation for AVX-512
+// shift-with-immediate: the counts should all be unsigned int.
+#if HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1100
+using Shift16Count = int;
+using Shift3264Count = int;
+#elif HWY_COMPILER_GCC_ACTUAL
+// GCC 11.0 requires these, prior versions used a macro+cast and don't care.
+using Shift16Count = int;
+using Shift3264Count = unsigned int;
+#else
+// Assume documented behavior. Clang 11 and MSVC 14.28.29910 match this.
+using Shift16Count = unsigned int;
+using Shift3264Count = unsigned int;
+#endif
+
 HWY_API Vec512<uint16_t> ShiftLeftSame(const Vec512<uint16_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint16_t>{
+        _mm512_slli_epi16(v.raw, static_cast<Shift16Count>(bits))};
+  }
+#endif
   return Vec512<uint16_t>{_mm512_sll_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 HWY_API Vec512<uint32_t> ShiftLeftSame(const Vec512<uint32_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint32_t>{
+        _mm512_slli_epi32(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<uint32_t>{_mm512_sll_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 HWY_API Vec512<uint64_t> ShiftLeftSame(const Vec512<uint64_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint64_t>{
+        _mm512_slli_epi64(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<uint64_t>{_mm512_sll_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 HWY_API Vec512<int16_t> ShiftLeftSame(const Vec512<int16_t> v, const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int16_t>{
+        _mm512_slli_epi16(v.raw, static_cast<Shift16Count>(bits))};
+  }
+#endif
   return Vec512<int16_t>{_mm512_sll_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 HWY_API Vec512<int32_t> ShiftLeftSame(const Vec512<int32_t> v, const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int32_t>{
+        _mm512_slli_epi32(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<int32_t>{_mm512_sll_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 HWY_API Vec512<int64_t> ShiftLeftSame(const Vec512<int64_t> v, const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int64_t>{
+        _mm512_slli_epi64(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<int64_t>{_mm512_sll_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
@@ -1001,14 +1059,32 @@ HWY_API Vec512<T> ShiftLeftSame(const Vec512<T> v, const int bits) {
 
 HWY_API Vec512<uint16_t> ShiftRightSame(const Vec512<uint16_t> v,
                                         const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint16_t>{
+        _mm512_srli_epi16(v.raw, static_cast<Shift16Count>(bits))};
+  }
+#endif
   return Vec512<uint16_t>{_mm512_srl_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 HWY_API Vec512<uint32_t> ShiftRightSame(const Vec512<uint32_t> v,
                                         const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint32_t>{
+        _mm512_srli_epi32(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<uint32_t>{_mm512_srl_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 HWY_API Vec512<uint64_t> ShiftRightSame(const Vec512<uint64_t> v,
                                         const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<uint64_t>{
+        _mm512_srli_epi64(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<uint64_t>{_mm512_srl_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
@@ -1021,15 +1097,33 @@ HWY_API Vec512<uint8_t> ShiftRightSame(Vec512<uint8_t> v, const int bits) {
 
 HWY_API Vec512<int16_t> ShiftRightSame(const Vec512<int16_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int16_t>{
+        _mm512_srai_epi16(v.raw, static_cast<Shift16Count>(bits))};
+  }
+#endif
   return Vec512<int16_t>{_mm512_sra_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 HWY_API Vec512<int32_t> ShiftRightSame(const Vec512<int32_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int32_t>{
+        _mm512_srai_epi32(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<int32_t>{_mm512_sra_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 HWY_API Vec512<int64_t> ShiftRightSame(const Vec512<int64_t> v,
                                        const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec512<int64_t>{
+        _mm512_srai_epi64(v.raw, static_cast<Shift3264Count>(bits))};
+  }
+#endif
   return Vec512<int64_t>{_mm512_sra_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 

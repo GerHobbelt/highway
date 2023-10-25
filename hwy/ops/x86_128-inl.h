@@ -2166,18 +2166,25 @@ HWY_API VFromD<D> Iota(D d, const T2 first) {
 
 // ------------------------------ FirstN (Iota, Lt)
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
-HWY_API MFromD<D> FirstN(D d, size_t num) {
+template <class D, class M = MFromD<D>, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API M FirstN(D d, size_t num) {
 #if HWY_TARGET <= HWY_AVX3
-  const uint64_t all = (1ull << MaxLanes(d)) - 1;
-  // BZHI only looks at the lower 8 bits of num!
-  const uint64_t bits = (num > 255) ? all : _bzhi_u64(all, num);
-  return MFromD<D>::FromBits(bits);
+  constexpr size_t kN = MaxLanes(d);
+#if HWY_ARCH_X86_64
+  const uint64_t all = (1ull << kN) - 1;
+  // BZHI only looks at the lower 8 bits of n!
+  return M::FromBits((num > 255) ? all : _bzhi_u64(all, num));
 #else
+  const uint32_t all = static_cast<uint32_t>((1ull << kN) - 1);
+  // BZHI only looks at the lower 8 bits of n!
+  return M::FromBits((num > 255) ? all
+                                 : _bzhi_u32(all, static_cast<uint32_t>(num)));
+#endif  // HWY_ARCH_X86_64
+#else   // HWY_TARGET > HWY_AVX3
   const RebindToSigned<decltype(d)> di;  // Signed comparisons are cheaper.
   using TI = TFromD<decltype(di)>;
   return RebindMask(d, Iota(di, 0) < Set(di, static_cast<TI>(num)));
-#endif
+#endif  // HWY_TARGET <= HWY_AVX3
 }
 
 // ================================================== MEMORY (2)
@@ -2869,34 +2876,64 @@ HWY_API Vec128<T, N> IfNegativeThenElse(Vec128<T, N> v, Vec128<T, N> yes,
 template <size_t N>
 HWY_API Vec128<uint16_t, N> ShiftLeftSame(const Vec128<uint16_t, N> v,
                                           const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint16_t, N>{_mm_slli_epi16(v.raw, bits)};
+  }
+#endif
   return Vec128<uint16_t, N>{_mm_sll_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 template <size_t N>
 HWY_API Vec128<uint32_t, N> ShiftLeftSame(const Vec128<uint32_t, N> v,
                                           const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint32_t, N>{_mm_slli_epi32(v.raw, bits)};
+  }
+#endif
   return Vec128<uint32_t, N>{_mm_sll_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 template <size_t N>
 HWY_API Vec128<uint64_t, N> ShiftLeftSame(const Vec128<uint64_t, N> v,
                                           const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint64_t, N>{_mm_slli_epi64(v.raw, bits)};
+  }
+#endif
   return Vec128<uint64_t, N>{_mm_sll_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 template <size_t N>
 HWY_API Vec128<int16_t, N> ShiftLeftSame(const Vec128<int16_t, N> v,
                                          const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int16_t, N>{_mm_slli_epi16(v.raw, bits)};
+  }
+#endif
   return Vec128<int16_t, N>{_mm_sll_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 template <size_t N>
 HWY_API Vec128<int32_t, N> ShiftLeftSame(const Vec128<int32_t, N> v,
                                          const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int32_t, N>{_mm_slli_epi32(v.raw, bits)};
+  }
+#endif
   return Vec128<int32_t, N>{_mm_sll_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 template <size_t N>
 HWY_API Vec128<int64_t, N> ShiftLeftSame(const Vec128<int64_t, N> v,
                                          const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int64_t, N>{_mm_slli_epi64(v.raw, bits)};
+  }
+#endif
   return Vec128<int64_t, N>{_mm_sll_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
@@ -2914,16 +2951,31 @@ HWY_API Vec128<T, N> ShiftLeftSame(const Vec128<T, N> v, const int bits) {
 template <size_t N>
 HWY_API Vec128<uint16_t, N> ShiftRightSame(const Vec128<uint16_t, N> v,
                                            const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint16_t, N>{_mm_srli_epi16(v.raw, bits)};
+  }
+#endif
   return Vec128<uint16_t, N>{_mm_srl_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 template <size_t N>
 HWY_API Vec128<uint32_t, N> ShiftRightSame(const Vec128<uint32_t, N> v,
                                            const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint32_t, N>{_mm_srli_epi32(v.raw, bits)};
+  }
+#endif
   return Vec128<uint32_t, N>{_mm_srl_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 template <size_t N>
 HWY_API Vec128<uint64_t, N> ShiftRightSame(const Vec128<uint64_t, N> v,
                                            const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<uint64_t, N>{_mm_srli_epi64(v.raw, bits)};
+  }
+#endif
   return Vec128<uint64_t, N>{_mm_srl_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
@@ -2940,18 +2992,33 @@ HWY_API Vec128<uint8_t, N> ShiftRightSame(Vec128<uint8_t, N> v,
 template <size_t N>
 HWY_API Vec128<int16_t, N> ShiftRightSame(const Vec128<int16_t, N> v,
                                           const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int16_t, N>{_mm_srai_epi16(v.raw, bits)};
+  }
+#endif
   return Vec128<int16_t, N>{_mm_sra_epi16(v.raw, _mm_cvtsi32_si128(bits))};
 }
 
 template <size_t N>
 HWY_API Vec128<int32_t, N> ShiftRightSame(const Vec128<int32_t, N> v,
                                           const int bits) {
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int32_t, N>{_mm_srai_epi32(v.raw, bits)};
+  }
+#endif
   return Vec128<int32_t, N>{_mm_sra_epi32(v.raw, _mm_cvtsi32_si128(bits))};
 }
 template <size_t N>
 HWY_API Vec128<int64_t, N> ShiftRightSame(const Vec128<int64_t, N> v,
                                           const int bits) {
 #if HWY_TARGET <= HWY_AVX3
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(bits)) {
+    return Vec128<int64_t, N>{_mm_srai_epi64(v.raw, bits)};
+  }
+#endif
   return Vec128<int64_t, N>{_mm_sra_epi64(v.raw, _mm_cvtsi32_si128(bits))};
 #else
   const DFromV<decltype(v)> di;
