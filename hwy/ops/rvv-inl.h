@@ -914,7 +914,8 @@ HWY_API V RotateRight(const V v) {
   constexpr size_t kSizeInBits = sizeof(TFromV<V>) * 8;
   static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
   if (kBits == 0) return v;
-  return Or(ShiftRight<kBits>(v), ShiftLeft<kSizeInBits - kBits>(v));
+  return Or(ShiftRight<kBits>(v),
+            ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
 }
 
 // ------------------------------ Shl
@@ -2400,11 +2401,42 @@ HWY_API V InsertLane(const V v, size_t i, TFromV<V> t) {
 }
 
 // ------------------------------ OddEven
+
+namespace detail {
+
+// Faster version using a wide constant instead of Iota0 + AndS.
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 8)>
+HWY_INLINE MFromD<D> IsEven(D d) {
+  const RebindToUnsigned<decltype(d)> du;
+  const RepartitionToWide<decltype(du)> duw;
+  return RebindMask(d, detail::NeS(BitCast(du, Set(duw, 1)), 0u));
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE MFromD<D> IsEven(D d) {
+  const RebindToUnsigned<decltype(d)> du;  // Iota0 is unsigned only
+  return detail::EqS(detail::AndS(detail::Iota0(du), 1), 0);
+}
+
+// Also provide the negated form because there is no native CompressNot.
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 8)>
+HWY_INLINE MFromD<D> IsOdd(D d) {
+  const RebindToUnsigned<decltype(d)> du;
+  const RepartitionToWide<decltype(du)> duw;
+  return RebindMask(d, detail::EqS(BitCast(du, Set(duw, 1)), 0u));
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE MFromD<D> IsOdd(D d) {
+  const RebindToUnsigned<decltype(d)> du;  // Iota0 is unsigned only
+  return detail::NeS(detail::AndS(detail::Iota0(du), 1), 0);
+}
+
+}  // namespace detail
+
 template <class V>
 HWY_API V OddEven(const V a, const V b) {
-  const RebindToUnsigned<DFromV<V>> du;  // Iota0 is unsigned only
-  const auto is_even = detail::EqS(detail::AndS(detail::Iota0(du), 1), 0);
-  return IfThenElse(is_even, b, a);
+  return IfThenElse(detail::IsEven(DFromV<V>()), b, a);
 }
 
 // ------------------------------ DupEven (OddEven)
@@ -2503,28 +2535,6 @@ HWY_RVV_FOREACH_UI08(HWY_RVV_MASKED_TABLE16, MaskedTableLookupLanes16,
 
 }  // namespace detail
 
-// ------------------------------ ConcatOdd (TableLookupLanes)
-template <class D, class V>
-HWY_API V ConcatOdd(D d, const V hi, const V lo) {
-  const RebindToUnsigned<decltype(d)> du;  // Iota0 is unsigned only
-  const auto iota = detail::Iota0(du);
-  const auto idx = detail::AddS(Add(iota, iota), 1);
-  const auto lo_odd = TableLookupLanes(lo, idx);
-  const auto hi_odd = TableLookupLanes(hi, idx);
-  return detail::SlideUp(lo_odd, hi_odd, Lanes(d) / 2);
-}
-
-// ------------------------------ ConcatEven (TableLookupLanes)
-template <class D, class V>
-HWY_API V ConcatEven(D d, const V hi, const V lo) {
-  const RebindToUnsigned<decltype(d)> du;  // Iota0 is unsigned only
-  const auto iota = detail::Iota0(du);
-  const auto idx = Add(iota, iota);
-  const auto lo_even = TableLookupLanes(lo, idx);
-  const auto hi_even = TableLookupLanes(hi, idx);
-  return detail::SlideUp(lo_even, hi_even, Lanes(d) / 2);
-}
-
 // ------------------------------ Reverse (TableLookupLanes)
 template <class D>
 HWY_API VFromD<D> Reverse(D /* tag */, VFromD<D> v) {
@@ -2538,8 +2548,31 @@ HWY_API VFromD<D> Reverse(D /* tag */, VFromD<D> v) {
 
 // ------------------------------ Reverse2 (RotateRight, OddEven)
 
+// Per-target flags to prevent generic_ops-inl.h defining 8-bit Reverse2/4/8.
+#ifdef HWY_NATIVE_REVERSE2_8
+#undef HWY_NATIVE_REVERSE2_8
+#else
+#define HWY_NATIVE_REVERSE2_8
+#endif
+
 // Shifting and adding requires fewer instructions than blending, but casting to
 // u32 only works for LMUL in [1/2, 8].
+
+template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_RVV_IF_POW2_IN(D, -2, 3)>
+HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
+  const Repartition<uint16_t, D> du16;
+  return BitCast(d, RotateRight<8>(BitCast(du16, v)));
+}
+// For LMUL < 1/4, we can extend and then truncate.
+template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_RVV_IF_POW2_IN(D, -3, -3)>
+HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
+  const Twice<decltype(d)> d2;
+  const Repartition<uint16_t, decltype(d2)> du16;
+  const auto vx = detail::Ext(d2, v);
+  const auto rx = BitCast(d2, RotateRight<8>(BitCast(du16, vx)));
+  return detail::Trunc(rx);
+}
+
 template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_RVV_IF_POW2_IN(D, -1, 3)>
 HWY_API VFromD<D> Reverse2(D d, const VFromD<D> v) {
   const Repartition<uint32_t, D> du32;
@@ -2583,7 +2616,14 @@ HWY_API V Reverse2(D /* tag */, const V v) {
 }
 
 // ------------------------------ Reverse4 (TableLookupLanes)
-template <class D>
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
+  const Repartition<uint16_t, D> du16;
+  return BitCast(d, Reverse2(du16, BitCast(du16, Reverse2(d, v))));
+}
+
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
   const RebindToUnsigned<D> du;
   const auto idx = detail::XorS(detail::Iota0(du), 3);
@@ -2591,7 +2631,14 @@ HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
 }
 
 // ------------------------------ Reverse8 (TableLookupLanes)
-template <class D>
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API VFromD<D> Reverse8(D d, const VFromD<D> v) {
+  const Repartition<uint32_t, D> du32;
+  return BitCast(d, Reverse2(du32, BitCast(du32, Reverse4(d, v))));
+}
+
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse8(D d, const VFromD<D> v) {
   const RebindToUnsigned<D> du;
   const auto idx = detail::XorS(detail::Iota0(du), 7);
@@ -2716,6 +2763,82 @@ HWY_API size_t CompressBlendedStore(const V v, const M mask, const D d,
   const size_t count = CountTrue(d, mask);
   detail::StoreN(count, Compress(v, mask), d, unaligned);
   return count;
+}
+
+// ------------------------------ ConcatOdd (Compress)
+
+namespace detail {
+
+#define HWY_RVV_NARROW(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, SHIFT, \
+                       MLEN, NAME, OP)                                         \
+  template <size_t kShift>                                                     \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL) NAME(HWY_RVV_V(BASE, SEWD, LMULD) v) {    \
+    return __riscv_v##OP##_wx_##CHAR##SEW##LMUL(v, kShift,                     \
+                                                HWY_RVV_AVL(SEWD, SHIFT + 1)); \
+  }
+
+HWY_RVV_FOREACH_U08(HWY_RVV_NARROW, Narrow, nsrl, _EXT)
+HWY_RVV_FOREACH_U16(HWY_RVV_NARROW, Narrow, nsrl, _EXT)
+HWY_RVV_FOREACH_U32(HWY_RVV_NARROW, Narrow, nsrl, _EXT)
+#undef HWY_RVV_NARROW
+
+}  // namespace detail
+
+// Casting to wider and narrowing is the fastest for < 64-bit lanes.
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 8), HWY_RVV_IF_POW2_IN(D, -3, 2)>
+HWY_API VFromD<D> ConcatOdd(D d, VFromD<D> hi, VFromD<D> lo) {
+  constexpr size_t kBits = sizeof(TFromD<D>) * 8;
+  const Twice<decltype(d)> dt;
+  const RepartitionToWide<RebindToUnsigned<decltype(dt)>> dtuw;
+  const VFromD<decltype(dtuw)> hl = BitCast(dtuw, Combine(dt, hi, lo));
+  return BitCast(d, detail::Narrow<kBits>(hl));
+}
+
+// 64-bit: Combine+Compress.
+template <class D, HWY_IF_T_SIZE_D(D, 8), HWY_RVV_IF_POW2_IN(D, -3, 2)>
+HWY_API VFromD<D> ConcatOdd(D d, VFromD<D> hi, VFromD<D> lo) {
+  const Twice<decltype(d)> dt;
+  const VFromD<decltype(dt)> hl = Combine(dt, hi, lo);
+  return LowerHalf(d, Compress(hl, detail::IsOdd(dt)));
+}
+
+// Any type, max LMUL: Compress both, then Combine.
+template <class D, HWY_RVV_IF_POW2_IN(D, 3, 3)>
+HWY_API VFromD<D> ConcatOdd(D d, VFromD<D> hi, VFromD<D> lo) {
+  const Half<decltype(d)> dh;
+  const MFromD<D> is_odd = detail::IsOdd(d);
+  const VFromD<decltype(d)> hi_odd = Compress(hi, is_odd);
+  const VFromD<decltype(d)> lo_odd = Compress(lo, is_odd);
+  return Combine(d, LowerHalf(dh, hi_odd), LowerHalf(dh, lo_odd));
+}
+
+// ------------------------------ ConcatEven (Compress)
+
+// Casting to wider and narrowing is the fastest for < 64-bit lanes.
+template <class D, HWY_IF_NOT_T_SIZE_D(D, 8), HWY_RVV_IF_POW2_IN(D, -3, 2)>
+HWY_API VFromD<D> ConcatEven(D d, VFromD<D> hi, VFromD<D> lo) {
+  const Twice<decltype(d)> dt;
+  const RepartitionToWide<RebindToUnsigned<decltype(dt)>> dtuw;
+  const VFromD<decltype(dtuw)> hl = BitCast(dtuw, Combine(dt, hi, lo));
+  return BitCast(d, detail::Narrow<0>(hl));
+}
+
+// 64-bit: Combine+Compress.
+template <class D, HWY_IF_T_SIZE_D(D, 8), HWY_RVV_IF_POW2_IN(D, -3, 2)>
+HWY_API VFromD<D> ConcatEven(D d, VFromD<D> hi, VFromD<D> lo) {
+  const Twice<decltype(d)> dt;
+  const VFromD<decltype(dt)> hl = Combine(dt, hi, lo);
+  return LowerHalf(d, Compress(hl, detail::IsEven(dt)));
+}
+
+// Any type, max LMUL: Compress both, then Combine.
+template <class D, HWY_RVV_IF_POW2_IN(D, 3, 3)>
+HWY_API VFromD<D> ConcatEven(D d, VFromD<D> hi, VFromD<D> lo) {
+  const Half<decltype(d)> dh;
+  const MFromD<D> is_even = detail::IsEven(d);
+  const VFromD<decltype(d)> hi_even = Compress(hi, is_even);
+  const VFromD<decltype(d)> lo_even = Compress(lo, is_even);
+  return Combine(d, LowerHalf(dh, hi_even), LowerHalf(dh, lo_even));
 }
 
 // ================================================== BLOCKWISE
