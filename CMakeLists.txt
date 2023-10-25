@@ -25,7 +25,9 @@ if(POLICY CMP0111)
   cmake_policy(SET CMP0111 OLD)
 endif()
 
-project(hwy VERSION 1.0.2)  # Keep in sync with highway.h version
+project(hwy VERSION 1.0.3)  # Keep in sync with highway.h version
+# `hwy` is lowercase to handle find_package() in Config mode:
+set(namespace "${PROJECT_NAME}::")
 
 # Directly define the ABI version from the cmake project() version values:
 set(LIBRARY_VERSION "${hwy_VERSION}")
@@ -366,7 +368,7 @@ endif()
 # -------------------------------------------------------- install library
 if (HWY_ENABLE_INSTALL)
 
-install(TARGETS hwy
+install(TARGETS hwy EXPORT hwy_targets
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
@@ -381,7 +383,7 @@ foreach (source ${HWY_SOURCES})
 endforeach()
 
 if (HWY_ENABLE_CONTRIB)
-install(TARGETS hwy_contrib
+install(TARGETS hwy_contrib EXPORT hwy_targets
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
@@ -396,7 +398,7 @@ foreach (source ${HWY_CONTRIB_SOURCES})
 endforeach()
 endif()  # HWY_ENABLE_CONTRIB
 
-install(TARGETS hwy_test
+install(TARGETS hwy_test EXPORT hwy_targets
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
@@ -571,3 +573,9 @@ endforeach ()
 target_sources(skeleton_test PRIVATE hwy/examples/skeleton.cc)
 
 endif()  # BUILD_TESTING
+
+# write hwy-config file to handle `Config` mode
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/hwy-config-version.cmake" COMPATIBILITY SameMajorVersion)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/hwy-config-version.cmake" DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hwy")
+install(EXPORT hwy_targets NAMESPACE "${namespace}" FILE hwy-config.cmake DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hwy")

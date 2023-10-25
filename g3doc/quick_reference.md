@@ -154,6 +154,12 @@ lane count, thus avoiding the need for a second loop to handle remainders.
     sizes of the largest and smallest type, and smaller `d` to be obtained via
     `Half<DLarger>`.
 
+    For other targets, `kPow2` must lie within [HWY_MIN_POW2, HWY_MAX_POW2]. The
+    `*Tag` aliases clamp to the upper bound but your code should ensure the
+    lower bound is not exceeded, typically by specializing compile-time
+    recursions for `kPow2` = `HWY_MIN_POW2` (this avoids compile errors when
+    `kPow2` is low enough that it is no longer a valid shift count).
+
 *   Less common: `CappedTag<T, kCap> d` or the macro form `HWY_CAPPED(T, kCap)
     d;`. These select vectors or masks where *no more than* the largest power of
     two not exceeding `kCap` lanes have observable effects such as
@@ -879,8 +885,8 @@ aligned memory at indices which are not a multiple of the vector length):
     `p[i]` or zero if the `mask` governing element `i` is false. May fault even
     where `mask` is false `#if HWY_MEM_OPS_MIGHT_FAULT`. If `p` is aligned,
     faults cannot happen unless the entire vector is inaccessible. Equivalent
-    to, and potentially more efficient than, `IfThenElseZero(mask, Load(D(),
-    aligned))`.
+    to, and potentially more efficient than, `IfThenElseZero(mask, LoadU(D(),
+    p))`.
 
 *   <code>void **LoadInterleaved2**(D, const T* p, Vec&lt;D&gt;&amp; v0,
     Vec&lt;D&gt;&amp; v1)</code>: equivalent to `LoadU` into `v0, v1` followed
