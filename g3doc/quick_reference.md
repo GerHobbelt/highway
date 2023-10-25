@@ -442,7 +442,7 @@ time-critical code:
 As a partial workaround to the "no vectors as class members" compiler limitation
 mentioned in "Using unspecified vector types", we provide special types able to
 carry 2, 3 or 4 vectors, denoted `Tuple{2-4}` below. Their type is unspecified,
-potentially built-in, so use the aliases `Vec{2-4}&lt;D&gt;`. These can (only)
+potentially built-in, so use the aliases `Vec{2-4}<D>`. These can (only)
 be passed as arguments or returned from functions, and created/accessed using
 the functions in this section.
 
@@ -1195,8 +1195,8 @@ All functions except `Stream` are defined in cache_control.h.
     of `Lanes(D()) * sizeof(TFromD<D>)` bytes, and then returns the bits of the
     resized vector reinterpreted as type `Vec<D>`.
 
-    If `Vec<D>` is a larger vector than `V`, then the contents of any bytes
-    past the first `Lanes(DFromV<V>()) * sizeof(TFromV<V>)` bytes of the result
+    If `Vec<D>` is a larger vector than `V`, then the contents of any bytes past
+    the first `Lanes(DFromV<V>()) * sizeof(TFromV<V>)` bytes of the result
     vector is unspecified.
 
 *   <code>Vec&lt;DTo&gt; **ZeroExtendResizeBitCast**(DTo, DFrom, V)</code>:
@@ -1204,23 +1204,22 @@ All functions except `Stream` are defined in cache_control.h.
     `Lanes(D()) * sizeof(TFromD<D>)` bytes, and then returns the bits of the
     resized vector reinterpreted as type `Vec<DTo>`.
 
-    If `Lanes(DTo()) * sizeof(TFromD<DTo>)` is greater than
-    `Lanes(DFrom()) * sizeof(TFromD<DFrom>)`, then any bytes past the first
-    `Lanes(DFrom()) * sizeof(TFromD<DFrom>)` bytes of the result vector are
-    zeroed out.
+    If `Lanes(DTo()) * sizeof(TFromD<DTo>)` is greater than `Lanes(DFrom()) *
+    sizeof(TFromD<DFrom>)`, then any bytes past the first `Lanes(DFrom()) *
+    sizeof(TFromD<DFrom>)` bytes of the result vector are zeroed out.
 
 *   `V`,`V8`: (`u32,u8`) \
     <code>V8 **U8FromU32**(V)</code>: special-case `u32` to `u8` conversion when
     all lanes of `V` are already clamped to `[0, 256)`.
 
-*   `V`,`D`: (`i32`,`f32`), (`i64`,`f64`) \
-    <code>Vec&lt;D&gt; **ConvertTo**(D, V)</code>: converts an integer value to
-    same-sized floating point.
+*   `D`: `{f}` \
+    <code>Vec&lt;D&gt; **ConvertTo**(D, V)</code>: converts a signed/unsigned
+    integer value to same-sized floating point.
 
-*   `V`,`D`: (`f32`,`i32`), (`f64`,`i64`) \
+*   `V`: `{f}` \
     <code>Vec&lt;D&gt; **ConvertTo**(D, V)</code>: rounds floating point towards
-    zero and converts the value to same-sized integer. Returns the closest
-    representable value if the input exceeds the destination range.
+    zero and converts the value to same-sized signed/unsigned integer. Returns
+    the closest representable value if the input exceeds the destination range.
 
 *   `V`: `f32`; `Ret`: `i32` \
     <code>Ret **NearestInt**(V a)</code>: returns the integer nearest to `a[i]`;
@@ -1777,7 +1776,9 @@ instead of `HWY_HAVE_FLOAT64`, which describes the current target.
 *   `HWY_IDE` is 0 except when parsed by IDEs; adding it to conditions such as
     `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.
 
-The following indicate support for certain lane types and expand to 1 or 0:
+The following indicate full support for certain lane types and expand to 1 or 0.
+Note that minimal support (Zero, BitCast, Load/Store, Neg, PromoteTo/DemoteTo)
+is always available for float16_t and bfloat16_t.
 
 *   `HWY_HAVE_INTEGER64`: support for 64-bit signed/unsigned integer lanes.
 *   `HWY_HAVE_FLOAT16`: support for 16-bit floating-point lanes.
@@ -1885,12 +1886,21 @@ code size.
 
 ## Compiler support
 
-Clang and GCC require e.g. -mavx2 flags in order to use SIMD intrinsics.
-However, this enables AVX2 instructions in the entire translation unit, which
-may violate the one-definition rule and cause crashes. Instead, we use
-target-specific attributes introduced via #pragma. Function using SIMD must
-reside between `HWY_BEFORE_NAMESPACE` and `HWY_AFTER_NAMESPACE`. Alternatively,
-individual functions or lambdas may be prefixed with `HWY_ATTR`.
+Clang and GCC require opting into SIMD intrinsics, e.g. via `-mavx2` flags.
+However, the flag enables AVX2 instructions in the entire translation unit,
+which may violate the one-definition rule (that all versions of a function such
+as `std::abs` are equivalent, thus the linker may choose any). This can cause
+crashes if non-SIMD functions are defined outside of a target-specific
+namespace, and the linker happens to choose the AVX2 version, which means it may
+be called without verifying AVX2 is indeed supported.
+
+To prevent this problem, we use target-specific attributes introduced via
+`#pragma`. Function using SIMD must reside between `HWY_BEFORE_NAMESPACE` and
+`HWY_AFTER_NAMESPACE`. Conversely, non-SIMD functions and in particular,
+#include of normal or standard library headers must NOT reside between
+`HWY_BEFORE_NAMESPACE` and `HWY_AFTER_NAMESPACE`. Alternatively, individual
+functions may be prefixed with `HWY_ATTR`, which is more verbose, but ensures
+that `#include`-d functions are not covered by target-specific attributes.
 
 If you know the SVE vector width and are using static dispatch, you can specify
 `-march=armv9-a+sve2-aes -msve-vector-bits=128` and Highway will then use

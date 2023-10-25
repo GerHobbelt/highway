@@ -372,12 +372,11 @@ class ForShrinkableVectors {
     (void)max_lanes;
 #if HWY_TARGET == HWY_SCALAR
     // not supported
+#elif HWY_HAVE_SCALABLE
+    detail::ForeachPow2Trim<T, kPow2, 0, Test>::Do(kMinLanes);
 #else
     detail::ForeachCappedR<T, (kMaxCapped >> kPow2), kMinLanes, Test>::Do(
         kMinLanes, max_lanes);
-#if HWY_HAVE_SCALABLE
-    detail::ForeachPow2Trim<T, kPow2, 0, Test>::Do(kMinLanes);
-#endif
 #endif  // HWY_TARGET == HWY_SCALAR
   }
 };
@@ -623,11 +622,19 @@ void ForIntegerTypes(const Func& func) {
 }
 
 template <class Func>
-void ForFloatTypes(const Func& func) {
+void ForFloat3264Types(const Func& func) {
   func(float());
 #if HWY_HAVE_FLOAT64
   func(double());
 #endif
+}
+
+template <class Func>
+void ForFloatTypes(const Func& func) {
+#if HWY_HAVE_FLOAT16
+  func(float16_t());
+#endif
+  ForFloat3264Types(func);
 }
 
 template <class Func>

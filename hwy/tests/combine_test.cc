@@ -284,27 +284,25 @@ HWY_NOINLINE void TestAllConcatOddEven() {
   ForAllTypes(ForShrinkableVectors<TestConcatOddEven>());
 }
 
-class TestTruncatingResizeBitCast {
 #if HWY_TARGET != HWY_SCALAR
 
- private:
-  template <class DTo, class DFrom>
-  static HWY_INLINE void DoTruncResizeBitCastTest(DTo d_to, DFrom d_from) {
-    const VFromD<DFrom> v = Iota(d_from, 1);
-    const VFromD<DTo> expected = Iota(d_to, 1);
+template <class DTo, class DFrom>
+HWY_INLINE void DoTruncResizeBitCastTest(DTo d_to, DFrom d_from) {
+  if (Lanes(d_to) == 0) return;
 
-    const VFromD<DTo> actual_1 = ResizeBitCast(d_to, v);
-    HWY_ASSERT_VEC_EQ(d_to, expected, actual_1);
+  const VFromD<DFrom> v = Iota(d_from, 1);
+  const VFromD<DTo> expected = Iota(d_to, 1);
 
-    const VFromD<DTo> actual_2 = ZeroExtendResizeBitCast(d_to, d_from, v);
-    HWY_ASSERT_VEC_EQ(d_to, expected, actual_2);
-  }
-#endif  // HWY_TARGET != HWY_SCALAR
+  const VFromD<DTo> actual_1 = ResizeBitCast(d_to, v);
+  HWY_ASSERT_VEC_EQ(d_to, expected, actual_1);
 
- public:
+  const VFromD<DTo> actual_2 = ZeroExtendResizeBitCast(d_to, d_from, v);
+  HWY_ASSERT_VEC_EQ(d_to, expected, actual_2);
+}
+
+struct TestTruncatingResizeBitCastHalf {
   template <class T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
-#if HWY_TARGET != HWY_SCALAR
     const Half<D> dh;
     DoTruncResizeBitCastTest(dh, d);
 
@@ -313,46 +311,37 @@ class TestTruncatingResizeBitCast {
     HWY_ASSERT_VEC_EQ(dh, expected_full_to_half, ResizeBitCast(dh, v_full));
     HWY_ASSERT_VEC_EQ(dh, expected_full_to_half,
                       ZeroExtendResizeBitCast(dh, d, v_full));
-
-    constexpr size_t kMaxLanes = MaxLanes(d);
-#if HWY_TARGET == HWY_RVV
-    constexpr int kFromVectPow2 = DFromV<VFromD<D>>().Pow2();
-    static_assert(kFromVectPow2 >= -3 && kFromVectPow2 <= 3,
-                  "kFromVectPow2 must be between -3 and 3");
-
-    constexpr size_t kScaledMaxLanes =
-        HWY_MAX((kMaxLanes << 3) >> (kFromVectPow2 + 3), 1);
-    constexpr int kMinPow2 = -3 + static_cast<int>(FloorLog2(sizeof(T)));
-    static_assert(kMinPow2 >= -3 && kMinPow2 <= 0,
-                  "kMinPow2 must be between -3 and 0");
-
-    constexpr size_t kQuarterScaledMaxLanes = kScaledMaxLanes;
-    constexpr size_t kEighthScaledMaxLanes = kScaledMaxLanes;
-    constexpr int kQuarterPow2 = HWY_MAX(kFromVectPow2 - 2, kMinPow2);
-    constexpr int kEighthPow2 = HWY_MAX(kFromVectPow2 - 3, kMinPow2);
-#else
-    constexpr size_t kQuarterScaledMaxLanes = HWY_MAX(kMaxLanes / 4, 1);
-    constexpr size_t kEighthScaledMaxLanes = HWY_MAX(kMaxLanes / 8, 1);
-    constexpr int kQuarterPow2 = 0;
-    constexpr int kEighthPow2 = 0;
-#endif
-
-    const CappedTag<T, kQuarterScaledMaxLanes, kQuarterPow2> d_quarter;
-    const CappedTag<T, kEighthScaledMaxLanes, kEighthPow2> d_eighth;
-    if (MaxLanes(d_quarter) == kMaxLanes / 4) {
-      DoTruncResizeBitCastTest(d_quarter, d);
-      if (MaxLanes(d_eighth) == kMaxLanes / 8) {
-        DoTruncResizeBitCastTest(d_eighth, d);
-      }
-    }
-#else
-    (void)d;
-#endif  // HWY_TARGET != HWY_SCALAR
   }
 };
 
+struct TestTruncatingResizeBitCastQuarter {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const Half<Half<decltype(d)>> d_quarter;
+    if (MaxLanes(d_quarter) == MaxLanes(d) / 4) {
+      DoTruncResizeBitCastTest(d_quarter, d);
+    }
+  }
+};
+
+struct TestTruncatingResizeBitCastEighth {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const Half<Half<Half<decltype(d)>>> d_eighth;
+    if (MaxLanes(d_eighth) == MaxLanes(d) / 8) {
+      DoTruncResizeBitCastTest(d_eighth, d);
+    }
+  }
+};
+
+#endif  // HWY_TARGET != HWY_SCALAR
+
 HWY_NOINLINE void TestAllTruncatingResizeBitCast() {
-  ForAllTypes(ForShrinkableVectors<TestTruncatingResizeBitCast>());
+#if HWY_TARGET != HWY_SCALAR
+  ForAllTypes(ForShrinkableVectors<TestTruncatingResizeBitCastHalf, 1>());
+  ForAllTypes(ForShrinkableVectors<TestTruncatingResizeBitCastQuarter, 2>());
+  ForAllTypes(ForShrinkableVectors<TestTruncatingResizeBitCastEighth, 3>());
+#endif
 }
 
 class TestExtendingResizeBitCast {
