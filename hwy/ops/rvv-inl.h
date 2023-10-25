@@ -1561,22 +1561,53 @@ HWY_RVV_FOREACH_F32(HWY_RVV_PROMOTE, PromoteTo, fwcvt_f_f_v_, _EXT_VIRT)
   HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m4, m2, 1, 1)   \
   HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m8, m4, 2, 1)
 
-#define HWY_RVV_PROMOTE_X4(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN)         \
-  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, mf2, mf8, -3, 2) \
-  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m1, mf4, -2, 2)  \
-  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m2, mf2, -1, 2)  \
-  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m4, m1, 0, 2)    \
+#define HWY_RVV_PROMOTE_X4(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN)        \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m1, mf4, -2, 2) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m2, mf2, -1, 2) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m4, m1, 0, 2)   \
   HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m8, m2, 1, 2)
 
-HWY_RVV_PROMOTE_X4(zext_vf4_, uint, u, 32, uint, 8)
-HWY_RVV_PROMOTE_X4(sext_vf4_, int, i, 32, int, 8)
+#define HWY_RVV_PROMOTE_X4_FROM_U8(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, mf2, mf8, -3, 2) \
+  HWY_RVV_PROMOTE_X4(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN)
+
+#define HWY_RVV_PROMOTE_X8(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN)        \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m1, mf8, -3, 3) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m2, mf4, -2, 3) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m4, mf2, -1, 3) \
+  HWY_RVV_PROMOTE(OP, BASE, CHAR, BITS, BASE_IN, BITS_IN, m8, m1, 0, 3)
+
+HWY_RVV_PROMOTE_X8(zext_vf8_, uint, u, 64, uint, 8)
+HWY_RVV_PROMOTE_X8(sext_vf8_, int, i, 64, int, 8)
+
+HWY_RVV_PROMOTE_X4_FROM_U8(zext_vf4_, uint, u, 32, uint, 8)
+HWY_RVV_PROMOTE_X4_FROM_U8(sext_vf4_, int, i, 32, int, 8)
+HWY_RVV_PROMOTE_X4(zext_vf4_, uint, u, 64, uint, 16)
+HWY_RVV_PROMOTE_X4(sext_vf4_, int, i, 64, int, 16)
 
 // i32 to f64
 HWY_RVV_PROMOTE_X2(fwcvt_f_x_v_, float, f, 64, int, 32)
 
+#undef HWY_RVV_PROMOTE_X8
+#undef HWY_RVV_PROMOTE_X4_FROM_U8
 #undef HWY_RVV_PROMOTE_X4
 #undef HWY_RVV_PROMOTE_X2
 #undef HWY_RVV_PROMOTE
+
+// I16->I64 or U16->U64 PromoteTo with virtual LMUL
+template <size_t N>
+HWY_API auto PromoteTo(Simd<int64_t, N, -1> d,
+                       VFromD<Rebind<int16_t, decltype(d)>> v)
+    -> VFromD<decltype(d)> {
+  return PromoteTo(ScalableTag<int64_t>(), v);
+}
+
+template <size_t N>
+HWY_API auto PromoteTo(Simd<uint64_t, N, -1> d,
+                       VFromD<Rebind<uint16_t, decltype(d)>> v)
+    -> VFromD<decltype(d)> {
+  return PromoteTo(ScalableTag<uint64_t>(), v);
+}
 
 // Unsigned to signed: cast for unsigned promote.
 template <size_t N, int kPow2>
@@ -1596,6 +1627,27 @@ HWY_API auto PromoteTo(Simd<int32_t, N, kPow2> d,
 template <size_t N, int kPow2>
 HWY_API auto PromoteTo(Simd<int32_t, N, kPow2> d,
                        VFromD<Rebind<uint16_t, decltype(d)>> v)
+    -> VFromD<decltype(d)> {
+  return BitCast(d, PromoteTo(RebindToUnsigned<decltype(d)>(), v));
+}
+
+template <size_t N, int kPow2>
+HWY_API auto PromoteTo(Simd<int64_t, N, kPow2> d,
+                       VFromD<Rebind<uint32_t, decltype(d)>> v)
+    -> VFromD<decltype(d)> {
+  return BitCast(d, PromoteTo(RebindToUnsigned<decltype(d)>(), v));
+}
+
+template <size_t N, int kPow2>
+HWY_API auto PromoteTo(Simd<int64_t, N, kPow2> d,
+                       VFromD<Rebind<uint16_t, decltype(d)>> v)
+    -> VFromD<decltype(d)> {
+  return BitCast(d, PromoteTo(RebindToUnsigned<decltype(d)>(), v));
+}
+
+template <size_t N, int kPow2>
+HWY_API auto PromoteTo(Simd<int64_t, N, kPow2> d,
+                       VFromD<Rebind<uint8_t, decltype(d)>> v)
     -> VFromD<decltype(d)> {
   return BitCast(d, PromoteTo(RebindToUnsigned<decltype(d)>(), v));
 }
@@ -2123,14 +2175,20 @@ namespace detail {
 // offsets are implicitly relative to the start of their 128-bit block.
 template <typename T, size_t N, int kPow2>
 size_t LanesPerBlock(Simd<T, N, kPow2> d) {
-  size_t lpb = 16 / sizeof(T);
-  if (IsFull(d)) return lpb;
-  // Also honor the user-specified (constexpr) N limit.
-  lpb = HWY_MIN(lpb, N);
-  // No fraction, we're done.
-  if (kPow2 >= 0) return lpb;
-  // Fractional LMUL: Lanes(d) may be smaller than lpb, so honor that.
-  return HWY_MIN(lpb, Lanes(d));
+  // kMinVecBytes is the minimum size of VFromD<decltype(d)> in bytes
+  constexpr size_t kMinVecBytes =
+      ScaleByPower(16, HWY_MAX(HWY_MIN(kPow2, 3), -3));
+  // kMinVecLanes is the minimum number of lanes in VFromD<decltype(d)>
+  constexpr size_t kMinVecLanes = (kMinVecBytes + sizeof(T) - 1) / sizeof(T);
+  // kMaxLpb is the maximum number of lanes per block
+  constexpr size_t kMaxLpb = HWY_MIN(16 / sizeof(T), MaxLanes(d));
+
+  // If kMaxLpb <= kMinVecLanes is true, then kMaxLpb <= Lanes(d) is true
+  if (kMaxLpb <= kMinVecLanes) return kMaxLpb;
+
+  // Fractional LMUL: Lanes(d) may be smaller than kMaxLpb, so honor that.
+  const size_t lanes_per_vec = Lanes(d);
+  return HWY_MIN(lanes_per_vec, kMaxLpb);
 }
 
 template <class D, class V>
@@ -3457,7 +3515,25 @@ HWY_API V PopulationCount(V v) {
 template <class D>
 HWY_API VFromD<D> LoadDup128(D d, const TFromD<D>* const HWY_RESTRICT p) {
   const RebindToUnsigned<decltype(d)> du;
-  const VFromD<D> loaded = Load(d, p);
+
+  // Make sure that no more than 16 bytes are loaded from p
+  constexpr int kLoadPow2 = d.Pow2();
+  constexpr size_t kMaxLanesToLoad =
+      HWY_MIN(HWY_MAX_LANES_D(D), 16 / sizeof(TFromD<D>));
+  constexpr size_t kLoadN = D::template NewN<kLoadPow2, kMaxLanesToLoad>();
+  const Simd<TFromD<D>, kLoadN, kLoadPow2> d_load;
+  static_assert(d_load.MaxBytes() <= 16,
+                "d_load.MaxBytes() <= 16 must be true");
+  static_assert((d.MaxBytes() < 16) || (d_load.MaxBytes() == 16),
+                "d_load.MaxBytes() == 16 must be true if d.MaxBytes() >= 16 is "
+                "true");
+  static_assert((d.MaxBytes() >= 16) || (d_load.MaxBytes() == d.MaxBytes()),
+                "d_load.MaxBytes() == d.MaxBytes() must be true if "
+                "d.MaxBytes() < 16 is true");
+
+  const VFromD<D> loaded = Load(d_load, p);
+  if (d.MaxBytes() <= 16) return loaded;
+
   // idx must be unsigned for TableLookupLanes.
   using TU = TFromD<decltype(du)>;
   const TU mask = static_cast<TU>(detail::LanesPerBlock(d) - 1);

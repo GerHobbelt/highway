@@ -230,10 +230,9 @@ Store(v, d2, ptr);  // Use d2, NOT DFromV<decltype(v)>()
 
 ## Targets
 
-Let `Target` denote an instruction set, one of
-`SCALAR/EMU128/SSSE3/SSE4/AVX2/AVX3/AVX3_DL/AVX3_ZEN4/NEON/SVE/SVE2/WASM/RVV`.
-Each of these is represented by a `HWY_Target` (for example, `HWY_SSE4`) macro
-which expands to a unique power-of-two value.
+Let `Target` denote an instruction set, one of `SCALAR/EMU128`, `RVV`,
+`SSE2/SSSE3/SSE4/AVX2/AVX3/AVX3_DL/AVX3_ZEN4` (x86), `PPC8/PPC9/PPC10` (POWER),
+`NEON/SVE/SVE2/SVE_256/SVE2_128` (Arm), `WASM/WASM_EMU256`.
 
 Note that x86 CPUs are segmented into dozens of feature flags and capabilities,
 which are often used together because they were introduced in the same CPU
@@ -242,7 +241,8 @@ code size manageable, we define targets as 'clusters' of related features. To
 use `HWY_AVX2`, it is therefore insufficient to pass -mavx2. For definitions of
 the clusters, see `kGroup*` in `targets.cc`. The corresponding Clang/GCC
 compiler options to enable them (without -m prefix) are defined by
-`HWY_TARGET_STR*` in `set_macros-inl.h`.
+`HWY_TARGET_STR*` in `set_macros-inl.h`, and also listed as comments in
+https://gcc.godbolt.org/z/rGnjMevKG.
 
 Targets are only used if enabled (i.e. not broken nor disabled). Baseline
 targets are those for which the compiler is unconditionally allowed to generate
@@ -277,6 +277,32 @@ instructions (implying the target CPU must support them).
 
 *   `HWY_WANT_AVX3_DL`: opt-in for dynamic dispatch to `HWY_AVX3_DL`. This is
     unnecessary if the baseline already includes AVX3_DL.
+
+You can detect and influence the set of supported targets:
+
+*   `TargetName(t)` returns a string literal identifying the single target `t`,
+    where `t` is typically `HWY_TARGET`.
+
+*   `SupportedTargets()` returns an int64_t bitfield of enabled targets that are
+    supported on this CPU. The return value may change after calling
+    `DisableTargets`, but will never be zero.
+
+*   `HWY_SUPPORTED_TARGETS` is equivalent to `SupportedTargets()` but more
+    efficient if only a single target is enabled.
+
+*   `DisableTargets(b)` causes subsequent `SupportedTargets()` to not return
+    target(s) whose bits are set in `b`. This is useful for disabling specific
+    targets if they are unhelpful or undesirable, e.g. due to memory bandwidth
+    limitations. The effect is not cumulative; each call overrides the effect of
+    all previous calls. Calling with `b == 0` restores the original behavior.
+    Use `SetSupportedTargetsForTest` instead of this function for iteratively
+    enabling specific targets for testing.
+
+*   `SetSupportedTargetsForTest(b)` causes subsequent `SupportedTargets` to
+    return `b`, minus those disabled via `DisableTargets`. `b` is typically
+    derived from a subset of `SupportedTargets()`, e.g. each individual bit in
+    order to test each supported target. Calling with `b == 0` restores the
+    normal `SupportedTargets` behavior.
 
 ## Operations
 
@@ -1149,9 +1175,8 @@ obtain the `D` that describes the return type.
 These functions promote a half vector to a full vector. To obtain halves, use
 `LowerHalf` or `UpperHalf`, or load them using a half-sized `D`.
 
-*   `V`,`D`: (`u8,u16`), (`u16,u32`), (`u8,u32`), (`u32,u64`), (`u8,i16`),
-    (`u8,i32`), (`u16,i32`), (`i8,i16`), (`i8,i32`), (`i16,i32`), (`i32,i64`),
-    (`f16,f32`), (`bf16,f32`), (`f32,f64`) \
+*   Unsigned `V` to wider signed/unsigned `D`; signed to wider signed, `f16` to
+    `f32`, `bf16` to `f32`, `f32` to `f64` \
     <code>Vec&lt;D&gt; **PromoteTo**(D, V part)</code>: returns `part[i]` zero-
     or sign-extended to the integer type `MakeWide<T>`, or widened to the
     floating-point type `MakeWide<T>`.

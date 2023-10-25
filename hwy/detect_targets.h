@@ -63,15 +63,16 @@
 // Currently HWY_AVX3_DL plus a special case for CompressStore (10x as fast).
 // We may later also use VPCONFLICT.
 #define HWY_AVX3_ZEN4 (1LL << 6)  // see HWY_WANT_AVX3_ZEN4 below
+
 // Currently satisfiable by Ice Lake (VNNI, VPCLMULQDQ, VPOPCNTDQ, VBMI, VBMI2,
-// VAES, BITALG). Later to be added: BF16 (Cooper Lake). VP2INTERSECT is only in
-// Tiger Lake? We do not yet have uses for GFNI.
+// VAES, BITALG, GFNI). Later to be added: BF16 (Cooper Lake). VP2INTERSECT is
+// only in Tiger Lake?
 #define HWY_AVX3_DL (1LL << 7)  // see HWY_WANT_AVX3_DL below
-#define HWY_AVX3 (1LL << 8)
-#define HWY_AVX2 (1LL << 9)
-// Bit 10: reserved for AVX
-#define HWY_SSE4 (1LL << 11)
-#define HWY_SSSE3 (1LL << 12)
+#define HWY_AVX3 (1LL << 8)     // HWY_AVX2 plus AVX-512F/BW/CD/DQ/VL
+#define HWY_AVX2 (1LL << 9)     // HWY_SSE4 plus BMI2 + F16 + FMA
+// Bit 10: reserved
+#define HWY_SSE4 (1LL << 11)   // SSE4.2 plus AES + CLMUL
+#define HWY_SSSE3 (1LL << 12)  // S-SSE3
 // Bit 13: reserved for SSE3
 #define HWY_SSE2 (1LL << 14)
 // The highest bit in the HWY_TARGETS mask that a x86 target can have. Used for
@@ -198,9 +199,29 @@
 #define HWY_BROKEN_SVE 0
 #endif
 
-// There are GCC/Clang compiler bugs on big-endian PPC with the -mcpu=power10
-// option if optimizations are enabled
-#if HWY_ARCH_PPC && HWY_IS_BIG_ENDIAN
+#if (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1100)
+// GCC 10 supports the -mcpu=power10 option but does not support the PPC10
+// vector intrinsics
+#define HWY_BROKEN_PPC10 (HWY_PPC10)
+#elif HWY_ARCH_PPC && HWY_IS_BIG_ENDIAN &&                                    \
+    ((HWY_COMPILER3_CLANG && HWY_COMPILER3_CLANG < 160001) ||                 \
+     (HWY_COMPILER_GCC_ACTUAL >= 1200 && HWY_COMPILER_GCC_ACTUAL <= 1203) ||  \
+     (HWY_COMPILER_GCC_ACTUAL >= 1300 && HWY_COMPILER_GCC_ACTUAL <= 1301))
+// GCC 12.0 through 12.3 and GCC 13.0 through 13.1 have a compiler bug where the
+// vsldoi instruction is sometimes incorrectly optimized out (and this causes
+// some of the Highway unit tests to fail on big-endian PPC10). Details about
+// this compiler bug can be found at
+// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109069, and this bug will be
+// fixed in the upcoming GCC 12.4 and 13.2 releases.
+
+// Clang 16.0.0 and earlier (but not Clang 16.0.1 and later) have a compiler
+// bug in the LLVM DAGCombiner that causes a zero-extend followed by an
+// element insert into a vector, followed by a vector shuffle to be incorrectly
+// optimized on big-endian PPC (and which caused some of the Highway unit tests
+// to fail on big-endian PPC10).
+
+// Details about this bug, which has already been fixed in Clang 16.0.1 and
+// later, can be found at https://github.com/llvm/llvm-project/issues/61315.
 #define HWY_BROKEN_PPC10 (HWY_PPC10)
 #else
 #define HWY_BROKEN_PPC10 0
