@@ -1076,7 +1076,8 @@ template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 2)>
 HWY_INLINE VFromD<D> Iota0(D d) {
   using T = TFromD<decltype(d)>;
 #if HWY_COMPILER_GCC || HWY_COMPILER_CLANGCL
-  typedef T GccRawVectType __attribute__((__vector_size__(8)));
+  typedef detail::NativeLaneType<T> GccRawVectType
+      __attribute__((__vector_size__(8)));
   constexpr GccRawVectType kIota0 = {T{0}, T{1}, T{2}, static_cast<T>(3)};
   return VFromD<D>(reinterpret_cast<typename VFromD<D>::Raw>(kIota0));
 #else
@@ -1090,7 +1091,8 @@ template <class D, HWY_IF_V_SIZE_D(D, 16), HWY_IF_T_SIZE_D(D, 2)>
 HWY_INLINE VFromD<D> Iota0(D d) {
   using T = TFromD<decltype(d)>;
 #if HWY_COMPILER_GCC || HWY_COMPILER_CLANGCL
-  typedef T GccRawVectType __attribute__((__vector_size__(16)));
+  typedef detail::NativeLaneType<T> GccRawVectType
+      __attribute__((__vector_size__(16)));
   constexpr GccRawVectType kIota0 = {T{0}, T{1}, T{2}, static_cast<T>(3),
                                      T{4}, T{5}, T{6}, static_cast<T>(7)};
   return VFromD<D>(reinterpret_cast<typename VFromD<D>::Raw>(kIota0));
@@ -4766,6 +4768,11 @@ HWY_API VFromD<DH> UpperHalf(DH dh, VFromD<Twice<DH>> v) {
 
 // ------------------------------ Broadcast/splat any lane
 
+template <int kLane, typename T>
+HWY_API Vec128<T, 1> Broadcast(Vec128<T, 1> v) {
+  return v;
+}
+
 #if HWY_ARCH_ARM_A64
 // Unsigned
 template <int kLane>
@@ -4773,7 +4780,8 @@ HWY_API Vec128<uint8_t> Broadcast(Vec128<uint8_t> v) {
   static_assert(0 <= kLane && kLane < 16, "Invalid lane");
   return Vec128<uint8_t>(vdupq_laneq_u8(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint8_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint8_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint8_t, N> Broadcast(Vec128<uint8_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint8_t, N>(vdup_lane_u8(v.raw, kLane));
@@ -4783,7 +4791,8 @@ HWY_API Vec128<uint16_t> Broadcast(Vec128<uint16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<uint16_t>(vdupq_laneq_u16(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint16_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint16_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint16_t, N> Broadcast(Vec128<uint16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint16_t, N>(vdup_lane_u16(v.raw, kLane));
@@ -4793,7 +4802,8 @@ HWY_API Vec128<uint32_t> Broadcast(Vec128<uint32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<uint32_t>(vdupq_laneq_u32(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint32_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint32_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint32_t, N> Broadcast(Vec128<uint32_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint32_t, N>(vdup_lane_u32(v.raw, kLane));
@@ -4803,7 +4813,6 @@ HWY_API Vec128<uint64_t> Broadcast(Vec128<uint64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<uint64_t>(vdupq_laneq_u64(v.raw, kLane));
 }
-// Vec64<uint64_t> is defined below.
 
 // Signed
 template <int kLane>
@@ -4811,7 +4820,8 @@ HWY_API Vec128<int8_t> Broadcast(Vec128<int8_t> v) {
   static_assert(0 <= kLane && kLane < 16, "Invalid lane");
   return Vec128<int8_t>(vdupq_laneq_s8(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int8_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int8_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int8_t, N> Broadcast(Vec128<int8_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int8_t, N>(vdup_lane_s8(v.raw, kLane));
@@ -4821,7 +4831,8 @@ HWY_API Vec128<int16_t> Broadcast(Vec128<int16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<int16_t>(vdupq_laneq_s16(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int16_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int16_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int16_t, N> Broadcast(Vec128<int16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int16_t, N>(vdup_lane_s16(v.raw, kLane));
@@ -4831,7 +4842,8 @@ HWY_API Vec128<int32_t> Broadcast(Vec128<int32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<int32_t>(vdupq_laneq_s32(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int32_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int32_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int32_t, N> Broadcast(Vec128<int32_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int32_t, N>(vdup_lane_s32(v.raw, kLane));
@@ -4841,7 +4853,6 @@ HWY_API Vec128<int64_t> Broadcast(Vec128<int64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<int64_t>(vdupq_laneq_s64(v.raw, kLane));
 }
-// Vec64<int64_t> is defined below.
 
 // Float
 #if HWY_HAVE_FLOAT16
@@ -4850,7 +4861,8 @@ HWY_API Vec128<float16_t> Broadcast(Vec128<float16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<float16_t>(vdupq_laneq_f16(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float16_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float16_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<float16_t, N> Broadcast(Vec128<float16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<float16_t, N>(vdup_lane_f16(v.raw, kLane));
@@ -4862,7 +4874,8 @@ HWY_API Vec128<float> Broadcast(Vec128<float> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<float>(vdupq_laneq_f32(v.raw, kLane));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<float, N> Broadcast(Vec128<float, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<float, N>(vdup_lane_f32(v.raw, kLane));
@@ -4871,11 +4884,6 @@ template <int kLane>
 HWY_API Vec128<double> Broadcast(Vec128<double> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<double>(vdupq_laneq_f64(v.raw, kLane));
-}
-template <int kLane>
-HWY_API Vec64<double> Broadcast(Vec64<double> v) {
-  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
-  return v;
 }
 
 #else  // !HWY_ARCH_ARM_A64
@@ -4887,7 +4895,8 @@ HWY_API Vec128<uint8_t> Broadcast(Vec128<uint8_t> v) {
   static_assert(0 <= kLane && kLane < 16, "Invalid lane");
   return Vec128<uint8_t>(vdupq_n_u8(vgetq_lane_u8(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint8_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint8_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint8_t, N> Broadcast(Vec128<uint8_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint8_t, N>(vdup_lane_u8(v.raw, kLane));
@@ -4897,7 +4906,8 @@ HWY_API Vec128<uint16_t> Broadcast(Vec128<uint16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<uint16_t>(vdupq_n_u16(vgetq_lane_u16(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint16_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint16_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint16_t, N> Broadcast(Vec128<uint16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint16_t, N>(vdup_lane_u16(v.raw, kLane));
@@ -4907,7 +4917,8 @@ HWY_API Vec128<uint32_t> Broadcast(Vec128<uint32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<uint32_t>(vdupq_n_u32(vgetq_lane_u32(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint32_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(uint32_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<uint32_t, N> Broadcast(Vec128<uint32_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<uint32_t, N>(vdup_lane_u32(v.raw, kLane));
@@ -4917,7 +4928,6 @@ HWY_API Vec128<uint64_t> Broadcast(Vec128<uint64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<uint64_t>(vdupq_n_u64(vgetq_lane_u64(v.raw, kLane)));
 }
-// Vec64<uint64_t> is defined below.
 
 // Signed
 template <int kLane>
@@ -4925,7 +4935,8 @@ HWY_API Vec128<int8_t> Broadcast(Vec128<int8_t> v) {
   static_assert(0 <= kLane && kLane < 16, "Invalid lane");
   return Vec128<int8_t>(vdupq_n_s8(vgetq_lane_s8(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int8_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int8_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int8_t, N> Broadcast(Vec128<int8_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int8_t, N>(vdup_lane_s8(v.raw, kLane));
@@ -4935,7 +4946,8 @@ HWY_API Vec128<int16_t> Broadcast(Vec128<int16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<int16_t>(vdupq_n_s16(vgetq_lane_s16(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int16_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int16_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int16_t, N> Broadcast(Vec128<int16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int16_t, N>(vdup_lane_s16(v.raw, kLane));
@@ -4945,7 +4957,8 @@ HWY_API Vec128<int32_t> Broadcast(Vec128<int32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<int32_t>(vdupq_n_s32(vgetq_lane_s32(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int32_t, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(int32_t, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<int32_t, N> Broadcast(Vec128<int32_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<int32_t, N>(vdup_lane_s32(v.raw, kLane));
@@ -4955,7 +4968,6 @@ HWY_API Vec128<int64_t> Broadcast(Vec128<int64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<int64_t>(vdupq_n_s64(vgetq_lane_s64(v.raw, kLane)));
 }
-// Vec64<int64_t> is defined below.
 
 // Float
 #if HWY_HAVE_FLOAT16
@@ -4970,24 +4982,14 @@ HWY_API Vec128<float> Broadcast(Vec128<float> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<float>(vdupq_n_f32(vgetq_lane_f32(v.raw, kLane)));
 }
-template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float, N, 8)>
+template <int kLane, size_t N, HWY_IF_V_SIZE_LE(float, N, 8),
+          HWY_IF_LANES_GT(N, 1)>
 HWY_API Vec128<float, N> Broadcast(Vec128<float, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
   return Vec128<float, N>(vdup_lane_f32(v.raw, kLane));
 }
 
 #endif  // HWY_ARCH_ARM_A64
-
-template <int kLane>
-HWY_API Vec64<uint64_t> Broadcast(Vec64<uint64_t> v) {
-  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
-  return v;
-}
-template <int kLane>
-HWY_API Vec64<int64_t> Broadcast(Vec64<int64_t> v) {
-  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
-  return v;
-}
 
 // ------------------------------ TableLookupLanes
 
@@ -8227,6 +8229,7 @@ HWY_API size_t CompressBitsStore(VFromD<D> v, const uint8_t* HWY_RESTRICT bits,
 #endif
 
 namespace detail {
+
 #define HWY_NEON_BUILD_TPL_HWY_LOAD_INT
 #define HWY_NEON_BUILD_ARG_HWY_LOAD_INT from
 
@@ -8254,7 +8257,7 @@ namespace detail {
   decltype(Tuple2<type##_t, size>().raw)
 // Tuple tag arg allows overloading (cannot just overload on return type)
 #define HWY_NEON_BUILD_PARAM_HWY_LOAD_INT(type, size) \
-  const type##_t *from, Tuple2<type##_t, size>
+  const NativeLaneType<type##_t>*from, Tuple2<type##_t, size>
 HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved2, vld2, _, HWY_LOAD_INT)
 #undef HWY_NEON_BUILD_RET_HWY_LOAD_INT
 #undef HWY_NEON_BUILD_PARAM_HWY_LOAD_INT
@@ -8262,7 +8265,7 @@ HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved2, vld2, _, HWY_LOAD_INT)
 #define HWY_NEON_BUILD_RET_HWY_LOAD_INT(type, size) \
   decltype(Tuple3<type##_t, size>().raw)
 #define HWY_NEON_BUILD_PARAM_HWY_LOAD_INT(type, size) \
-  const type##_t *from, Tuple3<type##_t, size>
+  const NativeLaneType<type##_t>*from, Tuple3<type##_t, size>
 HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved3, vld3, _, HWY_LOAD_INT)
 #undef HWY_NEON_BUILD_PARAM_HWY_LOAD_INT
 #undef HWY_NEON_BUILD_RET_HWY_LOAD_INT
@@ -8270,7 +8273,7 @@ HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved3, vld3, _, HWY_LOAD_INT)
 #define HWY_NEON_BUILD_RET_HWY_LOAD_INT(type, size) \
   decltype(Tuple4<type##_t, size>().raw)
 #define HWY_NEON_BUILD_PARAM_HWY_LOAD_INT(type, size) \
-  const type##_t *from, Tuple4<type##_t, size>
+  const NativeLaneType<type##_t>*from, Tuple4<type##_t, size>
 HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved4, vld4, _, HWY_LOAD_INT)
 #undef HWY_NEON_BUILD_PARAM_HWY_LOAD_INT
 #undef HWY_NEON_BUILD_RET_HWY_LOAD_INT
@@ -8278,13 +8281,15 @@ HWY_NEON_DEF_FUNCTION_LOAD_INT(LoadInterleaved4, vld4, _, HWY_LOAD_INT)
 #undef HWY_NEON_DEF_FUNCTION_LOAD_INT
 #undef HWY_NEON_BUILD_TPL_HWY_LOAD_INT
 #undef HWY_NEON_BUILD_ARG_HWY_LOAD_INT
+
 }  // namespace detail
 
 template <class D, HWY_IF_LOAD_INT(D), typename T = TFromD<D>>
 HWY_API void LoadInterleaved2(D d, const T* HWY_RESTRICT unaligned,
                               VFromD<D>& v0, VFromD<D>& v1) {
-  auto raw =
-      detail::LoadInterleaved2(unaligned, detail::Tuple2<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved2(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned),
+      detail::Tuple2<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
 }
@@ -8296,7 +8301,9 @@ HWY_API void LoadInterleaved2(D d, const T* HWY_RESTRICT unaligned,
   // The smallest vector registers are 64-bits and we want space for two.
   alignas(16) T buf[2 * 8 / sizeof(T)] = {};
   CopyBytes<d.MaxBytes() * 2>(unaligned, buf);
-  auto raw = detail::LoadInterleaved2(buf, detail::Tuple2<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved2(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(buf),
+      detail::Tuple2<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
 }
@@ -8308,8 +8315,12 @@ HWY_API void LoadInterleaved2(D d, T* HWY_RESTRICT unaligned, Vec128<T>& v0,
                               Vec128<T>& v1) {
   const Half<decltype(d)> dh;
   VFromD<decltype(dh)> v00, v10, v01, v11;
-  LoadInterleaved2(dh, unaligned, v00, v10);
-  LoadInterleaved2(dh, unaligned + 2, v01, v11);
+  LoadInterleaved2(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned), v00,
+      v10);
+  LoadInterleaved2(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned + 2),
+      v01, v11);
   v0 = Combine(d, v01, v00);
   v1 = Combine(d, v11, v10);
 }
@@ -8320,8 +8331,9 @@ HWY_API void LoadInterleaved2(D d, T* HWY_RESTRICT unaligned, Vec128<T>& v0,
 template <class D, HWY_IF_LOAD_INT(D), typename T = TFromD<D>>
 HWY_API void LoadInterleaved3(D d, const T* HWY_RESTRICT unaligned,
                               VFromD<D>& v0, VFromD<D>& v1, VFromD<D>& v2) {
-  auto raw =
-      detail::LoadInterleaved3(unaligned, detail::Tuple3<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved3(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned),
+      detail::Tuple3<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
   v2 = VFromD<D>(raw.val[2]);
@@ -8334,7 +8346,9 @@ HWY_API void LoadInterleaved3(D d, const T* HWY_RESTRICT unaligned,
   // The smallest vector registers are 64-bits and we want space for three.
   alignas(16) T buf[3 * 8 / sizeof(T)] = {};
   CopyBytes<d.MaxBytes() * 3>(unaligned, buf);
-  auto raw = detail::LoadInterleaved3(buf, detail::Tuple3<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved3(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(buf),
+      detail::Tuple3<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
   v2 = VFromD<D>(raw.val[2]);
@@ -8347,8 +8361,12 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
                               Vec128<T>& v0, Vec128<T>& v1, Vec128<T>& v2) {
   const Half<decltype(d)> dh;
   VFromD<decltype(dh)> v00, v10, v20, v01, v11, v21;
-  LoadInterleaved3(dh, unaligned, v00, v10, v20);
-  LoadInterleaved3(dh, unaligned + 3, v01, v11, v21);
+  LoadInterleaved3(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned), v00,
+      v10, v20);
+  LoadInterleaved3(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned + 3),
+      v01, v11, v21);
   v0 = Combine(d, v01, v00);
   v1 = Combine(d, v11, v10);
   v2 = Combine(d, v21, v20);
@@ -8361,8 +8379,9 @@ template <class D, HWY_IF_LOAD_INT(D), typename T = TFromD<D>>
 HWY_API void LoadInterleaved4(D d, const T* HWY_RESTRICT unaligned,
                               VFromD<D>& v0, VFromD<D>& v1, VFromD<D>& v2,
                               VFromD<D>& v3) {
-  auto raw =
-      detail::LoadInterleaved4(unaligned, detail::Tuple4<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved4(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned),
+      detail::Tuple4<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
   v2 = VFromD<D>(raw.val[2]);
@@ -8376,7 +8395,9 @@ HWY_API void LoadInterleaved4(D d, const T* HWY_RESTRICT unaligned,
                               VFromD<D>& v3) {
   alignas(16) T buf[4 * 8 / sizeof(T)] = {};
   CopyBytes<d.MaxBytes() * 4>(unaligned, buf);
-  auto raw = detail::LoadInterleaved4(buf, detail::Tuple4<T, d.MaxLanes()>());
+  auto raw = detail::LoadInterleaved4(
+      reinterpret_cast<const detail::NativeLaneType<T>*>(buf),
+      detail::Tuple4<T, d.MaxLanes()>());
   v0 = VFromD<D>(raw.val[0]);
   v1 = VFromD<D>(raw.val[1]);
   v2 = VFromD<D>(raw.val[2]);
@@ -8391,8 +8412,12 @@ HWY_API void LoadInterleaved4(D d, const T* HWY_RESTRICT unaligned,
                               Vec128<T>& v3) {
   const Half<decltype(d)> dh;
   VFromD<decltype(dh)> v00, v10, v20, v30, v01, v11, v21, v31;
-  LoadInterleaved4(dh, unaligned, v00, v10, v20, v30);
-  LoadInterleaved4(dh, unaligned + 4, v01, v11, v21, v31);
+  LoadInterleaved4(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned), v00,
+      v10, v20, v30);
+  LoadInterleaved4(
+      dh, reinterpret_cast<const detail::NativeLaneType<T>*>(unaligned + 4),
+      v01, v11, v21, v31);
   v0 = Combine(d, v01, v00);
   v1 = Combine(d, v11, v10);
   v2 = Combine(d, v21, v20);
@@ -8427,17 +8452,17 @@ namespace detail {
 #endif  // HWY_ARCH_ARM_A64
 
 #define HWY_NEON_BUILD_PARAM_HWY_STORE_INT(type, size) \
-  Tuple2<type##_t, size> tup, type##_t *to
+  Tuple2<type##_t, size> tup, NativeLaneType<type##_t>*to
 HWY_NEON_DEF_FUNCTION_STORE_INT(StoreInterleaved2, vst2, _, HWY_STORE_INT)
 #undef HWY_NEON_BUILD_PARAM_HWY_STORE_INT
 
 #define HWY_NEON_BUILD_PARAM_HWY_STORE_INT(type, size) \
-  Tuple3<type##_t, size> tup, type##_t *to
+  Tuple3<type##_t, size> tup, NativeLaneType<type##_t>*to
 HWY_NEON_DEF_FUNCTION_STORE_INT(StoreInterleaved3, vst3, _, HWY_STORE_INT)
 #undef HWY_NEON_BUILD_PARAM_HWY_STORE_INT
 
 #define HWY_NEON_BUILD_PARAM_HWY_STORE_INT(type, size) \
-  Tuple4<type##_t, size> tup, type##_t *to
+  Tuple4<type##_t, size> tup, NativeLaneType<type##_t>*to
 HWY_NEON_DEF_FUNCTION_STORE_INT(StoreInterleaved4, vst4, _, HWY_STORE_INT)
 #undef HWY_NEON_BUILD_PARAM_HWY_STORE_INT
 
@@ -8451,7 +8476,8 @@ template <class D, HWY_IF_STORE_INT(D), typename T = TFromD<D>>
 HWY_API void StoreInterleaved2(VFromD<D> v0, VFromD<D> v1, D d,
                                T* HWY_RESTRICT unaligned) {
   detail::Tuple2<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw}}};
-  detail::StoreInterleaved2(tup, unaligned);
+  detail::StoreInterleaved2(
+      tup, reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
 }
 
 // <= 32 bits: avoid writing more than N bytes by copying to buffer
@@ -8460,7 +8486,8 @@ HWY_API void StoreInterleaved2(VFromD<D> v0, VFromD<D> v1, D d,
                                T* HWY_RESTRICT unaligned) {
   alignas(16) T buf[2 * 8 / sizeof(T)];
   detail::Tuple2<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw}}};
-  detail::StoreInterleaved2(tup, buf);
+  detail::StoreInterleaved2(tup,
+                            reinterpret_cast<detail::NativeLaneType<T>*>(buf));
   CopyBytes<d.MaxBytes() * 2>(buf, unaligned);
 }
 
@@ -8470,8 +8497,11 @@ template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 8)>
 HWY_API void StoreInterleaved2(Vec128<T> v0, Vec128<T> v1, D d,
                                T* HWY_RESTRICT unaligned) {
   const Half<decltype(d)> dh;
-  StoreInterleaved2(LowerHalf(dh, v0), LowerHalf(dh, v1), dh, unaligned);
-  StoreInterleaved2(UpperHalf(dh, v0), UpperHalf(dh, v1), dh, unaligned + 2);
+  StoreInterleaved2(LowerHalf(dh, v0), LowerHalf(dh, v1), dh,
+                    reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
+  StoreInterleaved2(
+      UpperHalf(dh, v0), UpperHalf(dh, v1), dh,
+      reinterpret_cast<detail::NativeLaneType<T>*>(unaligned + 2));
 }
 #endif  // HWY_ARCH_ARM_V7
 
@@ -8481,7 +8511,8 @@ template <class D, HWY_IF_STORE_INT(D), typename T = TFromD<D>>
 HWY_API void StoreInterleaved3(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2, D d,
                                T* HWY_RESTRICT unaligned) {
   detail::Tuple3<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw, v2.raw}}};
-  detail::StoreInterleaved3(tup, unaligned);
+  detail::StoreInterleaved3(
+      tup, reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
 }
 
 // <= 32 bits: avoid writing more than N bytes by copying to buffer
@@ -8490,7 +8521,8 @@ HWY_API void StoreInterleaved3(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2, D d,
                                T* HWY_RESTRICT unaligned) {
   alignas(16) T buf[3 * 8 / sizeof(T)];
   detail::Tuple3<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw, v2.raw}}};
-  detail::StoreInterleaved3(tup, buf);
+  detail::StoreInterleaved3(tup,
+                            reinterpret_cast<detail::NativeLaneType<T>*>(buf));
   CopyBytes<d.MaxBytes() * 3>(buf, unaligned);
 }
 
@@ -8501,9 +8533,10 @@ HWY_API void StoreInterleaved3(Vec128<T> v0, Vec128<T> v1, Vec128<T> v2, D d,
                                T* HWY_RESTRICT unaligned) {
   const Half<decltype(d)> dh;
   StoreInterleaved3(LowerHalf(dh, v0), LowerHalf(dh, v1), LowerHalf(dh, v2), dh,
-                    unaligned);
-  StoreInterleaved3(UpperHalf(dh, v0), UpperHalf(dh, v1), UpperHalf(dh, v2), dh,
-                    unaligned + 3);
+                    reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
+  StoreInterleaved3(
+      UpperHalf(dh, v0), UpperHalf(dh, v1), UpperHalf(dh, v2), dh,
+      reinterpret_cast<detail::NativeLaneType<T>*>(unaligned + 3));
 }
 #endif  // HWY_ARCH_ARM_V7
 
@@ -8513,7 +8546,8 @@ template <class D, HWY_IF_STORE_INT(D), typename T = TFromD<D>>
 HWY_API void StoreInterleaved4(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2,
                                VFromD<D> v3, D d, T* HWY_RESTRICT unaligned) {
   detail::Tuple4<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw, v2.raw, v3.raw}}};
-  detail::StoreInterleaved4(tup, unaligned);
+  detail::StoreInterleaved4(
+      tup, reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
 }
 
 // <= 32 bits: avoid writing more than N bytes by copying to buffer
@@ -8522,7 +8556,8 @@ HWY_API void StoreInterleaved4(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2,
                                VFromD<D> v3, D d, T* HWY_RESTRICT unaligned) {
   alignas(16) T buf[4 * 8 / sizeof(T)];
   detail::Tuple4<T, d.MaxLanes()> tup = {{{v0.raw, v1.raw, v2.raw, v3.raw}}};
-  detail::StoreInterleaved4(tup, buf);
+  detail::StoreInterleaved4(tup,
+                            reinterpret_cast<detail::NativeLaneType<T>*>(buf));
   CopyBytes<d.MaxBytes() * 4>(buf, unaligned);
 }
 
@@ -8533,9 +8568,12 @@ HWY_API void StoreInterleaved4(Vec128<T> v0, Vec128<T> v1, Vec128<T> v2,
                                Vec128<T> v3, D d, T* HWY_RESTRICT unaligned) {
   const Half<decltype(d)> dh;
   StoreInterleaved4(LowerHalf(dh, v0), LowerHalf(dh, v1), LowerHalf(dh, v2),
-                    LowerHalf(dh, v3), dh, unaligned);
-  StoreInterleaved4(UpperHalf(dh, v0), UpperHalf(dh, v1), UpperHalf(dh, v2),
-                    UpperHalf(dh, v3), dh, unaligned + 4);
+                    LowerHalf(dh, v3), dh,
+                    reinterpret_cast<detail::NativeLaneType<T>*>(unaligned));
+  StoreInterleaved4(
+      UpperHalf(dh, v0), UpperHalf(dh, v1), UpperHalf(dh, v2),
+      UpperHalf(dh, v3), dh,
+      reinterpret_cast<detail::NativeLaneType<T>*>(unaligned + 4));
 }
 #endif  // HWY_ARCH_ARM_V7
 
