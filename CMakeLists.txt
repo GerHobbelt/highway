@@ -124,6 +124,7 @@ set(HWY_SOURCES
     hwy/ops/arm_sve-inl.h
     hwy/ops/emu128-inl.h
     hwy/ops/generic_ops-inl.h
+    hwy/ops/ppc_vsx-inl.h
     hwy/ops/rvv-inl.h
     hwy/ops/scalar-inl.h
     hwy/ops/set_macros-inl.h
@@ -239,11 +240,11 @@ else()
   endif()  # HWY_CMAKE_ARM7
 
   if(HWY_RISCV)
+    # gcc(13) and recent clang both support V, but not yet runtime dispatch, so
+    # we add the gcv compiler flag, which then requires the CPU (now when using
+    # either compiler) to support V.
+    list(APPEND HWY_FLAGS -march=rv64gcv1p0)
     if(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
-      # Not yet supported by GCC. When runtime dispatch is supported and
-      # implemented, we will remove v from the required flags. Until then, using
-      # clang for RISC-V will require the CPU to support the V extension (1.0).
-      list(APPEND HWY_FLAGS -march=rv64gcv1p0)
       list(APPEND HWY_FLAGS -menable-experimental-extensions)
     endif()
   endif()
@@ -528,6 +529,7 @@ list(APPEND HWY_TEST_FILES
   # not reproducible locally. Still tested via bazel build.
   # hwy/contrib/math/math_test.cc
   hwy/contrib/sort/sort_test.cc
+  hwy/contrib/sort/bench_sort.cc
 )
 endif()  # HWY_ENABLE_CONTRIB
 
