@@ -342,6 +342,32 @@ time-critical code:
     Defined in hwy/print-inl.h, also available if hwy/tests/test_util-inl.h has
     been included.
 
+### Tuples
+
+As a partial workaround to the "no vectors as class members" compiler limitation
+mentioned in "Using unspecified vector types", we provide special types able to
+carry 2, 3 or 4 vectors, denoted `Tuple{2-4}` below. Their type is unspecified,
+potentially built-in, so use the aliases `Vec{2-4}&lt;D&gt;`. These can (only)
+be passed as arguments or returned from functions, and created/accessed using
+the functions in this section.
+
+*   <code>Tuple2 **Create2**(D, V v0, V v1)</code>: returns tuple such that
+    `Get2<1>(tuple)` returns `v1`.
+*   <code>Tuple3 **Create3**(D, V v0, V v1, V v2)</code>: returns tuple such
+    that `Get3<2>(tuple)` returns `v2`.
+*   <code>Tuple4 **Create4**(D, V v0, V v1, V v2, V v3)</code>: returns tuple
+    such that `Get4<3>(tuple)` returns `v3`.
+
+The following take a `size_t` template argument indicating the zero-based index,
+from left to right, of the arguments passed to `Create{2-4}`.
+
+*   <code>V **Get2&lt;size_t&gt;**(Tuple2)</code>: returns the i-th vector
+    passed to `Create2`.
+*   <code>V **Get3&lt;size_t&gt;**(Tuple3)</code>: returns the i-th vector
+    passed to `Create3`.
+*   <code>V **Get4&lt;size_t&gt;**(Tuple4)</code>: returns the i-th vector
+    passed to `Create4`.
+
 ### Arithmetic
 
 *   <code>V **operator+**(V a, V b)</code>: returns `a[i] + b[i]` (mod 2^bits).
@@ -704,6 +730,14 @@ encoding depends on the platform).
     first (i.e. lowest index) `m[i]` that is true. Requires `!AllFalse(d, m)`,
     otherwise results are undefined. This is typically more efficient than
     `FindFirstTrue`.
+
+*   <code>intptr_t **FindLastTrue**(D, M m)</code>: returns the index of the
+    last (i.e. highest index) `m[i]` that is true, or -1 if none are.
+
+*   <code>size_t **FindKnownLastTrue**(D, M m)</code>: returns the index of the
+    last (i.e. highest index) `m[i]` that is true. Requires `!AllFalse(d, m)`,
+    otherwise results are undefined. This is typically more efficient than
+    `FindLastTrue`.
 
 #### Ternary operator
 
@@ -1310,8 +1344,7 @@ instead because they are more general:
 *   <code>V **ReverseBlocks**(V v)</code>: returns a vector with blocks in
     reversed order.
 
-*   `V`: `{u,i,f}{32,64}` \
-    <code>V **TableLookupLanes**(V a, unspecified)</code> returns a vector
+*   <code>V **TableLookupLanes**(V a, unspecified)</code> returns a vector
     of `a[indices[i]]`, where `unspecified` is the return value of
     `SetTableIndices(D, &indices[0])` or `IndicesFromVec`. The indices are
     not limited to blocks, hence this is slower than `TableLookupBytes*` on
@@ -1319,17 +1352,38 @@ instead because they are more general:
     < Lanes(D())`. `indices` are always integers, even if `V` is a
     floating-point type.
 
-*   `D`: `{u,i}{32,64}` \
-    <code>unspecified **IndicesFromVec**(D d, V idx)</code> prepares for
+*   <code>V **TwoTablesLookupLanes**(D d, V a, V b, unspecified)</code>
+    returns a vector of `indices[i] < N ? a[indices[i]] : b[indices[i] - N]`,
+    where  `unspecified` is the return value of
+    `SetTableIndices(d, &indices[0])` or `IndicesFromVec` and `N` is equal to
+    `Lanes(d)`. The indices are not limited to blocks. Results are
+    implementation-defined unless `0 <= indices[i] < 2 * Lanes(d)`. `indices`
+    are always integers, even if `V` is a floating-point type.
+
+*   <code>V **TwoTablesLookupLanes**(V a, V b, unspecified)</code>
+    returns a vector of `indices[i] < N ? a[indices[i]] : b[indices[i] - N]`,
+    where  `unspecified` is the return value of
+    `SetTableIndices(D, &indices[0])` or `IndicesFromVec` and `N` is equal to
+    `Lanes(DFromV<V>())`.  The indices are not limited to blocks. Results are
+    implementation-defined unless `0 <= indices[i] < 2 * Lanes(DFromV<V>())`.
+    `indices` are always integers, even if `V` is a floating-point type.
+
+    ```TwoTablesLookupLanes(a, b, indices)``` is equivalent to
+    ```TwoTablesLookupLanes(DFromV<V>(), a, b, indices)```.
+
+    The results of ```TwoTablesLookupLanes(d, a, b, indices)``` can differ
+    from ```TwoTablesLookupLanes(a, b, indices)``` on RVV/SVE if
+    ```Lanes(d)``` is less than ```Lanes(DFromV<V>())```.
+
+*   <code>unspecified **IndicesFromVec**(D d, V idx)</code> prepares for
     `TableLookupLanes` with integer indices in `idx`, which must be the same bit
-    width as `TFromD<D>` and in the range `[0, Lanes(d))`, but need not be
+    width as `TFromD<D>` and in the range `[0, 2 * Lanes(d))`, but need not be
     unique.
 
-*   `D`: `{u,i}{32,64}` \
-    <code>unspecified **SetTableIndices**(D d, TI* idx)</code> prepares for
+*   <code>unspecified **SetTableIndices**(D d, TI* idx)</code> prepares for
     `TableLookupLanes` by loading `Lanes(d)` integer indices from `idx`, which
-    must be in the range `[0, Lanes(d))` but need not be unique. The index type
-    `TI` must be an integer of the same size as `TFromD<D>`.
+    must be in the range `[0, 2 * Lanes(d))` but need not be unique. The index
+    type `TI` must be an integer of the same size as `TFromD<D>`.
 
 *   `V`: `{u,i,f}{16,32,64}` \
     <code>V **Reverse**(D, V a)</code> returns a vector with lanes in reversed
@@ -1461,6 +1515,11 @@ The above were previously known as `HWY_CAP_INTEGER64`, `HWY_CAP_FLOAT16`, and
 
 *   `HWY_HAVE_SCALABLE` indicates vector sizes are unknown at compile time, and
     determined by the CPU.
+
+*   `HWY_HAVE_TUPLE` indicates `Vec{2-4}`, `Create{2-4}` and `Get{2-4}` are
+    usable. This is already true `#if !HWY_HAVE_SCALABLE`, and for SVE targets,
+    and the RVV target when using Clang 16. We anticipate it will also become,
+    and then remain, true starting with GCC 14.
 
 *   `HWY_MEM_OPS_MIGHT_FAULT` is 1 iff `MaskedLoad` may trigger a (page) fault
     when attempting to load lanes from unmapped memory, even if the

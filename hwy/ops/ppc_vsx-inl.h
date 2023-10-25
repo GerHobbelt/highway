@@ -181,6 +181,9 @@ HWY_API Vec128<T, HWY_MAX_LANES_D(D)> Zero(D /* tag */) {
 template <class D>
 using VFromD = decltype(Zero(D()));
 
+// ------------------------------ Tuple (VFromD)
+#include "hwy/ops/tuple-inl.h"
+
 // ------------------------------ BitCast
 
 template <class D, typename FromT>
@@ -600,51 +603,51 @@ HWY_API Vec128<T, N> Shuffle2301(Vec128<T, N> v) {
 namespace detail {
 
 template <typename T, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec32<T> Shuffle2301(Vec32<T> a, Vec32<T> b) {
+HWY_API Vec32<T> ShuffleTwo2301(Vec32<T> a, Vec32<T> b) {
   const __vector unsigned char kShuffle16 = {1, 0, 19, 18};
   return Vec32<T>{vec_perm(a.raw, b.raw, kShuffle16)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec64<T> Shuffle2301(Vec64<T> a, Vec64<T> b) {
+HWY_API Vec64<T> ShuffleTwo2301(Vec64<T> a, Vec64<T> b) {
   const __vector unsigned char kShuffle = {2, 3, 0, 1, 22, 23, 20, 21};
   return Vec64<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T> Shuffle2301(Vec128<T> a, Vec128<T> b) {
+HWY_API Vec128<T> ShuffleTwo2301(Vec128<T> a, Vec128<T> b) {
   const __vector unsigned char kShuffle = {4,  5,  6,  7,  0,  1,  2,  3,
                                            28, 29, 30, 31, 24, 25, 26, 27};
   return Vec128<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 
 template <typename T, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec32<T> Shuffle1230(Vec32<T> a, Vec32<T> b) {
+HWY_API Vec32<T> ShuffleTwo1230(Vec32<T> a, Vec32<T> b) {
   const __vector unsigned char kShuffle = {0, 3, 18, 17};
   return Vec32<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec64<T> Shuffle1230(Vec64<T> a, Vec64<T> b) {
+HWY_API Vec64<T> ShuffleTwo1230(Vec64<T> a, Vec64<T> b) {
   const __vector unsigned char kShuffle = {0, 1, 6, 7, 20, 21, 18, 19};
   return Vec64<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T> Shuffle1230(Vec128<T> a, Vec128<T> b) {
+HWY_API Vec128<T> ShuffleTwo1230(Vec128<T> a, Vec128<T> b) {
   const __vector unsigned char kShuffle = {0,  1,  2,  3,  12, 13, 14, 15,
                                            24, 25, 26, 27, 20, 21, 22, 23};
   return Vec128<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 
 template <typename T, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec32<T> Shuffle3012(Vec32<T> a, Vec32<T> b) {
+HWY_API Vec32<T> ShuffleTwo3012(Vec32<T> a, Vec32<T> b) {
   const __vector unsigned char kShuffle = {2, 1, 16, 19};
   return Vec32<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec64<T> Shuffle3012(Vec64<T> a, Vec64<T> b) {
+HWY_API Vec64<T> ShuffleTwo3012(Vec64<T> a, Vec64<T> b) {
   const __vector unsigned char kShuffle = {4, 5, 2, 3, 16, 17, 22, 23};
   return Vec64<T>{vec_perm(a.raw, b.raw, kShuffle)};
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T> Shuffle3012(Vec128<T> a, Vec128<T> b) {
+HWY_API Vec128<T> ShuffleTwo3012(Vec128<T> a, Vec128<T> b) {
   const __vector unsigned char kShuffle = {8,  9,  10, 11, 4,  5,  6,  7,
                                            16, 17, 18, 19, 28, 29, 30, 31};
   return Vec128<T>{vec_perm(a.raw, b.raw, kShuffle)};
@@ -1514,70 +1517,128 @@ struct Indices128 {
   __vector unsigned char raw;
 };
 
-template <class D, typename T = TFromD<D>, typename TI, size_t kN,
-          HWY_IF_T_SIZE(T, 4)>
-HWY_API Indices128<T, kN> IndicesFromVec(D d, Vec128<TI, kN> vec) {
-  static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
-#if HWY_IS_DEBUG_BUILD
-  const Rebind<TI, decltype(d)> di;
-  HWY_DASSERT(AllFalse(di, Lt(vec, Zero(di))) &&
-              AllTrue(di, Lt(vec, Set(di, kN))));
-#endif
+namespace detail {
 
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
   const Repartition<uint8_t, decltype(d)> d8;
-  using V8 = VFromD<decltype(d8)>;
-  const __vector unsigned char kByteOffsets = {0, 1, 2, 3, 0, 1, 2, 3,
-                                               0, 1, 2, 3, 0, 1, 2, 3};
-
-  // Broadcast each lane index to all 4 bytes of T
-#if HWY_IS_LITTLE_ENDIAN
-  const __vector unsigned char kBroadcastLaneBytes = {
-      0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
-#else
-  const __vector unsigned char kBroadcastLaneBytes = {
-      3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15};
-#endif
-  const V8 lane_indices = BitCast(
-      d8, Vec128<TI, kN>{vec_perm(vec.raw, vec.raw, kBroadcastLaneBytes)});
-
-  // Shift to bytes
-  const Repartition<uint16_t, decltype(d)> d16;
-  const V8 byte_indices = BitCast(d8, ShiftLeft<2>(BitCast(d16, lane_indices)));
-
-  return Indices128<T, kN>{vec_add(byte_indices.raw, kByteOffsets)};
+  return Iota(d8, 0);
 }
 
-template <class D, typename T = TFromD<D>, typename TI, size_t kN,
-          HWY_IF_T_SIZE(T, 8)>
-HWY_API Indices128<T, kN> IndicesFromVec(D d, Vec128<TI, kN> vec) {
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14};
+#else
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      1, 1, 3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15};
+#endif
+  return VFromD<decltype(d8)>{kBroadcastLaneBytes};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
+#else
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15};
+#endif
+  return VFromD<decltype(d8)>{kBroadcastLaneBytes};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8};
+#else
+  constexpr __vector unsigned char kBroadcastLaneBytes = {
+      7, 7, 7, 7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15, 15, 15};
+#endif
+  return VFromD<decltype(d8)>{kBroadcastLaneBytes};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Zero(d8);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  constexpr __vector unsigned char kByteOffsets = {0, 1, 0, 1, 0, 1, 0, 1,
+                                                   0, 1, 0, 1, 0, 1, 0, 1};
+  return VFromD<decltype(d8)>{kByteOffsets};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  constexpr __vector unsigned char kByteOffsets = {0, 1, 2, 3, 0, 1, 2, 3,
+                                                   0, 1, 2, 3, 0, 1, 2, 3};
+  return VFromD<decltype(d8)>{kByteOffsets};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  constexpr __vector unsigned char kByteOffsets = {0, 1, 2, 3, 4, 5, 6, 7,
+                                                   0, 1, 2, 3, 4, 5, 6, 7};
+  return VFromD<decltype(d8)>{kByteOffsets};
+}
+
+}  // namespace detail
+
+template <class D, typename TI, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
   static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
 #if HWY_IS_DEBUG_BUILD
-  const Rebind<TI, decltype(d)> di;
-  HWY_DASSERT(AllFalse(di, Lt(vec, Zero(di))) &&
-              AllTrue(di, Lt(vec, Set(di, kN))));
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
+#endif
+
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Indices128<TFromD<D>, MaxLanes(D())>{BitCast(d8, vec).raw};
+}
+
+template <class D, typename TI,
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 2) | (1 << 4) | (1 << 8))>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
+  static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
+#if HWY_IS_DEBUG_BUILD
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
 #endif
 
   const Repartition<uint8_t, decltype(d)> d8;
   using V8 = VFromD<decltype(d8)>;
-  const __vector unsigned char kByteOffsets = {0, 1, 2, 3, 4, 5, 6, 7,
-                                               0, 1, 2, 3, 4, 5, 6, 7};
 
-  // Broadcast each lane index to all 8 bytes of T
-#if HWY_IS_LITTLE_ENDIAN
-  const __vector unsigned char kBroadcastLaneBytes = {0, 0, 0, 0, 0, 0, 0, 0,
-                                                      8, 8, 8, 8, 8, 8, 8, 8};
-#else
-  const __vector unsigned char kBroadcastLaneBytes = {
-      7, 7, 7, 7, 7, 7, 7, 7, 15, 15, 15, 15, 15, 15, 15, 15};
-#endif
-  const V8 lane_indices = BitCast(
-      d8, Vec128<TI, kN>{vec_perm(vec.raw, vec.raw, kBroadcastLaneBytes)});
-
-  // Shift to bytes
-  const Repartition<uint16_t, decltype(d)> d16;
-  const V8 byte_indices = BitCast(d8, ShiftLeft<3>(BitCast(d16, lane_indices)));
-
-  return Indices128<T, kN>{vec_add(byte_indices.raw, kByteOffsets)};
+  // Broadcast each lane index to all bytes of T and shift to bytes
+  const V8 lane_indices = TableLookupBytes(
+      BitCast(d8, vec), detail::IndicesFromVecBroadcastLaneBytes(d));
+  constexpr int kIndexShiftAmt = static_cast<int>(FloorLog2(sizeof(T)));
+  const V8 byte_indices = ShiftLeft<kIndexShiftAmt>(lane_indices);
+  const V8 sum = Add(byte_indices, detail::IndicesFromVecByteOffsets(d));
+  return Indices128<TFromD<D>, MaxLanes(D())>{sum.raw};
 }
 
 template <class D, typename TI>
@@ -1599,6 +1660,23 @@ template <typename T>
 HWY_API Vec128<T, 1> TableLookupLanes(Vec128<T, 1> v,
                                       Indices128<T, 1> /* idx */) {
   return v;
+}
+
+template <typename T, size_t N, HWY_IF_V_SIZE_LE(T, N, 8)>
+HWY_API Vec128<T, N> TwoTablesLookupLanes(Vec128<T, N> a, Vec128<T, N> b,
+                                          Indices128<T, N> idx) {
+  const DFromV<decltype(a)> d;
+  const Twice<decltype(d)> dt;
+  const Repartition<uint8_t, decltype(dt)> dt_u8;
+  return LowerHalf(
+      d, TableLookupBytes(Combine(dt, b, a),
+                          BitCast(dt, VFromD<decltype(dt_u8)>{idx.raw})));
+}
+
+template <typename T>
+HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
+                                       Indices128<T> idx) {
+  return Vec128<T>{vec_perm(a.raw, b.raw, idx.raw)};
 }
 
 // ------------------------------ ReverseBlocks
@@ -3241,6 +3319,18 @@ template <class D>
 HWY_API intptr_t FindFirstTrue(D /* tag */, MFromD<D> mask) {
   const uint64_t mask_bits = detail::BitsFromMask(mask);
   return mask_bits ? intptr_t(Num0BitsBelowLS1Bit_Nonzero64(mask_bits)) : -1;
+}
+
+template <class D>
+HWY_API size_t FindKnownLastTrue(D /* tag */, MFromD<D> mask) {
+  return 63 - Num0BitsAboveMS1Bit_Nonzero64(detail::BitsFromMask(mask));
+}
+
+template <class D>
+HWY_API intptr_t FindLastTrue(D /* tag */, MFromD<D> mask) {
+  const uint64_t mask_bits = detail::BitsFromMask(mask);
+  return mask_bits ? intptr_t(63 - Num0BitsAboveMS1Bit_Nonzero64(mask_bits))
+                   : -1;
 }
 
 // ------------------------------ Compress, CompressBits

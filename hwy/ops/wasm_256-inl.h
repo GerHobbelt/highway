@@ -919,21 +919,21 @@ HWY_API Vec256<T> Shuffle0123(Vec256<T> v) {
 namespace detail {
 
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec256<T> Shuffle2301(Vec256<T> a, const Vec256<T> b) {
-  a.v0 = Shuffle2301(a.v0, b.v0);
-  a.v1 = Shuffle2301(a.v1, b.v1);
+HWY_API Vec256<T> ShuffleTwo2301(Vec256<T> a, const Vec256<T> b) {
+  a.v0 = ShuffleTwo2301(a.v0, b.v0);
+  a.v1 = ShuffleTwo2301(a.v1, b.v1);
   return a;
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec256<T> Shuffle1230(Vec256<T> a, const Vec256<T> b) {
-  a.v0 = Shuffle1230(a.v0, b.v0);
-  a.v1 = Shuffle1230(a.v1, b.v1);
+HWY_API Vec256<T> ShuffleTwo1230(Vec256<T> a, const Vec256<T> b) {
+  a.v0 = ShuffleTwo1230(a.v0, b.v0);
+  a.v1 = ShuffleTwo1230(a.v1, b.v1);
   return a;
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec256<T> Shuffle3012(Vec256<T> a, const Vec256<T> b) {
-  a.v0 = Shuffle3012(a.v0, b.v0);
-  a.v1 = Shuffle3012(a.v1, b.v1);
+HWY_API Vec256<T> ShuffleTwo3012(Vec256<T> a, const Vec256<T> b) {
+  a.v0 = ShuffleTwo3012(a.v0, b.v0);
+  a.v1 = ShuffleTwo3012(a.v1, b.v1);
   return a;
 }
 
@@ -965,34 +965,48 @@ HWY_API Indices256<TFromD<D>> SetTableIndices(D d, const TI* idx) {
 
 template <typename T>
 HWY_API Vec256<T> TableLookupLanes(const Vec256<T> v, Indices256<T> idx) {
-  using TU = MakeUnsigned<T>;
-  const Full128<T> dh;
-  const Full128<TU> duh;
-  constexpr size_t kLanesPerHalf = 16 / sizeof(TU);
+  const DFromV<decltype(v)> d;
+  const Half<decltype(d)> dh;
+  const auto idx_i0 = IndicesFromVec(dh, Vec128<T>{idx.i0});
+  const auto idx_i1 = IndicesFromVec(dh, Vec128<T>{idx.i1});
 
-  const Vec128<TU> vi0{idx.i0};
-  const Vec128<TU> vi1{idx.i1};
-  const Vec128<TU> mask = Set(duh, static_cast<TU>(kLanesPerHalf - 1));
-  const Vec128<TU> vmod0 = vi0 & mask;
-  const Vec128<TU> vmod1 = vi1 & mask;
-  // If ANDing did not change the index, it is for the lower half.
-  const Mask128<T> is_lo0 = RebindMask(dh, vi0 == vmod0);
-  const Mask128<T> is_lo1 = RebindMask(dh, vi1 == vmod1);
-  const Indices128<T> mod0 = IndicesFromVec(dh, vmod0);
-  const Indices128<T> mod1 = IndicesFromVec(dh, vmod1);
-
-  Vec256<T> ret;
-  ret.v0 = IfThenElse(is_lo0, TableLookupLanes(v.v0, mod0),
-                      TableLookupLanes(v.v1, mod0));
-  ret.v1 = IfThenElse(is_lo1, TableLookupLanes(v.v0, mod1),
-                      TableLookupLanes(v.v1, mod1));
-  return ret;
+  Vec256<T> result;
+  result.v0 = TwoTablesLookupLanes(v.v0, v.v1, idx_i0);
+  result.v1 = TwoTablesLookupLanes(v.v0, v.v1, idx_i1);
+  return result;
 }
 
 template <typename T>
 HWY_API Vec256<T> TableLookupLanesOr0(Vec256<T> v, Indices256<T> idx) {
   // The out of bounds behavior will already zero lanes.
   return TableLookupLanesOr0(v, idx);
+}
+
+template <typename T>
+HWY_API Vec256<T> TwoTablesLookupLanes(const Vec256<T> a, const Vec256<T> b,
+                                       Indices256<T> idx) {
+  const DFromV<decltype(a)> d;
+  const Half<decltype(d)> dh;
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = MakeUnsigned<T>;
+  constexpr size_t kLanesPerVect = 32 / sizeof(TU);
+
+  Vec256<TU> vi;
+  vi.v0 = Vec128<TU>{idx.i0};
+  vi.v1 = Vec128<TU>{idx.i1};
+  const auto vmod = vi & Set(du, TU{kLanesPerVect - 1});
+  const auto is_lo = RebindMask(d, vi == vmod);
+
+  const auto idx_i0 = IndicesFromVec(dh, vmod.v0);
+  const auto idx_i1 = IndicesFromVec(dh, vmod.v1);
+
+  Vec256<T> result_lo;
+  Vec256<T> result_hi;
+  result_lo.v0 = TwoTablesLookupLanes(a.v0, a.v1, idx_i0);
+  result_lo.v1 = TwoTablesLookupLanes(a.v0, a.v1, idx_i1);
+  result_hi.v0 = TwoTablesLookupLanes(b.v0, b.v1, idx_i0);
+  result_hi.v1 = TwoTablesLookupLanes(b.v0, b.v1, idx_i1);
+  return IfThenElse(is_lo, result_lo, result_hi);
 }
 
 // ------------------------------ Reverse
@@ -1564,10 +1578,28 @@ template <class D, typename T = TFromD<D>>
 HWY_API intptr_t FindFirstTrue(D d, const Mask256<T> mask) {
   const Half<decltype(d)> dh;
   const intptr_t lo = FindFirstTrue(dh, mask.m0);
-  const intptr_t hi = FindFirstTrue(dh, mask.m1);
-  if (lo < 0 && hi < 0) return lo;
   constexpr int kLanesPerHalf = 16 / sizeof(T);
-  return lo >= 0 ? lo : hi + kLanesPerHalf;
+  if (lo >= 0) return lo;
+
+  const intptr_t hi = FindFirstTrue(dh, mask.m1);
+  return hi + (hi >= 0 ? kLanesPerHalf : 0);
+}
+
+template <class D, typename T = TFromD<D>>
+HWY_API size_t FindKnownLastTrue(D d, const Mask256<T> mask) {
+  const Half<decltype(d)> dh;
+  const intptr_t hi = FindLastTrue(dh, mask.m1);  // not known
+  constexpr size_t kLanesPerHalf = 16 / sizeof(T);
+  return hi >= 0 ? kLanesPerHalf + static_cast<size_t>(hi)
+                 : FindKnownLastTrue(dh, mask.m0);
+}
+
+template <class D, typename T = TFromD<D>>
+HWY_API intptr_t FindLastTrue(D d, const Mask256<T> mask) {
+  const Half<decltype(d)> dh;
+  constexpr int kLanesPerHalf = 16 / sizeof(T);
+  const intptr_t hi = FindLastTrue(dh, mask.m1);
+  return hi >= 0 ? kLanesPerHalf + hi : FindLastTrue(dh, mask.m0);
 }
 
 // ------------------------------ CompressStore

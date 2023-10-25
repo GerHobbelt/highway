@@ -142,6 +142,9 @@ HWY_API Vec128<TFromD<D>, HWY_MAX_LANES_D(D)> Zero(D /* tag */) {
 template <class D>
 using VFromD = decltype(Zero(D()));
 
+// ------------------------------ Tuple (VFromD)
+#include "hwy/ops/tuple-inl.h"
+
 // ------------------------------ BitCast
 
 namespace detail {
@@ -2458,58 +2461,67 @@ HWY_API Vec128<T, N> Shuffle2301(const Vec128<T, N> v) {
 namespace detail {
 
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec128<T, N> Shuffle2301(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo2301(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i8x16_shuffle(a.raw, b.raw, 1, 0, 3 + 16, 2 + 16,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec128<T, N> Shuffle2301(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo2301(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i16x8_shuffle(a.raw, b.raw, 1, 0, 3 + 8, 2 + 8,
                                          0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T, N> Shuffle2301(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo2301(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i32x4_shuffle(a.raw, b.raw, 1, 0, 3 + 4, 2 + 4)};
 }
 
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec128<T, N> Shuffle1230(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo1230(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i8x16_shuffle(a.raw, b.raw, 0, 3, 2 + 16, 1 + 16,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec128<T, N> Shuffle1230(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo1230(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i16x8_shuffle(a.raw, b.raw, 0, 3, 2 + 8, 1 + 8,
                                          0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T, N> Shuffle1230(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo1230(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i32x4_shuffle(a.raw, b.raw, 0, 3, 2 + 4, 1 + 4)};
 }
 
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 1)>
-HWY_API Vec128<T, N> Shuffle3012(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo3012(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i8x16_shuffle(a.raw, b.raw, 2, 1, 0 + 16, 3 + 16,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F,
                                          0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 2)>
-HWY_API Vec128<T, N> Shuffle3012(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo3012(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i16x8_shuffle(a.raw, b.raw, 2, 1, 0 + 8, 3 + 8,
                                          0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF)};
 }
 template <typename T, size_t N, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T, N> Shuffle3012(const Vec128<T, N> a, const Vec128<T, N> b) {
+HWY_API Vec128<T, N> ShuffleTwo3012(const Vec128<T, N> a,
+                                    const Vec128<T, N> b) {
   static_assert(N == 2 || N == 4, "Does not make sense for N=1");
   return Vec128<T, N>{wasm_i32x4_shuffle(a.raw, b.raw, 2, 1, 0 + 4, 3 + 4)};
 }
@@ -2557,43 +2569,114 @@ struct Indices128 {
   __v128_u raw;
 };
 
-template <class D, typename T = TFromD<D>, typename TI, size_t kN,
-          HWY_IF_V_SIZE_LE_D(D, 16)>
-HWY_API Indices128<T, kN> IndicesFromVec(D d, Vec128<TI, kN> vec) {
+namespace detail {
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Iota(d8, 0);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Zero(d8);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
+  return Load(d8, kByteOffsets);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3};
+  return Load(d8, kByteOffsets);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7};
+  return Load(d8, kByteOffsets);
+}
+
+}  // namespace detail
+
+template <class D, typename TI, HWY_IF_V_SIZE_LE_D(D, 16),
+          HWY_IF_T_SIZE_D(D, 1)>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
   static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
 #if HWY_IS_DEBUG_BUILD
-  const Rebind<TI, decltype(d)> di;
-  HWY_DASSERT(AllFalse(di, Lt(vec, Zero(di))) &&
-              AllTrue(di, Lt(vec, Set(di, static_cast<TI>(N)))));
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
+#endif
+
+  (void)d;
+  return Indices128<TFromD<D>, MaxLanes(D())>{vec.raw};
+}
+
+template <class D, typename TI, HWY_IF_V_SIZE_LE_D(D, 16),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 2) | (1 << 4) | (1 << 8))>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
+  static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
+#if HWY_IS_DEBUG_BUILD
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
 #endif
 
   const Repartition<uint8_t, decltype(d)> d8;
   using V8 = VFromD<decltype(d8)>;
-  const Repartition<uint16_t, decltype(d)> d16;
 
   // Broadcast each lane index to all bytes of T and shift to bytes
-  static_assert(sizeof(T) == 4 || sizeof(T) == 8, "");
-  if (sizeof(T) == 4) {
-    alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
-        0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
-    const V8 lane_indices =
-        TableLookupBytes(BitCast(d8, vec), Load(d8, kBroadcastLaneBytes));
-    const V8 byte_indices =
-        BitCast(d8, ShiftLeft<2>(BitCast(d16, lane_indices)));
-    alignas(16) static constexpr uint8_t kByteOffsets[16] = {
-        0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3};
-    return Indices128<T, kN>{Add(byte_indices, Load(d8, kByteOffsets)).raw};
-  } else {
-    alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
-        0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8};
-    const V8 lane_indices =
-        TableLookupBytes(BitCast(d8, vec), Load(d8, kBroadcastLaneBytes));
-    const V8 byte_indices =
-        BitCast(d8, ShiftLeft<3>(BitCast(d16, lane_indices)));
-    alignas(16) static constexpr uint8_t kByteOffsets[16] = {
-        0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7};
-    return Indices128<T, kN>{Add(byte_indices, Load(d8, kByteOffsets)).raw};
-  }
+  const V8 lane_indices = TableLookupBytes(
+      BitCast(d8, vec), detail::IndicesFromVecBroadcastLaneBytes(d));
+  constexpr int kIndexShiftAmt = static_cast<int>(FloorLog2(sizeof(T)));
+  const V8 byte_indices = ShiftLeft<kIndexShiftAmt>(lane_indices);
+  const V8 sum = Add(byte_indices, detail::IndicesFromVecByteOffsets(d));
+  return Indices128<TFromD<D>, MaxLanes(D())>{BitCast(d, sum).raw};
 }
 
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16), typename TI>
@@ -2609,6 +2692,30 @@ HWY_API Vec128<T, N> TableLookupLanes(Vec128<T, N> v, Indices128<T, N> idx) {
   const DFromV<decltype(v)> d;
   const Rebind<TI, decltype(d)> di;
   return BitCast(d, TableLookupBytes(BitCast(di, v), Vec128<TI, N>{idx.raw}));
+}
+
+template <typename T, size_t N, HWY_IF_V_SIZE_LE(T, N, 8)>
+HWY_API Vec128<T, N> TwoTablesLookupLanes(Vec128<T, N> a, Vec128<T, N> b,
+                                          Indices128<T, N> idx) {
+  const DFromV<decltype(a)> d;
+  const Twice<decltype(d)> dt;
+  return LowerHalf(
+      d, TableLookupLanes(Combine(dt, b, a), Indices128<T, N * 2>{idx.raw}));
+}
+
+template <typename T>
+HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
+                                       Indices128<T> idx) {
+  const DFromV<decltype(a)> d;
+  const Repartition<uint8_t, decltype(d)> du8;
+
+  const VFromD<decltype(du8)> byte_idx{idx.raw};
+  const auto byte_idx_mod = byte_idx & Set(du8, uint8_t{0x0F});
+  // If ANDing did not change the index, it is for the lower half.
+  const auto is_lo = (byte_idx == byte_idx_mod);
+
+  return BitCast(d, IfThenElse(is_lo, TableLookupBytes(a, byte_idx_mod),
+                               TableLookupBytes(b, byte_idx_mod)));
 }
 
 // ------------------------------ Reverse (Shuffle0123, Shuffle2301, Shuffle01)
@@ -3931,7 +4038,7 @@ HWY_API size_t CountTrue(D d, MFromD<D> m) {
 template <class D, HWY_IF_V_SIZE_D(D, 16)>
 HWY_API bool AllFalse(D d, const MFromD<D> m) {
   const auto v8 = BitCast(Full128<int8_t>(), VecFromMask(d, m));
-  return !wasm_i8x16_any_true(v8.raw);
+  return !wasm_v128_any_true(v8.raw);
 }
 
 // Full vector
@@ -3978,14 +4085,28 @@ HWY_API bool AllTrue(D d, const MFromD<D> m) {
 
 template <class D>
 HWY_API size_t FindKnownFirstTrue(D /* tag */, const MFromD<D> mask) {
-  const uint64_t bits = detail::BitsFromMask(mask);
-  return Num0BitsBelowLS1Bit_Nonzero64(bits);
+  const uint32_t bits = static_cast<uint32_t>(detail::BitsFromMask(mask));
+  return Num0BitsBelowLS1Bit_Nonzero32(bits);
 }
 
 template <class D>
 HWY_API intptr_t FindFirstTrue(D /* tag */, const MFromD<D> mask) {
-  const uint64_t bits = detail::BitsFromMask(mask);
-  return bits ? static_cast<intptr_t>(Num0BitsBelowLS1Bit_Nonzero64(bits)) : -1;
+  const uint32_t bits = static_cast<uint32_t>(detail::BitsFromMask(mask));
+  return bits ? static_cast<intptr_t>(Num0BitsBelowLS1Bit_Nonzero32(bits)) : -1;
+}
+
+template <class D>
+HWY_API size_t FindKnownLastTrue(D /* tag */, const MFromD<D> mask) {
+  const uint32_t bits = static_cast<uint32_t>(detail::BitsFromMask(mask));
+  return 31 - Num0BitsAboveMS1Bit_Nonzero32(bits);
+}
+
+template <class D>
+HWY_API intptr_t FindLastTrue(D /* tag */, const MFromD<D> mask) {
+  const uint32_t bits = static_cast<uint32_t>(detail::BitsFromMask(mask));
+  return bits
+             ? (31 - static_cast<intptr_t>(Num0BitsAboveMS1Bit_Nonzero32(bits)))
+             : -1;
 }
 
 // ------------------------------ Compress

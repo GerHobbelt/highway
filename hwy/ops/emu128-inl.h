@@ -97,6 +97,9 @@ HWY_API Vec128<TFromD<D>, HWY_MAX_LANES_D(D)> Zero(D /* tag */) {
 template <class D>
 using VFromD = decltype(Zero(D()));
 
+// ------------------------------ Tuple (VFromD)
+#include "hwy/ops/tuple-inl.h"
+
 // ------------------------------ BitCast
 
 template <class D, class VFrom>
@@ -2101,6 +2104,21 @@ HWY_API Vec128<T, N> TableLookupLanes(Vec128<T, N> v, Indices128<T, N> idx) {
   return ret;
 }
 
+template <typename T, size_t N>
+HWY_API Vec128<T, N> TwoTablesLookupLanes(Vec128<T, N> a, Vec128<T, N> b,
+                                          Indices128<T, N> idx) {
+  using TI = MakeSigned<T>;
+  Vec128<T, N> ret;
+  constexpr TI kVecLaneIdxMask = static_cast<TI>(N - 1);
+  for (size_t i = 0; i < N; ++i) {
+    const auto src_idx = idx.raw[i];
+    const auto masked_src_lane_idx = src_idx & kVecLaneIdxMask;
+    ret.raw[i] = (src_idx < static_cast<TI>(N)) ? a.raw[masked_src_lane_idx]
+                                                : b.raw[masked_src_lane_idx];
+  }
+  return ret;
+}
+
 // ------------------------------ ReverseBlocks
 template <class D>
 HWY_API VFromD<D> ReverseBlocks(D /* tag */, VFromD<D> v) {
@@ -2372,6 +2390,23 @@ template <class D>
 HWY_API intptr_t FindFirstTrue(D d, MFromD<D> mask) {
   for (size_t i = 0; i < MaxLanes(d); ++i) {
     if (mask.bits[i] != 0) return static_cast<intptr_t>(i);
+  }
+  return intptr_t{-1};
+}
+
+template <class D>
+HWY_API size_t FindKnownLastTrue(D d, MFromD<D> mask) {
+  for (intptr_t i = static_cast<intptr_t>(MaxLanes(d) - 1); i >= 0; i--) {
+    if (mask.bits[i] != 0) return static_cast<size_t>(i);
+  }
+  HWY_DASSERT(false);
+  return 0;
+}
+
+template <class D>
+HWY_API intptr_t FindLastTrue(D d, MFromD<D> mask) {
+  for (intptr_t i = static_cast<intptr_t>(MaxLanes(d) - 1); i >= 0; i--) {
+    if (mask.bits[i] != 0) return i;
   }
   return intptr_t{-1};
 }

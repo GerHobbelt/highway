@@ -939,6 +939,9 @@ HWY_API VFromD<D> Iota(D d, const T2 first) {
   return Load(d, lanes);
 }
 
+// ------------------------------ Tuple (VFromD)
+#include "hwy/ops/tuple-inl.h"
+
 // ------------------------------ BitCast
 
 namespace detail {
@@ -4145,48 +4148,116 @@ struct Indices128 {
   typename detail::Raw128<T, N>::type raw;
 };
 
-template <class D, typename TI, size_t N, HWY_IF_V_SIZE_LE_D(D, 16),
-          typename T = TFromD<D>>
-HWY_API Indices128<T, N> IndicesFromVec(D d, Vec128<TI, N> vec) {
+namespace detail {
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Iota(d8, 0);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecBroadcastLaneBytes(
+    D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
+      0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8};
+  return Load(d8, kBroadcastLaneBytes);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  return Zero(d8);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1};
+  return Load(d8, kByteOffsets);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3};
+  return Load(d8, kByteOffsets);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_INLINE VFromD<Repartition<uint8_t, D>> IndicesFromVecByteOffsets(D d) {
+  const Repartition<uint8_t, decltype(d)> d8;
+  alignas(16) static constexpr uint8_t kByteOffsets[16] = {
+      0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7};
+  return Load(d8, kByteOffsets);
+}
+
+}  // namespace detail
+
+template <class D, typename TI, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
   static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
 #if HWY_IS_DEBUG_BUILD
-  const Rebind<TI, decltype(d)> di;
-  HWY_DASSERT(AllFalse(di, Lt(vec, Zero(di))) &&
-              AllTrue(di, Lt(vec, Set(di, static_cast<TI>(N)))));
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
+#endif
+
+  (void)d;
+  return Indices128<TFromD<D>, MaxLanes(D())>{BitCast(d, vec).raw};
+}
+
+template <class D, typename TI,
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 2) | (1 << 4) | (1 << 8))>
+HWY_API Indices128<TFromD<D>, MaxLanes(D())> IndicesFromVec(
+    D d, Vec128<TI, MaxLanes(D())> vec) {
+  using T = TFromD<D>;
+  static_assert(sizeof(T) == sizeof(TI), "Index size must match lane");
+#if HWY_IS_DEBUG_BUILD
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  HWY_DASSERT(AllTrue(
+      du, Lt(BitCast(du, vec), Set(du, static_cast<TU>(MaxLanes(d) * 2)))));
 #endif
 
   const Repartition<uint8_t, decltype(d)> d8;
   using V8 = VFromD<decltype(d8)>;
-  const Repartition<uint16_t, decltype(d)> d16;
 
   // Broadcast each lane index to all bytes of T and shift to bytes
-  static_assert(sizeof(T) == 4 || sizeof(T) == 8, "");
-  if (sizeof(T) == 4) {
-    alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
-        0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12};
-    const V8 lane_indices =
-        TableLookupBytes(BitCast(d8, vec), Load(d8, kBroadcastLaneBytes));
-    const V8 byte_indices =
-        BitCast(d8, ShiftLeft<2>(BitCast(d16, lane_indices)));
-    alignas(16) static constexpr uint8_t kByteOffsets[16] = {
-        0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3};
-    const V8 sum = Add(byte_indices, Load(d8, kByteOffsets));
-    return Indices128<T, N>{BitCast(d, sum).raw};
-  } else {
-    alignas(16) static constexpr uint8_t kBroadcastLaneBytes[16] = {
-        0, 0, 0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8};
-    const V8 lane_indices =
-        TableLookupBytes(BitCast(d8, vec), Load(d8, kBroadcastLaneBytes));
-    const V8 byte_indices =
-        BitCast(d8, ShiftLeft<3>(BitCast(d16, lane_indices)));
-    alignas(16) static constexpr uint8_t kByteOffsets[16] = {
-        0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7};
-    const V8 sum = Add(byte_indices, Load(d8, kByteOffsets));
-    return Indices128<T, N>{BitCast(d, sum).raw};
-  }
+  const V8 lane_indices = TableLookupBytes(
+      BitCast(d8, vec), detail::IndicesFromVecBroadcastLaneBytes(d));
+  constexpr int kIndexShiftAmt = static_cast<int>(FloorLog2(sizeof(T)));
+  const V8 byte_indices = ShiftLeft<kIndexShiftAmt>(lane_indices);
+  const V8 sum = Add(byte_indices, detail::IndicesFromVecByteOffsets(d));
+  return Indices128<TFromD<D>, MaxLanes(D())>{BitCast(d, sum).raw};
 }
 
-template <class D, typename TI, HWY_IF_V_SIZE_LE_D(D, 16)>
+template <class D, typename TI>
 HWY_API Indices128<TFromD<D>, MaxLanes(D())> SetTableIndices(D d,
                                                              const TI* idx) {
   const Rebind<TI, decltype(d)> di;
@@ -4199,6 +4270,66 @@ HWY_API Vec128<T, N> TableLookupLanes(Vec128<T, N> v, Indices128<T, N> idx) {
   const RebindToSigned<decltype(d)> di;
   return BitCast(
       d, TableLookupBytes(BitCast(di, v), BitCast(di, Vec128<T, N>{idx.raw})));
+}
+
+template <typename T, size_t N, HWY_IF_V_SIZE_LE(T, N, 4)>
+HWY_API Vec128<T, N> TwoTablesLookupLanes(Vec128<T, N> a, Vec128<T, N> b,
+                                          Indices128<T, N> idx) {
+  const DFromV<decltype(a)> d;
+  const Twice<decltype(d)> dt;
+  return LowerHalf(
+      d, TableLookupLanes(Combine(dt, b, a), Indices128<T, N * 2>{idx.raw}));
+}
+
+template <typename T>
+HWY_API Vec64<T> TwoTablesLookupLanes(Vec64<T> a, Vec64<T> b,
+                                      Indices128<T, 8 / sizeof(T)> idx) {
+  const DFromV<decltype(a)> d;
+  const Repartition<uint8_t, decltype(d)> du8;
+  const auto a_u8 = BitCast(du8, a);
+  const auto b_u8 = BitCast(du8, b);
+  const auto idx_u8 = BitCast(du8, Vec64<T>{idx.raw});
+
+#if HWY_ARCH_ARM_A64
+  const Twice<decltype(du8)> dt_u8;
+  return BitCast(
+      d, Vec64<uint8_t>{vqtbl1_u8(Combine(dt_u8, b_u8, a_u8).raw, idx_u8.raw)});
+#else
+  detail::Tuple2<uint8_t, du8.MaxLanes()> tup = {{{a_u8.raw, b_u8.raw}}};
+  return BitCast(d, Vec64<uint8_t>{vtbl2_u8(tup.raw, idx_u8.raw)});
+#endif
+}
+
+template <typename T>
+HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
+                                       Indices128<T, 16 / sizeof(T)> idx) {
+  const DFromV<decltype(a)> d;
+  const Repartition<uint8_t, decltype(d)> du8;
+  const auto a_u8 = BitCast(du8, a);
+  const auto b_u8 = BitCast(du8, b);
+  const auto idx_u8 = BitCast(du8, Vec128<T>{idx.raw});
+
+#if HWY_ARCH_ARM_A64
+  detail::Tuple2<uint8_t, du8.MaxLanes()> tup = {{{a_u8.raw, b_u8.raw}}};
+  return BitCast(d, Vec128<uint8_t>{vqtbl2q_u8(tup.raw, idx_u8.raw)});
+#else
+  const Half<decltype(d)> dh;
+  const Repartition<uint8_t, decltype(dh)> dh_u8;
+  const auto a_lo_u8 = LowerHalf(dh_u8, a_u8);
+  const auto a_hi_u8 = UpperHalf(dh_u8, a_u8);
+  const auto b_lo_u8 = LowerHalf(dh_u8, b_u8);
+  const auto b_hi_u8 = UpperHalf(dh_u8, b_u8);
+  const auto idx_lo_u8 = LowerHalf(dh_u8, idx_u8);
+  const auto idx_hi_u8 = UpperHalf(dh_u8, idx_u8);
+
+  detail::Tuple4<uint8_t, dh_u8.MaxLanes()> tup = {
+      {{a_lo_u8.raw, a_hi_u8.raw, b_lo_u8.raw, b_hi_u8.raw}}};
+  const auto lo_result =
+      BitCast(dh, Vec64<uint8_t>{vtbl4_u8(tup.raw, idx_lo_u8.raw)});
+  const auto hi_result =
+      BitCast(dh, Vec64<uint8_t>{vtbl4_u8(tup.raw, idx_hi_u8.raw)});
+  return Combine(d, hi_result, lo_result);
+#endif
 }
 
 // ------------------------------ Reverse (Shuffle0123, Shuffle2301, Shuffle01)
@@ -4251,7 +4382,7 @@ HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
 template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec128<T> Reverse2(D d, Vec128<T> v) {
   const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, Vec128<uint16_t>(vrev16q_u8(BitCast(du, v).raw)));
+  return BitCast(d, Vec128<uint8_t>(vrev16q_u8(BitCast(du, v).raw)));
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_V_SIZE_LE_D(D, 8)>
@@ -4291,7 +4422,7 @@ HWY_API VFromD<D> Reverse4(D d, VFromD<D> v) {
 template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec128<T> Reverse4(D d, Vec128<T> v) {
   const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, Vec128<uint16_t>(vrev32q_u8(BitCast(du, v).raw)));
+  return BitCast(d, Vec128<uint8_t>(vrev32q_u8(BitCast(du, v).raw)));
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_V_SIZE_LE_D(D, 8)>
@@ -4325,7 +4456,7 @@ HWY_API VFromD<D> Reverse8(D d, VFromD<D> v) {
 template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec128<T> Reverse8(D d, Vec128<T> v) {
   const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, Vec128<uint16_t>(vrev64q_u8(BitCast(du, v).raw)));
+  return BitCast(d, Vec128<uint8_t>(vrev64q_u8(BitCast(du, v).raw)));
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 2)>
@@ -6092,8 +6223,24 @@ template <class D>
 HWY_API intptr_t FindFirstTrue(D d, MFromD<D> mask) {
   const uint64_t nib = detail::NibblesFromMask(d, mask);
   if (nib == 0) return -1;
-  constexpr int kDiv = 4 * sizeof(TFromD<D>);
+  constexpr size_t kDiv = 4 * sizeof(TFromD<D>);
   return static_cast<intptr_t>(Num0BitsBelowLS1Bit_Nonzero64(nib) / kDiv);
+}
+
+template <class D>
+HWY_API size_t FindKnownLastTrue(D d, MFromD<D> mask) {
+  const uint64_t nib = detail::NibblesFromMask(d, mask);
+  constexpr size_t kDiv = 4 * sizeof(TFromD<D>);
+  return (63 - Num0BitsAboveMS1Bit_Nonzero64(nib)) / kDiv;
+}
+
+template <class D>
+HWY_API intptr_t FindLastTrue(D d, MFromD<D> mask) {
+  const uint64_t nib = detail::NibblesFromMask(d, mask);
+  if (nib == 0) return -1;
+  constexpr size_t kDiv = 4 * sizeof(TFromD<D>);
+  return static_cast<intptr_t>((63 - Num0BitsAboveMS1Bit_Nonzero64(nib)) /
+                               kDiv);
 }
 
 // `p` points to at least 8 writable bytes.
