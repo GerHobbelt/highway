@@ -288,8 +288,7 @@ HWY_API void CopyBytes(const From* from, To* to) {
 #if HWY_COMPILER_MSVC
   memcpy(to, from, kBytes);
 #else
-  __builtin_memcpy(static_cast<void*>(to), static_cast<const void*>(from),
-                   kBytes);
+  __builtin_memcpy(to, from, kBytes);
 #endif
 }
 
@@ -1627,14 +1626,13 @@ template <typename TI>
              : static_cast<size_t>(FloorLog2(static_cast<TI>(x - 1)) + 1);
 }
 
-template <typename T>
-HWY_INLINE constexpr T AddWithWraparound(hwy::FloatTag /*tag*/, T t, size_t n) {
+template <typename T, typename T2>
+HWY_INLINE constexpr T AddWithWraparound(hwy::FloatTag /*tag*/, T t, T2 n) {
   return t + static_cast<T>(n);
 }
 
-template <typename T>
-HWY_INLINE constexpr T AddWithWraparound(hwy::NonFloatTag /*tag*/, T t,
-                                         size_t n) {
+template <typename T, typename T2>
+HWY_INLINE constexpr T AddWithWraparound(hwy::NonFloatTag /*tag*/, T t, T2 n) {
   using TU = MakeUnsigned<T>;
   return static_cast<T>(
       static_cast<TU>(static_cast<TU>(t) + static_cast<TU>(n)) &

@@ -146,6 +146,13 @@ HWY_API Vec256<uint64_t> SumsOf8(const Vec256<uint8_t> v) {
   return ret;
 }
 
+HWY_API Vec256<int64_t> SumsOf8(const Vec256<int8_t> v) {
+  Vec256<int64_t> ret;
+  ret.v0 = SumsOf8(v.v0);
+  ret.v1 = SumsOf8(v.v1);
+  return ret;
+}
+
 template <typename T>
 HWY_API Vec256<T> SaturatedAdd(Vec256<T> a, const Vec256<T> b) {
   a.v0 = SaturatedAdd(a.v0, b.v0);
@@ -1175,6 +1182,26 @@ HWY_API Vec256<T> InterleaveUpper(D d, Vec256<T> a, Vec256<T> b) {
   a.v0 = InterleaveUpper(dh, a.v0, b.v0);
   a.v1 = InterleaveUpper(dh, a.v1, b.v1);
   return a;
+}
+
+// ------------------------------ InterleaveWholeLower
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> InterleaveWholeLower(D d, VFromD<D> a, VFromD<D> b) {
+  const Half<decltype(d)> dh;
+  VFromD<D> ret;
+  ret.v0 = InterleaveLower(a.v0, b.v0);
+  ret.v1 = InterleaveUpper(dh, a.v0, b.v0);
+  return ret;
+}
+
+// ------------------------------ InterleaveWholeUpper
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> InterleaveWholeUpper(D d, VFromD<D> a, VFromD<D> b) {
+  const Half<decltype(d)> dh;
+  VFromD<D> ret;
+  ret.v0 = InterleaveLower(a.v1, b.v1);
+  ret.v1 = InterleaveUpper(dh, a.v1, b.v1);
+  return ret;
 }
 
 // ------------------------------ ZipLower/ZipUpper defined in wasm_128
@@ -2302,34 +2329,7 @@ HWY_API Vec256<TW> RearrangeToOddPlusEven(Vec256<TW> sum0, Vec256<TW> sum1) {
   return sum0;
 }
 
-// ------------------------------ Reductions
-
-template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> SumOfLanes(D d, const Vec256<T> v) {
-  const Half<decltype(d)> dh;
-  const Vec128<T> lo = SumOfLanes(dh, Add(v.v0, v.v1));
-  return Combine(d, lo, lo);
-}
-
-template <class D, typename T = TFromD<D>>
-HWY_API T ReduceSum(D d, const Vec256<T> v) {
-  const Half<decltype(d)> dh;
-  return ReduceSum(dh, Add(v.v0, v.v1));
-}
-
-template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> MinOfLanes(D d, const Vec256<T> v) {
-  const Half<decltype(d)> dh;
-  const Vec128<T> lo = MinOfLanes(dh, Min(v.v0, v.v1));
-  return Combine(d, lo, lo);
-}
-
-template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> MaxOfLanes(D d, const Vec256<T> v) {
-  const Half<decltype(d)> dh;
-  const Vec128<T> lo = MaxOfLanes(dh, Max(v.v0, v.v1));
-  return Combine(d, lo, lo);
-}
+// ------------------------------ Reductions in generic_ops
 
 // ------------------------------ Lt128
 

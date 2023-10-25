@@ -685,12 +685,106 @@ HWY_API svuint64_t SumsOf8(const svuint8_t v) {
 
   const svuint32_t sums_of_4 = svdot_n_u32(Zero(du32), v, 1);
   // Compute pairwise sum of u32 and extend to u64.
-  // TODO(janwas): on SVE2, we can instead use svaddp.
+
+#if HWY_SVE_HAVE_2
+  return svadalp_u64_x(pg, Zero(du64), sums_of_4);
+#else
   const svuint64_t hi = svlsr_n_u64_x(pg, BitCast(du64, sums_of_4), 32);
   // Isolate the lower 32 bits (to be added to the upper 32 and zero-extended)
   const svuint64_t lo = svextw_u64_x(pg, BitCast(du64, sums_of_4));
   return Add(hi, lo);
+#endif
 }
+
+HWY_API svint64_t SumsOf8(const svint8_t v) {
+  const ScalableTag<int32_t> di32;
+  const ScalableTag<int64_t> di64;
+  const svbool_t pg = detail::PTrue(di64);
+
+  const svint32_t sums_of_4 = svdot_n_s32(Zero(di32), v, 1);
+#if HWY_SVE_HAVE_2
+  return svadalp_s64_x(pg, Zero(di64), sums_of_4);
+#else
+  const svint64_t hi = svasr_n_s64_x(pg, BitCast(di64, sums_of_4), 32);
+  // Isolate the lower 32 bits (to be added to the upper 32 and sign-extended)
+  const svint64_t lo = svextw_s64_x(pg, BitCast(di64, sums_of_4));
+  return Add(hi, lo);
+#endif
+}
+
+// ------------------------------ SumsOf2
+#if HWY_SVE_HAVE_2
+namespace detail {
+
+HWY_INLINE svint16_t SumsOf2(hwy::SignedTag /*type_tag*/,
+                             hwy::SizeTag<1> /*lane_size_tag*/, svint8_t v) {
+  const ScalableTag<int16_t> di16;
+  const svbool_t pg = detail::PTrue(di16);
+  return svadalp_s16_x(pg, Zero(di16), v);
+}
+
+HWY_INLINE svuint16_t SumsOf2(hwy::UnsignedTag /*type_tag*/,
+                              hwy::SizeTag<1> /*lane_size_tag*/, svuint8_t v) {
+  const ScalableTag<uint16_t> du16;
+  const svbool_t pg = detail::PTrue(du16);
+  return svadalp_u16_x(pg, Zero(du16), v);
+}
+
+HWY_INLINE svint32_t SumsOf2(hwy::SignedTag /*type_tag*/,
+                             hwy::SizeTag<2> /*lane_size_tag*/, svint16_t v) {
+  const ScalableTag<int32_t> di32;
+  const svbool_t pg = detail::PTrue(di32);
+  return svadalp_s32_x(pg, Zero(di32), v);
+}
+
+HWY_INLINE svuint32_t SumsOf2(hwy::UnsignedTag /*type_tag*/,
+                              hwy::SizeTag<2> /*lane_size_tag*/, svuint16_t v) {
+  const ScalableTag<uint32_t> du32;
+  const svbool_t pg = detail::PTrue(du32);
+  return svadalp_u32_x(pg, Zero(du32), v);
+}
+
+HWY_INLINE svint64_t SumsOf2(hwy::SignedTag /*type_tag*/,
+                             hwy::SizeTag<4> /*lane_size_tag*/, svint32_t v) {
+  const ScalableTag<int64_t> di64;
+  const svbool_t pg = detail::PTrue(di64);
+  return svadalp_s64_x(pg, Zero(di64), v);
+}
+
+HWY_INLINE svuint64_t SumsOf2(hwy::UnsignedTag /*type_tag*/,
+                              hwy::SizeTag<4> /*lane_size_tag*/, svuint32_t v) {
+  const ScalableTag<uint64_t> du64;
+  const svbool_t pg = detail::PTrue(du64);
+  return svadalp_u64_x(pg, Zero(du64), v);
+}
+
+}  // namespace detail
+#endif  // HWY_SVE_HAVE_2
+
+// ------------------------------ SumsOf4
+namespace detail {
+
+HWY_INLINE svint32_t SumsOf4(hwy::SignedTag /*type_tag*/,
+                             hwy::SizeTag<1> /*lane_size_tag*/, svint8_t v) {
+  return svdot_n_s32(Zero(ScalableTag<int32_t>()), v, 1);
+}
+
+HWY_INLINE svuint32_t SumsOf4(hwy::UnsignedTag /*type_tag*/,
+                              hwy::SizeTag<1> /*lane_size_tag*/, svuint8_t v) {
+  return svdot_n_u32(Zero(ScalableTag<uint32_t>()), v, 1);
+}
+
+HWY_INLINE svint64_t SumsOf4(hwy::SignedTag /*type_tag*/,
+                             hwy::SizeTag<2> /*lane_size_tag*/, svint16_t v) {
+  return svdot_n_s64(Zero(ScalableTag<int64_t>()), v, 1);
+}
+
+HWY_INLINE svuint64_t SumsOf4(hwy::UnsignedTag /*type_tag*/,
+                              hwy::SizeTag<2> /*lane_size_tag*/, svuint16_t v) {
+  return svdot_n_u64(Zero(ScalableTag<uint64_t>()), v, 1);
+}
+
+}  // namespace detail
 
 // ------------------------------ SaturatedAdd
 
@@ -1468,9 +1562,12 @@ HWY_API void ScatterIndex(VFromD<D> v, D d, TFromD<D>* HWY_RESTRICT p,
 #define HWY_SVE_MASKED_GATHER_INDEX(BASE, CHAR, BITS, HALF, NAME, OP) \
   template <size_t N, int kPow2>                                      \
   HWY_API HWY_SVE_V(BASE, BITS)                                       \
-      NAME(svbool_t m, HWY_SVE_D(BASE, BITS, N, kPow2) /*d*/,         \
+      NAME(svbool_t m, HWY_SVE_D(BASE, BITS, N, kPow2) d,             \
            const HWY_SVE_T(BASE, BITS) * HWY_RESTRICT base,           \
            HWY_SVE_V(int, BITS) index) {                              \
+    const RebindToSigned<decltype(d)> di;                             \
+    (void)di; /* for HWY_DASSERT */                                   \
+    HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));                 \
     return sv##OP##_s##BITS##index_##CHAR##BITS(m, base, index);      \
   }
 
@@ -1479,6 +1576,13 @@ HWY_SVE_FOREACH_UIF3264(HWY_SVE_MASKED_GATHER_INDEX, MaskedGatherIndex,
                         ld1_gather)
 #undef HWY_SVE_GATHER_OFFSET
 #undef HWY_SVE_MASKED_GATHER_INDEX
+
+template <class D>
+HWY_API VFromD<D> MaskedGatherIndexOr(VFromD<D> no, svbool_t m, D d,
+                                      const TFromD<D>* HWY_RESTRICT p,
+                                      VFromD<RebindToSigned<D>> indices) {
+  return IfThenElse(m, MaskedGatherIndex(m, d, p, indices), no);
+}
 
 template <class D>
 HWY_API VFromD<D> GatherIndex(D d, const TFromD<D>* HWY_RESTRICT p,
@@ -2217,12 +2321,10 @@ HWY_API V InterleaveLower(const V a, const V b) {
 
 // Only use zip2 if vector are a powers of two, otherwise getting the actual
 // "upper half" requires MaskUpperHalf.
-#if HWY_TARGET == HWY_SVE2_128
 namespace detail {
 // Unlike Highway's ZipUpper, this returns the same type.
 HWY_SVE_FOREACH(HWY_SVE_RETV_ARGVV, ZipUpperSame, zip2)
 }  // namespace detail
-#endif
 
 // Full vector: guaranteed to have at least one block
 template <class D, class V = VFromD<D>,
@@ -2252,6 +2354,30 @@ HWY_API V InterleaveUpper(D d, const V a, const V b) {
     return InterleaveLower(d, UpperHalf(d2, a), UpperHalf(d2, b));
   }
   return InterleaveUpper(DFromV<V>(), a, b);
+}
+
+// ------------------------------ InterleaveWholeLower
+#ifdef HWY_NATIVE_INTERLEAVE_WHOLE
+#undef HWY_NATIVE_INTERLEAVE_WHOLE
+#else
+#define HWY_NATIVE_INTERLEAVE_WHOLE
+#endif
+
+template <class D>
+HWY_API VFromD<D> InterleaveWholeLower(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return detail::ZipLowerSame(a, b);
+}
+
+// ------------------------------ InterleaveWholeUpper
+
+template <class D>
+HWY_API VFromD<D> InterleaveWholeUpper(D d, VFromD<D> a, VFromD<D> b) {
+  if (HWY_SVE_IS_POW2 && detail::IsFull(d)) {
+    return detail::ZipUpperSame(a, b);
+  }
+
+  const Half<decltype(d)> d2;
+  return InterleaveWholeLower(d, UpperHalf(d2, a), UpperHalf(d2, b));
 }
 
 // ------------------------------ Per4LaneBlockShuffle
@@ -2502,7 +2628,13 @@ HWY_API V UpperHalf(const DH dh, const V v) {
 
 // ================================================== REDUCE
 
-// These return T, whereas the Highway op returns a broadcasted vector.
+#ifdef HWY_NATIVE_REDUCE_SCALAR
+#undef HWY_NATIVE_REDUCE_SCALAR
+#else
+#define HWY_NATIVE_REDUCE_SCALAR
+#endif
+
+// These return T, suitable for ReduceSum.
 namespace detail {
 #define HWY_SVE_REDUCE_ADD(BASE, CHAR, BITS, HALF, NAME, OP)                   \
   HWY_API HWY_SVE_T(BASE, BITS) NAME(svbool_t pg, HWY_SVE_V(BASE, BITS) v) {   \
@@ -2532,24 +2664,53 @@ HWY_SVE_FOREACH_F(HWY_SVE_REDUCE, MaxOfLanesM, maxnmv)
 #undef HWY_SVE_REDUCE_ADD
 }  // namespace detail
 
-template <class D, class V>
-V SumOfLanes(D d, V v) {
-  return Set(d, detail::SumOfLanesM(detail::MakeMask(d), v));
-}
+// detail::SumOfLanesM, detail::MinOfLanesM, and detail::MaxOfLanesM is more
+// efficient for N=4 I8/U8 reductions on SVE than the default implementations
+// of the N=4 I8/U8 ReduceSum/ReduceMin/ReduceMax operations in
+// generic_ops-inl.h
+#undef HWY_IF_REDUCE_D
+#define HWY_IF_REDUCE_D(D) hwy::EnableIf<HWY_MAX_LANES_D(D) != 1>* = nullptr
 
-template <class D, class V>
-TFromV<V> ReduceSum(D d, V v) {
+#ifdef HWY_NATIVE_REDUCE_SUM_4_UI8
+#undef HWY_NATIVE_REDUCE_SUM_4_UI8
+#else
+#define HWY_NATIVE_REDUCE_SUM_4_UI8
+#endif
+
+#ifdef HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#undef HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#else
+#define HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#endif
+
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceSum(D d, VFromD<D> v) {
   return detail::SumOfLanesM(detail::MakeMask(d), v);
 }
 
-template <class D, class V>
-V MinOfLanes(D d, V v) {
-  return Set(d, detail::MinOfLanesM(detail::MakeMask(d), v));
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceMin(D d, VFromD<D> v) {
+  return detail::MinOfLanesM(detail::MakeMask(d), v);
 }
 
-template <class D, class V>
-V MaxOfLanes(D d, V v) {
-  return Set(d, detail::MaxOfLanesM(detail::MakeMask(d), v));
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceMax(D d, VFromD<D> v) {
+  return detail::MaxOfLanesM(detail::MakeMask(d), v);
+}
+
+// ------------------------------ SumOfLanes
+
+template <class D, HWY_IF_LANES_GT_D(D, 1)>
+HWY_API VFromD<D> SumOfLanes(D d, VFromD<D> v) {
+  return Set(d, ReduceSum(d, v));
+}
+template <class D, HWY_IF_LANES_GT_D(D, 1)>
+HWY_API VFromD<D> MinOfLanes(D d, VFromD<D> v) {
+  return Set(d, ReduceMin(d, v));
+}
+template <class D, HWY_IF_LANES_GT_D(D, 1)>
+HWY_API VFromD<D> MaxOfLanes(D d, VFromD<D> v) {
+  return Set(d, ReduceMax(d, v));
 }
 
 // ================================================== SWIZZLE
@@ -3618,7 +3779,7 @@ HWY_INLINE VFromD<D> PromoteEvenTo(hwy::UnsignedTag /*to_type_tag*/,
                                    hwy::FloatTag /*from_type_tag*/, D d_to,
                                    svfloat32_t v) {
   const Repartition<float, decltype(d_to)> d_from;
-  return svcvt_s64_f32_x(detail::PTrue(d_from), v);
+  return svcvt_u64_f32_x(detail::PTrue(d_from), v);
 }
 
 // F16->F32 PromoteOddTo

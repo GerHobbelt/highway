@@ -509,14 +509,28 @@ from left to right, of the arguments passed to `Create{2-4}`.
 
 *   <code>V **AbsDiff**(V a, V b)</code>: returns `|a[i] - b[i]|` in each lane.
 
-*   `V`: `u8` \
-    <code>VU64 **SumsOf8**(V v)</code> returns the sums of 8 consecutive u8
-    lanes, zero-extending each sum into a u64 lane. This is slower on RVV/WASM.
+*   `V`: `{i,u}{8,16,32},f32`, `VW`: `Vec<RepartitionToWide<DFromV<V>>>` \
+    <code>VW **SumsOf2**(V v)</code>
+    returns the sums of 2 consecutive lanes, promoting each sum into a lane of
+    `MakeWide<TFromV<V>>`.
 
-*   `V`: `u8` \
-    <code>VU64 **SumsOf8AbsDiff**(V a, V b)</code> returns the same result as
+*   `V`: `{i,u}{8,16}`,
+    `VW`: `Vec<RepartitionToWide<RepartitionToWide<DFromV<V>>>>` \
+    <code>VW **SumsOf4**(V v)</code>
+    returns the sums of 4 consecutive lanes, promoting each sum into a lane of
+    `MakeWide<MakeWide<TFromV<V>>>`.
+
+*   `V`: `{i,u}8`, `TW`: `MakeWide<MakeWide<MakeWide<TFromV<V>>>>`,
+    `VW`: `Vec<RepartitionToWide<TW, DFromV<V>>>` \
+    <code>VW **SumsOf8**(V v)</code> returns the sums of 8 consecutive
+    lanes, promoting each sum into a lane of
+    `MakeWide<MakeWide<MakeWide<TFromV<V>>>>`. This is slower on RVV/WASM.
+
+*   `V`: `{i,u}8`, `TW`: `MakeWide<MakeWide<MakeWide<TFromV<V>>>>`,
+    `VW`: `Vec<RepartitionToWide<TW, DFromV<V>>>` \
+    <code>VW **SumsOf8AbsDiff**(V a, V b)</code> returns the same result as
     `SumsOf8(AbsDiff(a, b))` but `SumsOf8AbsDiff(a, b)` is more efficient than
-    `SumsOf8(AbsDiff(a, b))` on SSSE3/SSE4/AVX2/AVX3.
+    `SumsOf8(AbsDiff(a, b))` on SSE2/SSSE3/SSE4/AVX2/AVX3.
 
 *   `V`: `{u,i}{8,16}` \
     <code>V **SaturatedAdd**(V a, V b)</code> returns `a[i] + b[i]` saturated to
@@ -1250,8 +1264,9 @@ offsets. If you have offsets, you can convert them to indices via `ShiftRight`.
     stores `v[i]` to `base[indices[i]]`.
 
 *   `D`: `{u,i,f}{32,64}` \
-    <code>void **ScatterIndexN**(Vec&lt;D&gt; v, D, T* base, VI indices, size_t max_lanes_to_store)</code>:
-    Stores `HWY_MIN(Lanes(d), max_lanes_to_store)` lanes `v[i]` to `base[indices[i]]`
+    <code>void **ScatterIndexN**(Vec&lt;D&gt; v, D, T* base, VI indices, size_t
+    max_lanes_to_store)</code>: Stores `HWY_MIN(Lanes(d), max_lanes_to_store)`
+    lanes `v[i]` to `base[indices[i]]`
 
 *   `D`: `{u,i,f}{32,64}` \
     <code>void **MaskedScatterIndex**(Vec&lt;D&gt; v, M m, D, T* base, VI
@@ -1267,17 +1282,23 @@ offsets. If you have offsets, you can convert them to indices via `ShiftRight`.
     returns vector of `base[indices[i]]`.
 
 *   `D`: `{u,i,f}{32,64}` \
-    <code>Vec&lt;D&gt; **GatherIndexN**(D, const T* base, VI indices, size_t max_lanes_to_load)</code>:
-    Loads `HWY_MIN(Lanes(d), max_lanes_to_load)` lanes of `base[indices[i]]`
-    to the first (lowest-index) lanes of the result vector and zeroes
-    out the remaining lanes.
+    <code>Vec&lt;D&gt; **GatherIndexN**(D, const T* base, VI indices, size_t
+    max_lanes_to_load)</code>: Loads `HWY_MIN(Lanes(d), max_lanes_to_load)`
+    lanes of `base[indices[i]]` to the first (lowest-index) lanes of the result
+    vector and zeroes out the remaining lanes.
+
+*   `D`: `{u,i,f}{32,64}` \
+    <code>Vec&lt;D&gt; **MaskedGatherIndexOr**(V no, M mask, D d, const T* base,
+    VI indices)</code>: returns vector of `base[indices[i]]` where `mask[i]` is
+    true, otherwise `no[i]`. Does not fault for lanes whose `mask` is false.
+    This is equivalent to, and potentially more efficient than,
+    `IfThenElseZero(mask, GatherIndex(d, base, indices))`.
 
 *   `D`: `{u,i,f}{32,64}` \
     <code>Vec&lt;D&gt; **MaskedGatherIndex**(M mask, D d, const T* base, VI
-    indices)</code>: returns vector of `base[indices[i]]` where `mask[i]` is
-    true, otherwise zero. Does not fault for lanes whose `mask` is false. This
-    is equivalent to, and potentially more efficient than, `IfThenElseZero(mask,
-    GatherIndex(d, base, indices))`.
+    indices)</code>: equivalent to `MaskedGatherIndexOr(Zero(d), mask, d, base,
+    indices)`. Use this when the desired default value is zero; it may be more
+    efficient on some targets, and on others require generating a zero constant.
 
 ### Cache control
 
@@ -1551,6 +1572,15 @@ more expensive on AVX2/AVX-512 than per-block operations.
 
 *   <code>V **ConcatEven**(D, V hi, V lo)</code>: returns the concatenation of
     the even lanes of `hi` and the even lanes of `lo`.
+
+*   <code>V **InterleaveWholeLower**([D, ] V a, V b)</code>: returns
+    alternating lanes from the lower halves of `a` and `b` (`a[0]` in the
+    least-significant lane). The optional `D` (provided for consistency with
+    `InterleaveWholeUpper`) is `DFromV<V>`.
+
+*   <code>V **InterleaveWholeUpper**(D, V a, V b)</code>: returns
+    alternating lanes from the upper halves of `a` and `b` (`a[N/2]` in the
+    least-significant lane). `D` is `DFromV<V>`.
 
 ### Blockwise
 
@@ -1869,28 +1899,26 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
 
 ### Reductions
 
-**Note**: these 'reduce' all lanes to a single result (e.g. sum), which is
-broadcasted to all lanes. To obtain a scalar, you can call `GetLane`.
+**Note**: Horizontal operations (across lanes of the same vector) such as
+reductions are slower than normal SIMD operations and are typically used outside
+critical loops.
 
-Being a horizontal operation (across lanes of the same vector), these are slower
-than normal SIMD operations and are typically used outside critical loops.
+The following broadcast the result to all lanes. To obtain a scalar, you can
+call `GetLane` on the result, or instead use `Reduce*` below.
 
-There are additional `{u,i}{8}` implementations on SSE4.1+ and NEON.
-
-*   `V`: `{u,i}{16,32,64},{f}` \
-    <code>V **SumOfLanes**(D, V v)</code>: returns the sum of all lanes in each
+*   <code>V **SumOfLanes**(D, V v)</code>: returns the sum of all lanes in each
     lane.
-
-*   `T`: `{u,i}{16,32,64},{f}` \
-    <code>T **ReduceSum**(D, V v)</code>: returns the sum of all lanes.
-
-*   `V`: `{u,i}{16,32,64},{f}` \
-    <code>V **MinOfLanes**(D, V v)</code>: returns the minimum-valued lane in
+*   <code>V **MinOfLanes**(D, V v)</code>: returns the minimum-valued lane in
+    each lane.
+*   <code>V **MaxOfLanes**(D, V v)</code>: returns the maximum-valued lane in
     each lane.
 
-*   `V`: `{u,i}{16,32,64},{f}` \
-    <code>V **MaxOfLanes**(D, V v)</code>: returns the maximum-valued lane in
-    each lane.
+The following are equivalent to `GetLane(SumOfLanes(d, v))` etc. but potentially
+more efficient on some targets.
+
+*   <code>T **ReduceSum**(D, V v)</code>: returns the sum of all lanes.
+*   <code>T **ReduceMin**(D, V v)</code>: returns the minimum of all lanes.
+*   <code>T **ReduceMax**(D, V v)</code>: returns the maximum of all lanes.
 
 ### Crypto
 

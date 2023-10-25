@@ -17,6 +17,9 @@
 
 // Target-independent types/functions defined after target-specific ops.
 
+// The "include guards" in this file that check HWY_TARGET_TOGGLE serve to skip
+// the generic implementation here if native ops are already defined.
+
 #include "hwy/base.h"
 
 // Define detail::Shuffle1230 etc, but only when viewing the current header;
@@ -209,6 +212,49 @@ HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
 
 #endif  // HWY_NATIVE_BITWISE_IF_THEN_ELSE
 
+// ------------------------------ InterleaveWholeLower/InterleaveWholeUpper
+#if (defined(HWY_NATIVE_INTERLEAVE_WHOLE) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_INTERLEAVE_WHOLE
+#undef HWY_NATIVE_INTERLEAVE_WHOLE
+#else
+#define HWY_NATIVE_INTERLEAVE_WHOLE
+#endif
+
+#if HWY_TARGET != HWY_SCALAR
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API VFromD<D> InterleaveWholeLower(D d, VFromD<D> a, VFromD<D> b) {
+  // InterleaveWholeLower(d, a, b) is equivalent to InterleaveLower(a, b) if
+  // D().MaxBytes() <= 16 is true
+  return InterleaveLower(d, a, b);
+}
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API VFromD<D> InterleaveWholeUpper(D d, VFromD<D> a, VFromD<D> b) {
+  // InterleaveWholeUpper(d, a, b) is equivalent to InterleaveUpper(a, b) if
+  // D().MaxBytes() <= 16 is true
+  return InterleaveUpper(d, a, b);
+}
+
+// InterleaveWholeLower/InterleaveWholeUpper for 32-byte vectors on AVX2/AVX3
+// is implemented in x86_256-inl.h.
+
+// InterleaveWholeLower/InterleaveWholeUpper for 64-byte vectors on AVX3 is
+// implemented in x86_512-inl.h.
+
+// InterleaveWholeLower/InterleaveWholeUpper for 32-byte vectors on WASM_EMU256
+// is implemented in wasm_256-inl.h.
+#endif  // HWY_TARGET != HWY_SCALAR
+
+#endif  // HWY_NATIVE_INTERLEAVE_WHOLE
+
+#if HWY_TARGET != HWY_SCALAR
+// The InterleaveWholeLower without the optional D parameter is generic for all
+// vector lengths.
+template <class V>
+HWY_API V InterleaveWholeLower(V a, V b) {
+  return InterleaveWholeLower(DFromV<V>(), a, b);
+}
+#endif  // HWY_TARGET != HWY_SCALAR
+
 // ------------------------------ MaskedAddOr etc.
 #if (defined(HWY_NATIVE_MASKED_ARITH) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_MASKED_ARITH
@@ -248,9 +294,217 @@ HWY_API V MaskedSatSubOr(V no, M m, V a, V b) {
 }
 #endif  // HWY_NATIVE_MASKED_ARITH
 
-// "Include guard": skip if native instructions are available. The generic
-// implementation is currently shared between x86_* and wasm_*, and is too large
-// to duplicate.
+// ------------------------------ Reductions
+
+// Targets follow one of two strategies. If HWY_NATIVE_REDUCE_SCALAR is toggled,
+// they (RVV/SVE/Armv8/Emu128) implement ReduceSum and SumOfLanes via Set.
+// Otherwise, they (Armv7/PPC/scalar/WASM/x86) define zero to most of the
+// SumOfLanes overloads. For the latter group, we here define the remaining
+// overloads, plus ReduceSum which uses them plus GetLane.
+#if (defined(HWY_NATIVE_REDUCE_SCALAR) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_REDUCE_SCALAR
+#undef HWY_NATIVE_REDUCE_SCALAR
+#else
+#define HWY_NATIVE_REDUCE_SCALAR
+#endif
+
+namespace detail {
+
+// Allows reusing the same shuffle code for SumOfLanes/MinOfLanes/MaxOfLanes.
+struct AddFunc {
+  template <class V>
+  V operator()(V a, V b) const {
+    return Add(a, b);
+  }
+};
+
+struct MinFunc {
+  template <class V>
+  V operator()(V a, V b) const {
+    return Min(a, b);
+  }
+};
+
+struct MaxFunc {
+  template <class V>
+  V operator()(V a, V b) const {
+    return Max(a, b);
+  }
+};
+
+// No-op for vectors of at most one block.
+template <class D, class Func, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_INLINE VFromD<D> ReduceAcrossBlocks(D, Func, VFromD<D> v) {
+  return v;
+}
+
+// Reduces a lane with its counterpart in other block(s). Shared by AVX2 and
+// WASM_EMU256. AVX3 has its own overload.
+template <class D, class Func, HWY_IF_V_SIZE_D(D, 32)>
+HWY_INLINE VFromD<D> ReduceAcrossBlocks(D /*d*/, Func f, VFromD<D> v) {
+  return f(v, SwapAdjacentBlocks(v));
+}
+
+// These return the reduction result broadcasted across all lanes. They assume
+// the caller has already reduced across blocks.
+
+template <class D, class Func, HWY_IF_LANES_PER_BLOCK_D(D, 2)>
+HWY_INLINE VFromD<D> ReduceWithinBlocks(D d, Func f, VFromD<D> v10) {
+  return f(v10, Reverse2(d, v10));
+}
+
+template <class D, class Func, HWY_IF_LANES_PER_BLOCK_D(D, 4)>
+HWY_INLINE VFromD<D> ReduceWithinBlocks(D d, Func f, VFromD<D> v3210) {
+  const VFromD<D> v0123 = Reverse4(d, v3210);
+  const VFromD<D> v03_12_12_03 = f(v3210, v0123);
+  const VFromD<D> v12_03_03_12 = Reverse2(d, v03_12_12_03);
+  return f(v03_12_12_03, v12_03_03_12);
+}
+
+template <class D, class Func, HWY_IF_LANES_PER_BLOCK_D(D, 8)>
+HWY_INLINE VFromD<D> ReduceWithinBlocks(D d, Func f, VFromD<D> v76543210) {
+  // The upper half is reversed from the lower half; omit for brevity.
+  const VFromD<D> v34_25_16_07 = f(v76543210, Reverse8(d, v76543210));
+  const VFromD<D> v0347_1625_1625_0347 =
+      f(v34_25_16_07, Reverse4(d, v34_25_16_07));
+  return f(v0347_1625_1625_0347, Reverse2(d, v0347_1625_1625_0347));
+}
+
+template <class D, class Func, HWY_IF_LANES_PER_BLOCK_D(D, 16), HWY_IF_U8_D(D)>
+HWY_INLINE VFromD<D> ReduceWithinBlocks(D d, Func f, VFromD<D> v) {
+  const RepartitionToWide<decltype(d)> dw;
+  using VW = VFromD<decltype(dw)>;
+  const VW vw = BitCast(dw, v);
+  // f is commutative, so no need to adapt for HWY_IS_LITTLE_ENDIAN.
+  const VW even = And(vw, Set(dw, 0xFF));
+  const VW odd = ShiftRight<8>(vw);
+  const VW reduced = ReduceWithinBlocks(dw, f, f(even, odd));
+#if HWY_IS_LITTLE_ENDIAN
+  return DupEven(BitCast(d, reduced));
+#else
+  return DupOdd(BitCast(d, reduced));
+#endif
+}
+
+template <class D, class Func, HWY_IF_LANES_PER_BLOCK_D(D, 16), HWY_IF_I8_D(D)>
+HWY_INLINE VFromD<D> ReduceWithinBlocks(D d, Func f, VFromD<D> v) {
+  const RepartitionToWide<decltype(d)> dw;
+  using VW = VFromD<decltype(dw)>;
+  const VW vw = BitCast(dw, v);
+  // Sign-extend
+  // f is commutative, so no need to adapt for HWY_IS_LITTLE_ENDIAN.
+  const VW even = ShiftRight<8>(ShiftLeft<8>(vw));
+  const VW odd = ShiftRight<8>(vw);
+  const VW reduced = ReduceWithinBlocks(dw, f, f(even, odd));
+#if HWY_IS_LITTLE_ENDIAN
+  return DupEven(BitCast(d, reduced));
+#else
+  return DupOdd(BitCast(d, reduced));
+#endif
+}
+
+}  // namespace detail
+
+template <class D, HWY_IF_SUM_OF_LANES_D(D)>
+HWY_API VFromD<D> SumOfLanes(D d, VFromD<D> v) {
+  const detail::AddFunc f;
+  v = detail::ReduceAcrossBlocks(d, f, v);
+  return detail::ReduceWithinBlocks(d, f, v);
+}
+template <class D, HWY_IF_MINMAX_OF_LANES_D(D)>
+HWY_API VFromD<D> MinOfLanes(D d, VFromD<D> v) {
+  const detail::MinFunc f;
+  v = detail::ReduceAcrossBlocks(d, f, v);
+  return detail::ReduceWithinBlocks(d, f, v);
+}
+template <class D, HWY_IF_MINMAX_OF_LANES_D(D)>
+HWY_API VFromD<D> MaxOfLanes(D d, VFromD<D> v) {
+  const detail::MaxFunc f;
+  v = detail::ReduceAcrossBlocks(d, f, v);
+  return detail::ReduceWithinBlocks(d, f, v);
+}
+
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceSum(D d, VFromD<D> v) {
+  return GetLane(SumOfLanes(d, v));
+}
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceMin(D d, VFromD<D> v) {
+  return GetLane(MinOfLanes(d, v));
+}
+template <class D, HWY_IF_REDUCE_D(D)>
+HWY_API TFromD<D> ReduceMax(D d, VFromD<D> v) {
+  return GetLane(MaxOfLanes(d, v));
+}
+
+#endif  // HWY_NATIVE_REDUCE_SCALAR
+
+// Corner cases for both generic and native implementations:
+// N=1 (native covers N=2 e.g. for u64x2 and even u32x2 on Arm)
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API TFromD<D> ReduceSum(D /*d*/, VFromD<D> v) {
+  return GetLane(v);
+}
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API TFromD<D> ReduceMin(D /*d*/, VFromD<D> v) {
+  return GetLane(v);
+}
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API TFromD<D> ReduceMax(D /*d*/, VFromD<D> v) {
+  return GetLane(v);
+}
+
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API VFromD<D> SumOfLanes(D /* tag */, VFromD<D> v) {
+  return v;
+}
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API VFromD<D> MinOfLanes(D /* tag */, VFromD<D> v) {
+  return v;
+}
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API VFromD<D> MaxOfLanes(D /* tag */, VFromD<D> v) {
+  return v;
+}
+
+// N=4 for 8-bit is still less than the minimum native size.
+
+// ARMv7 NEON/PPC/RVV/SVE have target-specific implementations of the N=4 I8/U8
+// ReduceSum operations
+#if (defined(HWY_NATIVE_REDUCE_SUM_4_UI8) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_REDUCE_SUM_4_UI8
+#undef HWY_NATIVE_REDUCE_SUM_4_UI8
+#else
+#define HWY_NATIVE_REDUCE_SUM_4_UI8
+#endif
+template <class D, HWY_IF_V_SIZE_D(D, 4), HWY_IF_UI8_D(D)>
+HWY_API TFromD<D> ReduceSum(D d, VFromD<D> v) {
+  const Twice<RepartitionToWide<decltype(d)>> dw;
+  return static_cast<TFromD<D>>(ReduceSum(dw, PromoteTo(dw, v)));
+}
+#endif  // HWY_NATIVE_REDUCE_SUM_4_UI8
+
+// RVV/SVE have target-specific implementations of the N=4 I8/U8
+// ReduceMin/ReduceMax operations
+#if (defined(HWY_NATIVE_REDUCE_MINMAX_4_UI8) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#undef HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#else
+#define HWY_NATIVE_REDUCE_MINMAX_4_UI8
+#endif
+template <class D, HWY_IF_V_SIZE_D(D, 4), HWY_IF_UI8_D(D)>
+HWY_API TFromD<D> ReduceMin(D d, VFromD<D> v) {
+  const Twice<RepartitionToWide<decltype(d)>> dw;
+  return static_cast<TFromD<D>>(ReduceMin(dw, PromoteTo(dw, v)));
+}
+template <class D, HWY_IF_V_SIZE_D(D, 4), HWY_IF_UI8_D(D)>
+HWY_API TFromD<D> ReduceMax(D d, VFromD<D> v) {
+  const Twice<RepartitionToWide<decltype(d)>> dw;
+  return static_cast<TFromD<D>>(ReduceMax(dw, PromoteTo(dw, v)));
+}
+#endif  // HWY_NATIVE_REDUCE_MINMAX_4_UI8
+
+// ------------------------------ LoadInterleaved2
 
 #if HWY_IDE || \
     (defined(HWY_NATIVE_LOAD_STORE_INTERLEAVED) == defined(HWY_TARGET_TOGGLE))
@@ -259,8 +513,6 @@ HWY_API V MaskedSatSubOr(V no, M m, V a, V b) {
 #else
 #define HWY_NATIVE_LOAD_STORE_INTERLEAVED
 #endif
-
-// ------------------------------ LoadInterleaved2
 
 template <class D, HWY_IF_LANES_GT_D(D, 1)>
 HWY_API void LoadInterleaved2(D d, const TFromD<D>* HWY_RESTRICT unaligned,
@@ -1688,6 +1940,7 @@ HWY_API VFromD<D> GatherOffset(D d, const T* HWY_RESTRICT base,
   HWY_ALIGN T lanes[MaxLanes(d)];
   const uint8_t* base_bytes = reinterpret_cast<const uint8_t*>(base);
   for (size_t i = 0; i < MaxLanes(d); ++i) {
+    HWY_DASSERT(offset_lanes[i] >= 0);
     CopyBytes<sizeof(T)>(base_bytes + offset_lanes[i], &lanes[i]);
   }
   return Load(d, lanes);
@@ -1705,6 +1958,7 @@ HWY_API VFromD<D> GatherIndex(D d, const T* HWY_RESTRICT base,
 
   HWY_ALIGN T lanes[MaxLanes(d)];
   for (size_t i = 0; i < MaxLanes(d); ++i) {
+    HWY_DASSERT(index_lanes[i] >= 0);
     lanes[i] = base[index_lanes[i]];
   }
   return Load(d, lanes);
@@ -1726,7 +1980,33 @@ HWY_API VFromD<D> MaskedGatherIndex(MFromD<D> m, D d,
 
   HWY_ALIGN T lanes[MaxLanes(d)];
   for (size_t i = 0; i < MaxLanes(d); ++i) {
+    HWY_DASSERT(index_lanes[i] >= 0);
     lanes[i] = mask_lanes[i] ? base[index_lanes[i]] : T{0};
+  }
+  return Load(d, lanes);
+}
+
+template <class D, typename T = TFromD<D>>
+HWY_API VFromD<D> MaskedGatherIndexOr(VFromD<D> no, MFromD<D> m, D d,
+                                      const T* HWY_RESTRICT base,
+                                      VFromD<RebindToSigned<D>> index) {
+  const RebindToSigned<D> di;
+  using TI = TFromD<decltype(di)>;
+  static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
+
+  HWY_ALIGN TI index_lanes[MaxLanes(di)];
+  Store(index, di, index_lanes);
+
+  HWY_ALIGN TI mask_lanes[MaxLanes(di)];
+  Store(BitCast(di, VecFromMask(d, m)), di, mask_lanes);
+
+  HWY_ALIGN T no_lanes[MaxLanes(d)];
+  Store(no, d, no_lanes);
+
+  HWY_ALIGN T lanes[MaxLanes(d)];
+  for (size_t i = 0; i < MaxLanes(d); ++i) {
+    HWY_DASSERT(index_lanes[i] >= 0);
+    lanes[i] = mask_lanes[i] ? base[index_lanes[i]] : no_lanes[i];
   }
   return Load(d, lanes);
 }
@@ -1775,6 +2055,12 @@ HWY_API V AbsDiff(V a, V b) {
 template <class V, HWY_IF_U8_D(DFromV<V>),
           HWY_IF_V_SIZE_GT_D(DFromV<V>, (HWY_TARGET == HWY_SCALAR ? 0 : 4))>
 HWY_API Vec<Repartition<uint64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
+  return SumsOf8(AbsDiff(a, b));
+}
+
+template <class V, HWY_IF_I8_D(DFromV<V>),
+          HWY_IF_V_SIZE_GT_D(DFromV<V>, (HWY_TARGET == HWY_SCALAR ? 0 : 4))>
+HWY_API Vec<Repartition<int64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
   return SumsOf8(AbsDiff(a, b));
 }
 
@@ -2270,6 +2556,47 @@ HWY_API VFromD<D> DemoteTo(D df16, VFromD<Rebind<float, D>> v) {
 
 #endif  // HWY_NATIVE_F16C
 
+// ------------------------------ SumsOf2
+
+#if HWY_TARGET != HWY_SCALAR
+namespace detail {
+
+template <class TypeTag, size_t kLaneSize, class V>
+HWY_INLINE VFromD<RepartitionToWide<DFromV<V>>> SumsOf2(
+    TypeTag /*type_tag*/, hwy::SizeTag<kLaneSize> /*lane_size_tag*/, V v) {
+  const DFromV<decltype(v)> d;
+  const RepartitionToWide<decltype(d)> dw;
+  return Add(PromoteEvenTo(dw, v), PromoteOddTo(dw, v));
+}
+
+}  // namespace detail
+
+template <class V>
+HWY_API VFromD<RepartitionToWide<DFromV<V>>> SumsOf2(V v) {
+  return detail::SumsOf2(hwy::TypeTag<TFromV<V>>(),
+                         hwy::SizeTag<sizeof(TFromV<V>)>(), v);
+}
+#endif  // HWY_TARGET != HWY_SCALAR
+
+// ------------------------------ SumsOf4
+
+namespace detail {
+
+template <class TypeTag, size_t kLaneSize, class V>
+HWY_INLINE VFromD<RepartitionToWide<RepartitionToWide<DFromV<V>>>> SumsOf4(
+    TypeTag /*type_tag*/, hwy::SizeTag<kLaneSize> /*lane_size_tag*/, V v) {
+  using hwy::HWY_NAMESPACE::SumsOf2;
+  return SumsOf2(SumsOf2(v));
+}
+
+}  // namespace detail
+
+template <class V>
+HWY_API VFromD<RepartitionToWide<RepartitionToWide<DFromV<V>>>> SumsOf4(V v) {
+  return detail::SumsOf4(hwy::TypeTag<TFromV<V>>(),
+                         hwy::SizeTag<sizeof(TFromV<V>)>(), v);
+}
+
 // ------------------------------ OrderedTruncate2To
 
 #if HWY_IDE || \
@@ -2679,7 +3006,6 @@ HWY_INLINE V InvSubBytes(V state) {
 
 #endif  // HWY_TARGET != HWY_SCALAR
 
-// "Include guard": skip if native AES instructions are available.
 #if (defined(HWY_NATIVE_AES) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_AES
 #undef HWY_NATIVE_AES
@@ -2896,7 +3222,6 @@ HWY_API V CLMulUpper(V a, V b) {
 
 // ------------------------------ PopulationCount
 
-// "Include guard": skip if native POPCNT-related instructions are available.
 #if (defined(HWY_NATIVE_POPCNT) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_POPCNT
 #undef HWY_NATIVE_POPCNT
@@ -2974,7 +3299,6 @@ HWY_API V PopulationCount(V v) {
 
 // ------------------------------ 8-bit multiplication
 
-// "Include guard": skip if native 8-bit mul instructions are available.
 #if (defined(HWY_NATIVE_MUL_8) == defined(HWY_TARGET_TOGGLE)) || HWY_IDE
 #ifdef HWY_NATIVE_MUL_8
 #undef HWY_NATIVE_MUL_8
@@ -3015,7 +3339,6 @@ HWY_API V operator*(const V a, const V b) {
 
 // ------------------------------ 64-bit multiplication
 
-// "Include guard": skip if native 64-bit mul instructions are available.
 #if (defined(HWY_NATIVE_MUL_64) == defined(HWY_TARGET_TOGGLE)) || HWY_IDE
 #ifdef HWY_NATIVE_MUL_64
 #undef HWY_NATIVE_MUL_64
@@ -3058,7 +3381,6 @@ HWY_API V operator*(V x, V y) {
 
 // ------------------------------ MulAdd / NegMulAdd
 
-// "Include guard": skip if native int MulAdd instructions are available.
 #if (defined(HWY_NATIVE_INT_FMA) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_INT_FMA
 #undef HWY_NATIVE_INT_FMA
@@ -3319,7 +3641,6 @@ HWY_API V ApproximateReciprocalSqrt(V v) {
 
 // ------------------------------ Compress*
 
-// "Include guard": skip if native 8-bit compress instructions are available.
 #if (defined(HWY_NATIVE_COMPRESS8) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_COMPRESS8
 #undef HWY_NATIVE_COMPRESS8
@@ -3520,7 +3841,6 @@ HWY_API V CompressNot(V v, M mask) {
 
 // ------------------------------ Expand
 
-// "Include guard": skip if native 8/16-bit Expand/LoadExpand are available.
 // Note that this generic implementation assumes <= 128 bit fixed vectors;
 // the SVE and RVV targets provide their own native implementations.
 #if (defined(HWY_NATIVE_EXPAND) == defined(HWY_TARGET_TOGGLE)) || HWY_IDE

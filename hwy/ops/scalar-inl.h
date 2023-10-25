@@ -528,8 +528,20 @@ HWY_API Vec1<double> operator-(const Vec1<double> a, const Vec1<double> b) {
 
 // ------------------------------ SumsOf8
 
+HWY_API Vec1<int64_t> SumsOf8(const Vec1<int8_t> v) {
+  return Vec1<int64_t>(v.raw);
+}
 HWY_API Vec1<uint64_t> SumsOf8(const Vec1<uint8_t> v) {
   return Vec1<uint64_t>(v.raw);
+}
+
+// ------------------------------ SumsOf2
+
+template <class T>
+HWY_API Vec1<MakeWide<T>> SumsOf2(const Vec1<T> v) {
+  const DFromV<decltype(v)> d;
+  const Rebind<MakeWide<T>, decltype(d)> dw;
+  return PromoteTo(dw, v);
 }
 
 // ------------------------------ SaturatedAdd
@@ -1231,25 +1243,34 @@ HWY_API void MaskedScatterIndex(Vec1<T> v, Mask1<T> m, D d,
 #define HWY_NATIVE_GATHER
 #endif
 
-template <class D, typename T = TFromD<D>, typename TI>
-HWY_API Vec1<T> GatherOffset(D d, const T* base, Vec1<TI> offset) {
-  static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
+template <class D, typename T = TFromD<D>>
+HWY_API Vec1<T> GatherOffset(D d, const T* base, Vec1<MakeSigned<T>> offset) {
+  HWY_DASSERT(offset.raw >= 0);
   const intptr_t addr =
       reinterpret_cast<intptr_t>(base) + static_cast<intptr_t>(offset.raw);
   return Load(d, reinterpret_cast<const T*>(addr));
 }
 
-template <class D, typename T = TFromD<D>, typename TI>
-HWY_API Vec1<T> GatherIndex(D d, const T* HWY_RESTRICT base, Vec1<TI> index) {
-  static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
+template <class D, typename T = TFromD<D>>
+HWY_API Vec1<T> GatherIndex(D d, const T* HWY_RESTRICT base,
+                            Vec1<MakeSigned<T>> index) {
+  HWY_DASSERT(index.raw >= 0);
   return Load(d, base + index.raw);
 }
 
-template <class D, typename T = TFromD<D>, typename TI>
+template <class D, typename T = TFromD<D>>
 HWY_API Vec1<T> MaskedGatherIndex(Mask1<T> m, D d, const T* HWY_RESTRICT base,
-                                  Vec1<TI> index) {
-  static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
+                                  Vec1<MakeSigned<T>> index) {
+  HWY_DASSERT(index.raw >= 0);
   return MaskedLoad(m, d, base + index.raw);
+}
+
+template <class D, typename T = TFromD<D>>
+HWY_API Vec1<T> MaskedGatherIndexOr(Vec1<T> no, Mask1<T> m, D d,
+                                    const T* HWY_RESTRICT base,
+                                    Vec1<MakeSigned<T>> index) {
+  HWY_DASSERT(index.raw >= 0);
+  return MaskedLoadOr(no, m, d, base + index.raw);
 }
 
 // ================================================== CONVERT
@@ -1976,23 +1997,7 @@ HWY_API Vec1<TW> RearrangeToOddPlusEven(Vec1<TW> sum0, Vec1<TW> /* sum1 */) {
 
 // ================================================== REDUCTIONS
 
-// Sum of all lanes, i.e. the only one.
-template <class D, typename T = TFromD<D>>
-HWY_API Vec1<T> SumOfLanes(D /* tag */, const Vec1<T> v) {
-  return v;
-}
-template <class D, typename T = TFromD<D>>
-HWY_API T ReduceSum(D /* tag */, const Vec1<T> v) {
-  return GetLane(v);
-}
-template <class D, typename T = TFromD<D>>
-HWY_API Vec1<T> MinOfLanes(D /* tag */, const Vec1<T> v) {
-  return v;
-}
-template <class D, typename T = TFromD<D>>
-HWY_API Vec1<T> MaxOfLanes(D /* tag */, const Vec1<T> v) {
-  return v;
-}
+// Nothing native, generic_ops-inl defines SumOfLanes and ReduceSum.
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
