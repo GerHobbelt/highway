@@ -134,6 +134,12 @@
 #define HWY_HAS_ATTRIBUTE(name) 0
 #endif
 
+#ifdef __has_cpp_attribute
+#define HWY_HAS_CPP_ATTRIBUTE(name) __has_cpp_attribute(name)
+#else
+#define HWY_HAS_CPP_ATTRIBUTE(name) 0
+#endif
+
 #ifdef __has_feature
 #define HWY_HAS_FEATURE(name) __has_feature(name)
 #else
@@ -165,7 +171,7 @@
 #define HWY_ARCH_X86 0
 #endif
 
-#if defined(__powerpc64__) || defined(_M_PPC)
+#if defined(__powerpc64__) || defined(_M_PPC) || defined(__powerpc__)
 #define HWY_ARCH_PPC 1
 #else
 #define HWY_ARCH_PPC 0
