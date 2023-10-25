@@ -71,6 +71,11 @@ HWY_DIAGNOSTICS_OFF(disable : 4701 4703 6001 26494,
 #include <vpclmulqdqintrin.h>
 #include <gfniintrin.h>
 #endif  // HWY_TARGET <= HWY_AVX3_DL
+
+#if HWY_TARGET <= HWY_AVX3_SPR
+#include <avx512fp16intrin.h>
+#endif  // HWY_TARGET <= HWY_AVX3_SPR
+
 // clang-format on
 #endif  // HWY_COMPILER_CLANGCL
 
@@ -261,11 +266,11 @@ HWY_API Vec512<TFromD<D>> Zero(D /* tag */) {
 }
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_BF16_D(D)>
 HWY_API Vec512<bfloat16_t> Zero(D /* tag */) {
-  return Vec512<bfloat16_t>{_mm512_setzero_ps()};
+  return Vec512<bfloat16_t>{_mm512_setzero_si512()};
 }
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F16_D(D)>
 HWY_API Vec512<float16_t> Zero(D /* tag */) {
-  return Vec512<float16_t>{_mm512_setzero_ps()};
+  return Vec512<float16_t>{_mm512_setzero_si512()};
 }
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
 HWY_API Vec512<float> Zero(D /* tag */) {
@@ -4788,16 +4793,19 @@ HWY_API Vec512<double> ConvertTo(D /* tag*/, Vec512<uint64_t> v) {
 // Truncates (rounds toward zero).
 template <class D, HWY_IF_I32_D(D)>
 HWY_API Vec512<int32_t> ConvertTo(D d, Vec512<float> v) {
-  return detail::FixConversionOverflow(d, v, _mm512_cvttps_epi32(v.raw));
+  return detail::FixConversionOverflow(
+      d, v, Vec512<int32_t>{_mm512_cvttps_epi32(v.raw)});
 }
 template <class D, HWY_IF_I64_D(D)>
 HWY_API Vec512<int64_t> ConvertTo(D di, Vec512<double> v) {
-  return detail::FixConversionOverflow(di, v, _mm512_cvttpd_epi64(v.raw));
+  return detail::FixConversionOverflow(
+      di, v, Vec512<int64_t>{_mm512_cvttpd_epi64(v.raw)});
 }
 
 HWY_API Vec512<int32_t> NearestInt(const Vec512<float> v) {
   const RebindToSigned<DFromV<decltype(v)>> di;
-  return detail::FixConversionOverflow(di, v, _mm512_cvtps_epi32(v.raw));
+  return detail::FixConversionOverflow(
+      di, v, Vec512<int32_t>{_mm512_cvtps_epi32(v.raw)});
 }
 
 // ================================================== CRYPTO
