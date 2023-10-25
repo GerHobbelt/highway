@@ -255,8 +255,13 @@ else()
       -march=armv7-a
       -mfpu=neon-vfpv4
       -mfloat-abi=hard  # must match the toolchain specified as CXX=
-      -mfp16-format=ieee  # required for vcvt_f32_f16
     )
+    if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
+      # using GCC
+      list(APPEND HWY_FLAGS
+        -mfp16-format=ieee  # required for vcvt_f32_f16
+      )
+    endif()
   endif()  # HWY_CMAKE_ARM7
 
   if(HWY_RISCV)
@@ -545,6 +550,7 @@ set(HWY_TEST_FILES
   hwy/tests/logical_test.cc
   hwy/tests/mask_mem_test.cc
   hwy/tests/mask_test.cc
+  hwy/tests/masked_arithmetic_test.cc
   hwy/tests/memory_test.cc
   hwy/tests/minmax_test.cc
   hwy/tests/mul_test.cc
