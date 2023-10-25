@@ -1,5 +1,7 @@
 // Copyright 2021 Google LLC
+// Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: BSD-3-Clause
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -1561,6 +1563,22 @@ HWY_API VFromD<D> MaskedGatherIndex(MFromD<D> m, D d,
 
 #endif  // (defined(HWY_NATIVE_GATHER) == defined(HWY_TARGET_TOGGLE))
 
+// ------------------------------ ScatterN/GatherN
+
+template <class D, typename T = TFromD<D>>
+HWY_API void ScatterIndexN(VFromD<D> v, D d, T* HWY_RESTRICT base,
+                           VFromD<RebindToSigned<D>> index,
+                           const size_t max_lanes_to_store) {
+  MaskedScatterIndex(v, FirstN(d, max_lanes_to_store), d, base, index);
+}
+
+template <class D, typename T = TFromD<D>>
+HWY_API VFromD<D> GatherIndexN(D d, const T* HWY_RESTRICT base,
+                               VFromD<RebindToSigned<D>> index,
+                               const size_t max_lanes_to_load) {
+  return MaskedGatherIndex(FirstN(d, max_lanes_to_load), d, base, index);
+}
+
 // ------------------------------ Integer AbsDiff and SumsOf8AbsDiff
 
 #if (defined(HWY_NATIVE_INTEGER_ABS_DIFF) == defined(HWY_TARGET_TOGGLE))
@@ -2266,7 +2284,7 @@ HWY_INLINE V InvSubBytes(V state) {
 namespace detail {
 
 template <class V>  // u8
-HWY_API V ShiftRows(const V state) {
+HWY_INLINE V ShiftRows(const V state) {
   const DFromV<V> du;
   alignas(16) static constexpr uint8_t kShiftRow[16] = {
       0,  5,  10, 15,  // transposed: state is column major
@@ -2278,7 +2296,7 @@ HWY_API V ShiftRows(const V state) {
 }
 
 template <class V>  // u8
-HWY_API V InvShiftRows(const V state) {
+HWY_INLINE V InvShiftRows(const V state) {
   const DFromV<V> du;
   alignas(16) static constexpr uint8_t kShiftRow[16] = {
       0,  13, 10, 7,   // transposed: state is column major
@@ -2290,7 +2308,7 @@ HWY_API V InvShiftRows(const V state) {
 }
 
 template <class V>  // u8
-HWY_API V GF2P8Mod11BMulBy2(V v) {
+HWY_INLINE V GF2P8Mod11BMulBy2(V v) {
   const DFromV<V> du;
   const RebindToSigned<decltype(du)> di;  // can only do signed comparisons
   const auto msb = Lt(BitCast(di, v), Zero(di));
@@ -2299,7 +2317,7 @@ HWY_API V GF2P8Mod11BMulBy2(V v) {
 }
 
 template <class V>  // u8
-HWY_API V MixColumns(const V state) {
+HWY_INLINE V MixColumns(const V state) {
   const DFromV<V> du;
   // For each column, the rows are the sum of GF(2^8) matrix multiplication by:
   // 2 3 1 1  // Let s := state*1, d := state*2, t := state*3.
@@ -2319,7 +2337,7 @@ HWY_API V MixColumns(const V state) {
 }
 
 template <class V>  // u8
-HWY_API V InvMixColumns(const V state) {
+HWY_INLINE V InvMixColumns(const V state) {
   const DFromV<V> du;
   // For each column, the rows are the sum of GF(2^8) matrix multiplication by:
   // 14 11 13  9
