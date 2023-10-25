@@ -131,7 +131,8 @@
 #if HWY_COMPILER_CLANG
 #define HWY_TARGET_STR_PPC10 HWY_TARGET_STR_PPC9 ",power10-vector"
 #else
-#define HWY_TARGET_STR_PPC10 HWY_TARGET_STR_PPC9 ",cpu=power10"
+// See #1707 and https://gcc.gnu.org/bugzilla/show_bug.cgi?id=102059#c35
+#define HWY_TARGET_STR_PPC10 HWY_TARGET_STR_PPC9 ",cpu=power10,no-htm"
 #endif
 
 // Before include guard so we redefine HWY_TARGET_STR on each include,
@@ -410,11 +411,17 @@
 // Can use pragmas instead of -march compiler flag
 #if HWY_HAVE_RUNTIME_DISPATCH
 #if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
+// Static dispatch with -march=armv8-a+sve2+aes, or no baseline, hence dynamic
+// dispatch, which checks for AES support at runtime.
+#if defined(__ARM_FEATURE_SVE2_AES) || (HWY_BASELINE_SVE2 == 0)
 #define HWY_TARGET_STR "+sve2-aes"
-#else
+#else  // SVE2 without AES
+#define HWY_TARGET_STR "+sve2"
+#endif
+#else  // not SVE2 target
 #define HWY_TARGET_STR "+sve"
 #endif
-#else
+#else  // !HWY_HAVE_RUNTIME_DISPATCH
 // HWY_TARGET_STR remains undefined
 #endif
 
