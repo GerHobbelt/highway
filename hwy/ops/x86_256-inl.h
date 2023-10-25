@@ -3223,7 +3223,7 @@ HWY_API Vec128<T> LowerHalf(Vec256<T> v) {
 
 // ------------------------------ UpperHalf
 
-template <class D, HWY_IF_V_SIZE_D(D, 16)>
+template <class D, HWY_IF_V_SIZE_D(D, 16), HWY_IF_NOT_FLOAT3264_D(D)>
 HWY_API VFromD<D> UpperHalf(D d, VFromD<Twice<D>> v) {
   const RebindToUnsigned<decltype(d)> du;  // for float16_t
   const Twice<decltype(d)> dut;
@@ -5305,6 +5305,15 @@ template <class D, HWY_IF_SIGNED_D(D)>
 HWY_API Vec256<int32_t> WidenMulPairwiseAdd(D /*d32*/, Vec256<int16_t> a,
                                             Vec256<int16_t> b) {
   return Vec256<int32_t>{_mm256_madd_epi16(a.raw, b.raw)};
+}
+
+// ------------------------------ SatWidenMulPairwiseAdd
+
+template <class DI16, HWY_IF_I16_D(DI16), HWY_IF_V_SIZE_D(DI16, 32)>
+HWY_API VFromD<DI16> SatWidenMulPairwiseAdd(
+    DI16 /* tag */, VFromD<Repartition<uint8_t, DI16>> a,
+    VFromD<Repartition<int8_t, DI16>> b) {
+  return VFromD<DI16>{_mm256_maddubs_epi16(a.raw, b.raw)};
 }
 
 // ------------------------------ ReorderWidenMulAccumulate

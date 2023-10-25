@@ -181,8 +181,11 @@ HWY_INLINE uint64_t BitsFromMask(const Mask128<T, N> mask) {
 }  // namespace detail
 #endif  // HWY_TARGET <= HWY_AVX3
 
+// RemoveRef is required in case V is actually Vec128&, which has been observed
+// (only) with GCC 8.3-8.5.
 template <class V>
-using DFromV = Simd<typename V::PrivateT, V::kPrivateN, 0>;
+using DFromV =
+    Simd<typename RemoveRef<V>::PrivateT, RemoveRef<V>::kPrivateN, 0>;
 
 template <class V>
 using TFromV = typename V::PrivateT;
@@ -216,9 +219,10 @@ HWY_API Vec128<double, HWY_MAX_LANES_D(D)> Zero(D /* tag */) {
 }
 
 // Using the existing Zero function instead of a dedicated function for
-// deduction avoids having to forward-declare Vec256 here.
+// deduction avoids having to forward-declare Vec256 here. RemoveRef is required
+// in case D is Simd<>&, which has been observed (only) with GCC 8.3-8.5.
 template <class D>
-using VFromD = decltype(Zero(D()));
+using VFromD = decltype(Zero(RemoveRef<D>()));
 
 // ------------------------------ Tuple (VFromD)
 #include "hwy/ops/tuple-inl.h"
@@ -7075,6 +7079,27 @@ HWY_API VFromD<D32> WidenMulPairwiseAdd(D32 /* tag */, V16 a, V16 b) {
   return VFromD<D32>{_mm_madd_epi16(a.raw, b.raw)};
 }
 
+// ------------------------------ SatWidenMulPairwiseAdd
+
+#if HWY_TARGET <= HWY_SSSE3
+
+#ifdef HWY_NATIVE_U8_I8_SATWIDENMULPAIRWISEADD
+#undef HWY_NATIVE_U8_I8_SATWIDENMULPAIRWISEADD
+#else
+#define HWY_NATIVE_U8_I8_SATWIDENMULPAIRWISEADD
+#endif
+
+// Even if N=1, the input is always at least 2 lanes, hence _mm_maddubs_epi16
+// is safe.
+template <class DI16, HWY_IF_I16_D(DI16), HWY_IF_V_SIZE_LE_D(DI16, 16)>
+HWY_API VFromD<DI16> SatWidenMulPairwiseAdd(
+    DI16 /* tag */, VFromD<Repartition<uint8_t, DI16>> a,
+    VFromD<Repartition<int8_t, DI16>> b) {
+  return VFromD<DI16>{_mm_maddubs_epi16(a.raw, b.raw)};
+}
+
+#endif
+
 // ------------------------------ ReorderWidenMulAccumulate (MulAdd, ShiftLeft)
 
 // Generic for all vector lengths.
@@ -7675,7 +7700,7 @@ namespace detail {
 
 // For well-defined float->int demotion in all x86_*-inl.h.
 template <class D>
-HWY_INLINE VFromD<D> ClampF64ToI32Max(D d, VFromD<D> v) {
+HWY_INLINE VFromD<D> ClampF64ToI32Max(const D& d, const VFromD<D>& v) {
   // The max can be exactly represented in binary64, so clamping beforehand
   // prevents x86 conversion from raising an exception and returning 80..00.
   return Min(v, Set(d, 2147483647.0));
@@ -7685,9 +7710,9 @@ HWY_INLINE VFromD<D> ClampF64ToI32Max(D d, VFromD<D> v) {
 // change the result because the max integer value is not exactly representable.
 // Instead detect the overflow result after conversion and fix it.
 template <class DI>
-HWY_INLINE VFromD<DI> FixConversionOverflow(DI di,
-                                            VFromD<RebindToFloat<DI>> original,
-                                            VFromD<DI> converted) {
+HWY_INLINE VFromD<DI> FixConversionOverflow(
+    const DI& di, const VFromD<RebindToFloat<DI>>& original,
+    const VFromD<DI>& converted) {
   // Combinations of original and output sign:
   //   --: normal <0 or -huge_val to 80..00: OK
   //   -+: -0 to 0                         : OK
@@ -8242,7 +8267,8 @@ HWY_API VFromD<DI> ConvertTo(DI di, VFromD<Rebind<double, DI>> v) {
   const VU shift_int = BitCast(
       du, SaturatedSub(BitCast(du16, biased_exp), BitCast(du16, k1075)));
   const VU mantissa = BitCast(du, v) & Set(du, (1ULL << 52) - 1);
-  // Include implicit 1-bit
+  // Include implicit 1-bit. NOTE: the shift count may exceed 63; we rely on x86
+  // returning zero in that case.
   const VU int53 = (mantissa | Set(du, 1ULL << 52)) >> shift_mnt;
 
   // For inputs larger than 2^53 - 1, insert zeros at the bottom.
@@ -9883,6 +9909,25 @@ HWY_INLINE Vec128<T, 4> MaxOfLanes(Vec128<T, 4> v3210) {
   return Max(v03_12_12_03, v12_03_03_12);
 }
 
+#undef HWY_X86_IF_NOT_MINPOS
+#if HWY_TARGET <= HWY_SSE4
+// Skip the T_SIZE = 2 overload in favor of the following two.
+#define HWY_X86_IF_NOT_MINPOS(T) \
+  hwy::EnableIf<!IsSame<T, uint16_t>()>* = nullptr
+
+HWY_INLINE Vec128<uint16_t> MinOfLanes(Vec128<uint16_t> v) {
+  return Broadcast<0>(Vec128<uint16_t>{_mm_minpos_epu16(v.raw)});
+}
+
+HWY_INLINE Vec128<uint16_t> MaxOfLanes(Vec128<uint16_t> v) {
+  const DFromV<decltype(v)> d;
+  const Vec128<uint16_t> max = Set(d, LimitsMax<uint16_t>());
+  return max - MinOfLanes(max - v);
+}
+#else
+#define HWY_X86_IF_NOT_MINPOS(T) hwy::EnableIf<true>* = nullptr
+#endif  // HWY_TARGET <= HWY_SSE4
+
 // N=8 (only 16-bit, else >128-bit)
 template <typename T, HWY_IF_T_SIZE(T, 2)>
 HWY_INLINE Vec128<T, 8> SumOfLanes(Vec128<T, 8> v76543210) {
@@ -9893,7 +9938,7 @@ HWY_INLINE Vec128<T, 8> SumOfLanes(Vec128<T, 8> v76543210) {
   const V v0347_1625_1625_0347 = Add(v34_25_16_07, Reverse4(d, v34_25_16_07));
   return Add(v0347_1625_1625_0347, Reverse2(d, v0347_1625_1625_0347));
 }
-template <typename T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 2) | (1 << 4))>
+template <typename T, HWY_IF_T_SIZE(T, 2), HWY_X86_IF_NOT_MINPOS(T)>
 HWY_INLINE Vec128<T, 8> MinOfLanes(Vec128<T, 8> v76543210) {
   using V = decltype(v76543210);
   const DFromV<V> d;
@@ -9902,7 +9947,7 @@ HWY_INLINE Vec128<T, 8> MinOfLanes(Vec128<T, 8> v76543210) {
   const V v0347_1625_1625_0347 = Min(v34_25_16_07, Reverse4(d, v34_25_16_07));
   return Min(v0347_1625_1625_0347, Reverse2(d, v0347_1625_1625_0347));
 }
-template <typename T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 2) | (1 << 4))>
+template <typename T, HWY_IF_T_SIZE(T, 2), HWY_X86_IF_NOT_MINPOS(T)>
 HWY_INLINE Vec128<T, 8> MaxOfLanes(Vec128<T, 8> v76543210) {
   using V = decltype(v76543210);
   const DFromV<V> d;
@@ -10039,20 +10084,6 @@ template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API VFromD<D> MaxOfLanes(D /* tag */, VFromD<D> v) {
   return detail::MaxOfLanes(v);
 }
-
-#if HWY_TARGET <= HWY_SSE4
-template <class D>
-HWY_INLINE Vec128<uint16_t> MinOfLanes(D, Vec128<uint16_t> v) {
-  using V = decltype(v);
-  return Broadcast<0>(V{_mm_minpos_epu16(v.raw)});
-}
-
-template <class D>
-HWY_INLINE Vec128<uint16_t> MaxOfLanes(D d, Vec128<uint16_t> v) {
-  const Vec128<uint16_t> m(Set(d, LimitsMax<uint16_t>()));
-  return m - MinOfLanes(d, m - v);
-}
-#endif  // HWY_TARGET <= HWY_SSE4
 
 // ------------------------------ Lt128
 
