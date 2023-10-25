@@ -2600,49 +2600,24 @@ HWY_API void Stream(VFromD<D> v, D /* tag */, double* HWY_RESTRICT aligned) {
   _mm512_stream_pd(aligned, v.raw);
 }
 
-// ------------------------------ Scatter
+// ------------------------------ ScatterOffset
 
 // Work around warnings in the intrinsic definitions (passing -1 as a mask).
 HWY_DIAGNOSTICS(push)
 HWY_DIAGNOSTICS_OFF(disable : 4245 4365, ignored "-Wsign-conversion")
 
-namespace detail {
-
-template <typename T>
-HWY_INLINE void ScatterOffset(hwy::SizeTag<4> /* tag */, Vec512<T> v,
-                              T* HWY_RESTRICT base, Vec512<int32_t> offset) {
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI32_D(D)>
+HWY_API void ScatterOffset(VFromD<D> v, D /* tag */,
+                           TFromD<D>* HWY_RESTRICT base,
+                           VFromD<RebindToSigned<D>> offset) {
   _mm512_i32scatter_epi32(base, offset.raw, v.raw, 1);
 }
-template <typename T>
-HWY_INLINE void ScatterIndex(hwy::SizeTag<4> /* tag */, Vec512<T> v,
-                             T* HWY_RESTRICT base, Vec512<int32_t> index) {
-  _mm512_i32scatter_epi32(base, index.raw, v.raw, 4);
-}
 
-template <typename T>
-HWY_INLINE void ScatterOffset(hwy::SizeTag<8> /* tag */, Vec512<T> v,
-                              T* HWY_RESTRICT base, Vec512<int64_t> offset) {
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI64_D(D)>
+HWY_API void ScatterOffset(VFromD<D> v, D /* tag */,
+                           TFromD<D>* HWY_RESTRICT base,
+                           VFromD<RebindToSigned<D>> offset) {
   _mm512_i64scatter_epi64(base, offset.raw, v.raw, 1);
-}
-template <typename T>
-HWY_INLINE void ScatterIndex(hwy::SizeTag<8> /* tag */, Vec512<T> v,
-                             T* HWY_RESTRICT base, Vec512<int64_t> index) {
-  _mm512_i64scatter_epi64(base, index.raw, v.raw, 8);
-}
-
-}  // namespace detail
-
-template <class D, HWY_IF_V_SIZE_D(D, 64), typename TI, typename T = TFromD<D>>
-HWY_API void ScatterOffset(VFromD<D> v, D /* tag */, T* HWY_RESTRICT base,
-                           Vec512<TI> offset) {
-  static_assert(sizeof(T) == sizeof(TI), "Must match for portability");
-  return detail::ScatterOffset(hwy::SizeTag<sizeof(T)>(), v, base, offset);
-}
-template <class D, HWY_IF_V_SIZE_D(D, 64), typename TI, typename T = TFromD<D>>
-HWY_API void ScatterIndex(VFromD<D> v, D /* tag */, T* HWY_RESTRICT base,
-                          Vec512<TI> index) {
-  static_assert(sizeof(T) == sizeof(TI), "Must match for portability");
-  return detail::ScatterIndex(hwy::SizeTag<sizeof(T)>(), v, base, index);
 }
 
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
@@ -2650,20 +2625,69 @@ HWY_API void ScatterOffset(VFromD<D> v, D /* tag */, float* HWY_RESTRICT base,
                            Vec512<int32_t> offset) {
   _mm512_i32scatter_ps(base, offset.raw, v.raw, 1);
 }
-template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
-HWY_API void ScatterIndex(VFromD<D> v, D /* tag */, float* HWY_RESTRICT base,
-                          Vec512<int32_t> index) {
-  _mm512_i32scatter_ps(base, index.raw, v.raw, 4);
-}
+
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F64_D(D)>
 HWY_API void ScatterOffset(VFromD<D> v, D /* tag */, double* HWY_RESTRICT base,
                            Vec512<int64_t> offset) {
   _mm512_i64scatter_pd(base, offset.raw, v.raw, 1);
 }
+
+// ------------------------------ ScatterIndex
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI32_D(D)>
+HWY_API void ScatterIndex(VFromD<D> v, D /* tag */,
+                          TFromD<D>* HWY_RESTRICT base,
+                          VFromD<RebindToSigned<D>> index) {
+  _mm512_i32scatter_epi32(base, index.raw, v.raw, 4);
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI64_D(D)>
+HWY_API void ScatterIndex(VFromD<D> v, D /* tag */,
+                          TFromD<D>* HWY_RESTRICT base,
+                          VFromD<RebindToSigned<D>> index) {
+  _mm512_i64scatter_epi64(base, index.raw, v.raw, 8);
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
+HWY_API void ScatterIndex(VFromD<D> v, D /* tag */, float* HWY_RESTRICT base,
+                          Vec512<int32_t> index) {
+  _mm512_i32scatter_ps(base, index.raw, v.raw, 4);
+}
+
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F64_D(D)>
 HWY_API void ScatterIndex(VFromD<D> v, D /* tag */, double* HWY_RESTRICT base,
                           Vec512<int64_t> index) {
   _mm512_i64scatter_pd(base, index.raw, v.raw, 8);
+}
+
+// ------------------------------ MaskedScatterIndex
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI32_D(D)>
+HWY_API void MaskedScatterIndex(VFromD<D> v, MFromD<D> m, D /* tag */,
+                                TFromD<D>* HWY_RESTRICT base,
+                                VFromD<RebindToSigned<D>> index) {
+  _mm512_mask_i32scatter_epi32(base, m.raw, index.raw, v.raw, 4);
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_UI64_D(D)>
+HWY_API void MaskedScatterIndex(VFromD<D> v, MFromD<D> m, D /* tag */,
+                                TFromD<D>* HWY_RESTRICT base,
+                                VFromD<RebindToSigned<D>> index) {
+  _mm512_mask_i64scatter_epi64(base, m.raw, index.raw, v.raw, 8);
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
+HWY_API void MaskedScatterIndex(VFromD<D> v, MFromD<D> m, D /* tag */,
+                                float* HWY_RESTRICT base,
+                                Vec512<int32_t> index) {
+  _mm512_mask_i32scatter_ps(base, m.raw, index.raw, v.raw, 4);
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F64_D(D)>
+HWY_API void MaskedScatterIndex(VFromD<D> v, MFromD<D> m, D /* tag */,
+                                double* HWY_RESTRICT base,
+                                Vec512<int64_t> index) {
+  _mm512_mask_i64scatter_pd(base, m.raw, index.raw, v.raw, 8);
 }
 
 // ------------------------------ Gather
@@ -4556,6 +4580,27 @@ HWY_API VFromD<D> PromoteTo(D /* tag */, Vec256<int32_t> v) {
   return VFromD<D>{_mm512_cvtepi32_pd(v.raw)};
 }
 
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F64_D(D)>
+HWY_API VFromD<D> PromoteTo(D /* tag */, Vec256<uint32_t> v) {
+  return VFromD<D>{_mm512_cvtepu32_pd(v.raw)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_I64_D(D)>
+HWY_API VFromD<D> PromoteTo(D di64, VFromD<Rebind<float, D>> v) {
+  const Rebind<float, decltype(di64)> df32;
+  const RebindToFloat<decltype(di64)> df64;
+  const RebindToSigned<decltype(df32)> di32;
+
+  return detail::FixConversionOverflow(
+      di64, BitCast(df64, PromoteTo(di64, BitCast(di32, v))),
+      VFromD<D>{_mm512_cvttps_epi64(v.raw)});
+}
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_U64_D(D)>
+HWY_API VFromD<D> PromoteTo(D /* tag */, VFromD<Rebind<float, D>> v) {
+  return VFromD<D>{
+      _mm512_maskz_cvttps_epu64(_knot_mask8(MaskFromVec(v).raw), v.raw)};
+}
+
 // ------------------------------ Demotions (full -> part w/ narrow lanes)
 
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_U16_D(D)>
@@ -4827,6 +4872,22 @@ HWY_API VFromD<D> DemoteTo(D /* tag */, Vec512<double> v) {
   return VFromD<D>{_mm512_cvttpd_epi32(clamped.raw)};
 }
 
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_U32_D(D)>
+HWY_API VFromD<D> DemoteTo(D /* tag */, Vec512<double> v) {
+  return VFromD<D>{
+      _mm512_maskz_cvttpd_epu32(_knot_mask8(MaskFromVec(v).raw), v.raw)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> DemoteTo(D /* tag */, VFromD<Rebind<int64_t, D>> v) {
+  return VFromD<D>{_mm512_cvtepi64_ps(v.raw)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> DemoteTo(D /* tag */, VFromD<Rebind<uint64_t, D>> v) {
+  return VFromD<D>{_mm512_cvtepu64_ps(v.raw)};
+}
+
 // For already range-limited input [0, 255].
 HWY_API Vec128<uint8_t> U8FromU32(const Vec512<uint32_t> v) {
   const DFromV<decltype(v)> d32;
@@ -4992,6 +5053,16 @@ template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_I64_D(D)>
 HWY_API VFromD<D> ConvertTo(D di, Vec512<double> v) {
   return detail::FixConversionOverflow(di, v,
                                        VFromD<D>{_mm512_cvttpd_epi64(v.raw)});
+}
+template <class DU, HWY_IF_V_SIZE_D(DU, 64), HWY_IF_U32_D(DU)>
+HWY_API VFromD<DU> ConvertTo(DU /*du*/, VFromD<RebindToFloat<DU>> v) {
+  return VFromD<DU>{
+      _mm512_maskz_cvttps_epu32(_knot_mask16(MaskFromVec(v).raw), v.raw)};
+}
+template <class DU, HWY_IF_V_SIZE_D(DU, 64), HWY_IF_U64_D(DU)>
+HWY_API VFromD<DU> ConvertTo(DU /*du*/, VFromD<RebindToFloat<DU>> v) {
+  return VFromD<DU>{
+      _mm512_maskz_cvttpd_epu64(_knot_mask8(MaskFromVec(v).raw), v.raw)};
 }
 
 HWY_API Vec512<int32_t> NearestInt(const Vec512<float> v) {

@@ -1488,33 +1488,81 @@ HWY_API void Stream(VFromD<D> v, D d, TFromD<D>* HWY_RESTRICT aligned) {
   Store(v, d, aligned);
 }
 
-// ------------------------------ Scatter
-
-template <class D, typename T = TFromD<D>, typename Offset>
-HWY_API void ScatterOffset(VFromD<D> v, D d, T* base,
-                           Vec128<Offset, HWY_MAX_LANES_D(D)> offset) {
-  static_assert(sizeof(T) == sizeof(Offset), "Index/lane size must match");
-  for (size_t i = 0; i < MaxLanes(d); ++i) {
-    uint8_t* const base8 = reinterpret_cast<uint8_t*>(base) + offset.raw[i];
-    CopyBytes<sizeof(T)>(&v.raw[i], base8);  // copy to bytes
-  }
-}
-
-template <class D, typename T = TFromD<D>, typename Index>
-HWY_API void ScatterIndex(VFromD<D> v, D d, T* HWY_RESTRICT base,
-                          Vec128<Index, HWY_MAX_LANES_D(D)> index) {
-  static_assert(sizeof(T) == sizeof(Index), "Index/lane size must match");
-  for (size_t i = 0; i < MaxLanes(d); ++i) {
-    base[index.raw[i]] = v.raw[i];
-  }
-}
-
-// ------------------------------ Gather
+// ------------------------------ Scatter in generic_ops-inl.h
+// ------------------------------ Gather in generic_ops-inl.h
 
 // ================================================== CONVERT
 
 // ConvertTo and DemoteTo with floating-point input and integer output truncate
 // (rounding toward zero).
+
+namespace detail {
+
+template <class ToT, class FromT>
+HWY_INLINE ToT CastValueForF2IConv(hwy::UnsignedTag /* to_type_tag */,
+                                   FromT val) {
+  // Prevent ubsan errors when converting float to narrower integer
+
+  // If LimitsMax<ToT>() can be exactly represented in FromT,
+  // kSmallestOutOfToTRangePosVal is equal to LimitsMax<ToT>().
+
+  // Otherwise, if LimitsMax<ToT>() cannot be exactly represented in FromT,
+  // kSmallestOutOfToTRangePosVal is equal to LimitsMax<ToT>() + 1, which can
+  // be exactly represented in FromT.
+  constexpr FromT kSmallestOutOfToTRangePosVal =
+      (sizeof(ToT) * 8 <= static_cast<size_t>(MantissaBits<FromT>()) + 1)
+          ? static_cast<FromT>(LimitsMax<ToT>())
+          : static_cast<FromT>(
+                static_cast<FromT>(ToT{1} << (sizeof(ToT) * 8 - 1)) * FromT(2));
+
+  if (std::signbit(val)) {
+    return ToT{0};
+  } else if (std::isinf(val) || val >= kSmallestOutOfToTRangePosVal) {
+    return LimitsMax<ToT>();
+  } else {
+    return static_cast<ToT>(val);
+  }
+}
+
+template <class ToT, class FromT>
+HWY_INLINE ToT CastValueForF2IConv(hwy::SignedTag /* to_type_tag */,
+                                   FromT val) {
+  // Prevent ubsan errors when converting float to narrower integer
+
+  // If LimitsMax<ToT>() can be exactly represented in FromT,
+  // kSmallestOutOfToTRangePosVal is equal to LimitsMax<ToT>().
+
+  // Otherwise, if LimitsMax<ToT>() cannot be exactly represented in FromT,
+  // kSmallestOutOfToTRangePosVal is equal to -LimitsMin<ToT>(), which can
+  // be exactly represented in FromT.
+  constexpr FromT kSmallestOutOfToTRangePosVal =
+      (sizeof(ToT) * 8 <= static_cast<size_t>(MantissaBits<FromT>()) + 2)
+          ? static_cast<FromT>(LimitsMax<ToT>())
+          : static_cast<FromT>(-static_cast<FromT>(LimitsMin<ToT>()));
+
+  if (std::isinf(val) || std::fabs(val) >= kSmallestOutOfToTRangePosVal) {
+    return std::signbit(val) ? LimitsMin<ToT>() : LimitsMax<ToT>();
+  } else {
+    return static_cast<ToT>(val);
+  }
+}
+
+template <class ToT, class ToTypeTag, class FromT>
+HWY_INLINE ToT CastValueForPromoteTo(ToTypeTag /* to_type_tag */, FromT val) {
+  return static_cast<ToT>(val);
+}
+
+template <class ToT>
+HWY_INLINE ToT CastValueForPromoteTo(hwy::SignedTag to_type_tag, float val) {
+  return CastValueForF2IConv<ToT>(to_type_tag, val);
+}
+
+template <class ToT>
+HWY_INLINE ToT CastValueForPromoteTo(hwy::UnsignedTag to_type_tag, float val) {
+  return CastValueForF2IConv<ToT>(to_type_tag, val);
+}
+
+}  // namespace detail
 
 template <class DTo, typename TFrom, HWY_IF_NOT_SPECIAL_FLOAT(TFrom)>
 HWY_API VFromD<DTo> PromoteTo(DTo d, Vec128<TFrom, HWY_MAX_LANES_D(DTo)> from) {
@@ -1522,7 +1570,8 @@ HWY_API VFromD<DTo> PromoteTo(DTo d, Vec128<TFrom, HWY_MAX_LANES_D(DTo)> from) {
   VFromD<DTo> ret;
   for (size_t i = 0; i < MaxLanes(d); ++i) {
     // For bits Y > X, floatX->floatY and intX->intY are always representable.
-    ret.raw[i] = static_cast<TFromD<DTo>>(from.raw[i]);
+    ret.raw[i] = detail::CastValueForPromoteTo<TFromD<DTo>>(
+        hwy::TypeTag<TFromD<DTo>>(), from.raw[i]);
   }
   return ret;
 }
@@ -1544,18 +1593,13 @@ HWY_API VFromD<D> DemoteTo(D d, VFromD<Rebind<double, D>> from) {
   }
   return ret;
 }
-template <class D, HWY_IF_I32_D(D)>
+template <class D, HWY_IF_UI32_D(D)>
 HWY_API VFromD<D> DemoteTo(D d, VFromD<Rebind<double, D>> from) {
   VFromD<D> ret;
   for (size_t i = 0; i < MaxLanes(d); ++i) {
-    // Prevent ubsan errors when converting int32_t to narrower integer/int32_t
-    if (std::isinf(from.raw[i]) ||
-        std::fabs(from.raw[i]) > static_cast<double>(HighestValue<int32_t>())) {
-      ret.raw[i] = std::signbit(from.raw[i]) ? LowestValue<int32_t>()
-                                             : HighestValue<int32_t>();
-      continue;
-    }
-    ret.raw[i] = static_cast<int32_t>(from.raw[i]);
+    // Prevent ubsan errors when converting double to narrower integer/int32_t
+    ret.raw[i] = detail::CastValueForF2IConv<TFromD<D>>(
+        hwy::TypeTag<TFromD<D>>(), from.raw[i]);
   }
   return ret;
 }
@@ -1586,6 +1630,21 @@ HWY_API VFromD<DTo> DemoteTo(DTo /* tag */, Vec128<TFrom, N> from) {
   for (size_t i = 0; i < N; ++i) {
     // Int to int: choose closest value in ToT to `from` (avoids UB)
     from.raw[i] = HWY_MIN(from.raw[i], LimitsMax<TTo>());
+    ret.raw[i] = static_cast<TTo>(from.raw[i]);
+  }
+  return ret;
+}
+
+template <class DTo, typename TFrom, size_t N, HWY_IF_UI64(TFrom),
+          HWY_IF_F32_D(DTo)>
+HWY_API VFromD<DTo> DemoteTo(DTo /* tag */, Vec128<TFrom, N> from) {
+  using TTo = TFromD<DTo>;
+  static_assert(sizeof(TTo) < sizeof(TFrom), "Not demoting");
+
+  VFromD<DTo> ret;
+  for (size_t i = 0; i < N; ++i) {
+    // int64_t/uint64_t to float: okay to cast to float as an int64_t/uint64_t
+    // value is always within the range of a float
     ret.raw[i] = static_cast<TTo>(from.raw[i]);
   }
   return ret;
@@ -1707,17 +1766,10 @@ HWY_API VFromD<DTo> ConvertTo(hwy::FloatTag /*tag*/, DTo /*tag*/,
   static_assert(sizeof(ToT) == sizeof(TFrom), "Should have same size");
   VFromD<DTo> ret;
   constexpr size_t N = HWY_MAX_LANES_D(DTo);
+
   for (size_t i = 0; i < N; ++i) {
-    // float## -> int##: return closest representable value. We cannot exactly
-    // represent LimitsMax<ToT> in TFrom, so use double.
-    const double f = static_cast<double>(from.raw[i]);
-    if (std::isinf(from.raw[i]) ||
-        std::fabs(f) > static_cast<double>(LimitsMax<ToT>())) {
-      ret.raw[i] =
-          std::signbit(from.raw[i]) ? LimitsMin<ToT>() : LimitsMax<ToT>();
-      continue;
-    }
-    ret.raw[i] = static_cast<ToT>(from.raw[i]);
+    // float## -> int##: return closest representable value
+    ret.raw[i] = CastValueForF2IConv<ToT>(hwy::TypeTag<ToT>(), from.raw[i]);
   }
   return ret;
 }
