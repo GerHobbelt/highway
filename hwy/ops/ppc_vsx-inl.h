@@ -207,12 +207,18 @@ HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
 
 // Returns a vector with uninitialized elements.
 template <class D>
-HWY_API VFromD<D> Undefined(D /*d*/) {
+HWY_API VFromD<D> Undefined(D d) {
+#if HWY_COMPILER_GCC_ACTUAL
+  // Suppressing maybe-uninitialized both here and at the caller does not work,
+  // so initialize.
+  return Zero(d);
+#else
   HWY_DIAGNOSTICS(push)
   HWY_DIAGNOSTICS_OFF(disable : 4700, ignored "-Wuninitialized")
-  typename detail::Raw128<TFromD<D>>::type raw = raw;
-  return VFromD<D>{raw};
+  typename detail::Raw128<TFromD<D>>::type raw;
+  return VFromD<decltype(d)>{raw};
   HWY_DIAGNOSTICS(pop)
+#endif
 }
 
 // ------------------------------ GetLane
@@ -304,6 +310,19 @@ HWY_API Vec128<T, N> IfVecThenElse(Vec128<T, N> mask, Vec128<T, N> yes,
   return BitCast(
       d, VFromD<decltype(du)>{vec_sel(BitCast(du, no).raw, BitCast(du, yes).raw,
                                       BitCast(du, mask).raw)});
+}
+
+// ------------------------------ BitwiseIfThenElse
+
+#ifdef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#undef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#else
+#define HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#endif
+
+template <class V>
+HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
+  return IfVecThenElse(mask, yes, no);
 }
 
 // ------------------------------ Operator overloads (internal-only if float)
@@ -872,14 +891,14 @@ HWY_API MFromD<D> FirstN(D d, size_t num) {
 // ------------------------------ MaskedLoad
 template <class D, typename T = TFromD<D>>
 HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d, const T* HWY_RESTRICT p) {
-  return IfThenElseZero(m, Load(d, p));
+  return IfThenElseZero(m, LoadU(d, p));
 }
 
 // ------------------------------ MaskedLoadOr
 template <class D, typename T = TFromD<D>>
 HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
                                const T* HWY_RESTRICT p) {
-  return IfThenElse(m, Load(d, p), v);
+  return IfThenElse(m, LoadU(d, p), v);
 }
 
 // ------------------------------ Store
@@ -1054,9 +1073,20 @@ HWY_API Vec128<uint64_t, N / 8> SumsOf8(Vec128<uint8_t, N> v) {
 
 // Returns a + b clamped to the destination range.
 
-// Unsigned
-template <typename T, size_t N, HWY_IF_NOT_FLOAT(T),
-          HWY_IF_T_SIZE_ONE_OF(T, 0x6)>
+#ifdef HWY_NATIVE_I32_SATURATED_ADDSUB
+#undef HWY_NATIVE_I32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I32_SATURATED_ADDSUB
+#endif
+
+#ifdef HWY_NATIVE_U32_SATURATED_ADDSUB
+#undef HWY_NATIVE_U32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_U32_SATURATED_ADDSUB
+#endif
+
+template <typename T, size_t N, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T),
+          HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4))>
 HWY_API Vec128<T, N> SaturatedAdd(Vec128<T, N> a, Vec128<T, N> b) {
   return Vec128<T, N>{vec_adds(a.raw, b.raw)};
 }
@@ -1065,8 +1095,8 @@ HWY_API Vec128<T, N> SaturatedAdd(Vec128<T, N> a, Vec128<T, N> b) {
 
 // Returns a - b clamped to the destination range.
 
-template <typename T, size_t N, HWY_IF_NOT_FLOAT(T),
-          HWY_IF_T_SIZE_ONE_OF(T, 0x6)>
+template <typename T, size_t N, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T),
+          HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4))>
 HWY_API Vec128<T, N> SaturatedSub(Vec128<T, N> a, Vec128<T, N> b) {
   return Vec128<T, N>{vec_subs(a.raw, b.raw)};
 }

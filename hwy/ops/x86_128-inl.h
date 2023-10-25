@@ -24,8 +24,9 @@
 // https://github.com/google/highway/issues/710 and pull/902
 HWY_DIAGNOSTICS(push)
 #if HWY_COMPILER_GCC_ACTUAL
-HWY_DIAGNOSTICS_OFF(disable : 4701, ignored "-Wuninitialized")
-HWY_DIAGNOSTICS_OFF(disable : 4703 6001 26494, ignored "-Wmaybe-uninitialized")
+HWY_DIAGNOSTICS_OFF(disable : 4700, ignored "-Wuninitialized")
+HWY_DIAGNOSTICS_OFF(disable : 4701 4703 6001 26494,
+                    ignored "-Wmaybe-uninitialized")
 #endif
 
 #include <emmintrin.h>
@@ -477,6 +478,22 @@ HWY_API Vec128<T, N> IfVecThenElse(Vec128<T, N> mask, Vec128<T, N> yes,
   return IfThenElse(MaskFromVec(mask), yes, no);
 #endif
 }
+
+// ------------------------------ BitwiseIfThenElse
+#if HWY_TARGET <= HWY_AVX3
+
+#ifdef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#undef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#else
+#define HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#endif
+
+template <class V>
+HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
+  return IfVecThenElse(mask, yes, no);
+}
+
+#endif
 
 // ------------------------------ Operator overloads (internal-only if float)
 
@@ -2350,7 +2367,7 @@ template <class D, HWY_IF_V_SIZE_LE_D(D, 16),
           HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 1) | (1 << 2))>
 HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d,
                              const TFromD<D>* HWY_RESTRICT p) {
-  return IfThenElseZero(m, Load(d, p));
+  return IfThenElseZero(m, LoadU(d, p));
 }
 
 #else  // <= SSE4
@@ -2358,7 +2375,7 @@ HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d,
 // Avoid maskmov* - its nontemporal 'hint' causes it to bypass caches (slow).
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16), typename T = TFromD<D>>
 HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d, const T* HWY_RESTRICT p) {
-  return IfThenElseZero(m, Load(d, p));
+  return IfThenElseZero(m, LoadU(d, p));
 }
 
 #endif
@@ -2371,7 +2388,7 @@ HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d, const T* HWY_RESTRICT p) {
 template <class D, typename T = TFromD<D>>
 HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
                                const T* HWY_RESTRICT p) {
-  return IfThenElse(m, Load(d, p), v);
+  return IfThenElse(m, LoadU(d, p), v);
 }
 
 #endif  // HWY_TARGET > HWY_AVX3
@@ -2664,6 +2681,46 @@ HWY_API Vec128<int16_t, N> SaturatedAdd(const Vec128<int16_t, N> a,
   return Vec128<int16_t, N>{_mm_adds_epi16(a.raw, b.raw)};
 }
 
+#if HWY_TARGET <= HWY_AVX3
+#ifdef HWY_NATIVE_I32_SATURATED_ADDSUB
+#undef HWY_NATIVE_I32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I32_SATURATED_ADDSUB
+#endif
+
+#ifdef HWY_NATIVE_I64_SATURATED_ADDSUB
+#undef HWY_NATIVE_I64_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I64_SATURATED_ADDSUB
+#endif
+
+template <size_t N>
+HWY_API Vec128<int32_t, N> SaturatedAdd(Vec128<int32_t, N> a,
+                                        Vec128<int32_t, N> b) {
+  const DFromV<decltype(a)> d;
+  const auto sum = a + b;
+  const auto overflow_mask = MaskFromVec(
+      Vec128<int32_t, N>{_mm_ternarylogic_epi32(a.raw, b.raw, sum.raw, 0x42)});
+  const auto i32_max = Set(d, LimitsMax<int32_t>());
+  const Vec128<int32_t, N> overflow_result{_mm_mask_ternarylogic_epi32(
+      i32_max.raw, MaskFromVec(a).raw, i32_max.raw, i32_max.raw, 0x55)};
+  return IfThenElse(overflow_mask, overflow_result, sum);
+}
+
+template <size_t N>
+HWY_API Vec128<int64_t, N> SaturatedAdd(Vec128<int64_t, N> a,
+                                        Vec128<int64_t, N> b) {
+  const DFromV<decltype(a)> d;
+  const auto sum = a + b;
+  const auto overflow_mask = MaskFromVec(
+      Vec128<int64_t, N>{_mm_ternarylogic_epi64(a.raw, b.raw, sum.raw, 0x42)});
+  const auto i64_max = Set(d, LimitsMax<int64_t>());
+  const Vec128<int64_t, N> overflow_result{_mm_mask_ternarylogic_epi64(
+      i64_max.raw, MaskFromVec(a).raw, i64_max.raw, i64_max.raw, 0x55)};
+  return IfThenElse(overflow_mask, overflow_result, sum);
+}
+#endif  // HWY_TARGET <= HWY_AVX3
+
 // ------------------------------ SaturatedSub
 
 // Returns a - b clamped to the destination range.
@@ -2691,6 +2748,34 @@ HWY_API Vec128<int16_t, N> SaturatedSub(const Vec128<int16_t, N> a,
                                         const Vec128<int16_t, N> b) {
   return Vec128<int16_t, N>{_mm_subs_epi16(a.raw, b.raw)};
 }
+
+#if HWY_TARGET <= HWY_AVX3
+template <size_t N>
+HWY_API Vec128<int32_t, N> SaturatedSub(Vec128<int32_t, N> a,
+                                        Vec128<int32_t, N> b) {
+  const DFromV<decltype(a)> d;
+  const auto diff = a - b;
+  const auto overflow_mask = MaskFromVec(
+      Vec128<int32_t, N>{_mm_ternarylogic_epi32(a.raw, b.raw, diff.raw, 0x18)});
+  const auto i32_max = Set(d, LimitsMax<int32_t>());
+  const Vec128<int32_t, N> overflow_result{_mm_mask_ternarylogic_epi32(
+      i32_max.raw, MaskFromVec(a).raw, i32_max.raw, i32_max.raw, 0x55)};
+  return IfThenElse(overflow_mask, overflow_result, diff);
+}
+
+template <size_t N>
+HWY_API Vec128<int64_t, N> SaturatedSub(Vec128<int64_t, N> a,
+                                        Vec128<int64_t, N> b) {
+  const DFromV<decltype(a)> d;
+  const auto diff = a - b;
+  const auto overflow_mask = MaskFromVec(
+      Vec128<int64_t, N>{_mm_ternarylogic_epi64(a.raw, b.raw, diff.raw, 0x18)});
+  const auto i64_max = Set(d, LimitsMax<int64_t>());
+  const Vec128<int64_t, N> overflow_result{_mm_mask_ternarylogic_epi64(
+      i64_max.raw, MaskFromVec(a).raw, i64_max.raw, i64_max.raw, 0x55)};
+  return IfThenElse(overflow_mask, overflow_result, diff);
+}
+#endif  // HWY_TARGET <= HWY_AVX3
 
 // ------------------------------ AverageRound
 

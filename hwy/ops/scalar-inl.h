@@ -493,8 +493,8 @@ HWY_API Vec1<uint8_t> SaturatedAdd(const Vec1<uint8_t> a,
 }
 HWY_API Vec1<uint16_t> SaturatedAdd(const Vec1<uint16_t> a,
                                     const Vec1<uint16_t> b) {
-  return Vec1<uint16_t>(
-      static_cast<uint16_t>(HWY_MIN(HWY_MAX(0, a.raw + b.raw), 65535)));
+  return Vec1<uint16_t>(static_cast<uint16_t>(
+      HWY_MIN(HWY_MAX(0, static_cast<int32_t>(a.raw) + b.raw), 65535)));
 }
 
 // Signed
@@ -504,8 +504,8 @@ HWY_API Vec1<int8_t> SaturatedAdd(const Vec1<int8_t> a, const Vec1<int8_t> b) {
 }
 HWY_API Vec1<int16_t> SaturatedAdd(const Vec1<int16_t> a,
                                    const Vec1<int16_t> b) {
-  return Vec1<int16_t>(
-      static_cast<int16_t>(HWY_MIN(HWY_MAX(-32768, a.raw + b.raw), 32767)));
+  return Vec1<int16_t>(static_cast<int16_t>(
+      HWY_MIN(HWY_MAX(-32768, static_cast<int32_t>(a.raw) + b.raw), 32767)));
 }
 
 // ------------------------------ Saturating subtraction
@@ -520,8 +520,8 @@ HWY_API Vec1<uint8_t> SaturatedSub(const Vec1<uint8_t> a,
 }
 HWY_API Vec1<uint16_t> SaturatedSub(const Vec1<uint16_t> a,
                                     const Vec1<uint16_t> b) {
-  return Vec1<uint16_t>(
-      static_cast<uint16_t>(HWY_MIN(HWY_MAX(0, a.raw - b.raw), 65535)));
+  return Vec1<uint16_t>(static_cast<uint16_t>(
+      HWY_MIN(HWY_MAX(0, static_cast<int32_t>(a.raw) - b.raw), 65535)));
 }
 
 // Signed
@@ -531,8 +531,8 @@ HWY_API Vec1<int8_t> SaturatedSub(const Vec1<int8_t> a, const Vec1<int8_t> b) {
 }
 HWY_API Vec1<int16_t> SaturatedSub(const Vec1<int16_t> a,
                                    const Vec1<int16_t> b) {
-  return Vec1<int16_t>(
-      static_cast<int16_t>(HWY_MIN(HWY_MAX(-32768, a.raw - b.raw), 32767)));
+  return Vec1<int16_t>(static_cast<int16_t>(
+      HWY_MIN(HWY_MAX(-32768, static_cast<int32_t>(a.raw) - b.raw), 32767)));
 }
 
 // ------------------------------ Average
@@ -1533,9 +1533,12 @@ HWY_INLINE T ReverseBitsOfEachByte(T val) {
   constexpr TU kShlMask3 = static_cast<TU>(~kShrMask3);
 
   TU result = static_cast<TU>(val);
-  result = ((result << 1) & kShlMask1) | ((result >> 1) & kShrMask1);
-  result = ((result << 2) & kShlMask2) | ((result >> 2) & kShrMask2);
-  result = ((result << 4) & kShlMask3) | ((result >> 4) & kShrMask3);
+  result = static_cast<TU>(((result << 1) & kShlMask1) |
+                           ((result >> 1) & kShrMask1));
+  result = static_cast<TU>(((result << 2) & kShlMask2) |
+                           ((result >> 2) & kShrMask2));
+  result = static_cast<TU>(((result << 4) & kShlMask3) |
+                           ((result >> 4) & kShrMask3));
   return static_cast<T>(result);
 }
 

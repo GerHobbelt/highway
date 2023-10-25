@@ -629,13 +629,35 @@ HWY_API svuint64_t SumsOf8(const svuint8_t v) {
 
 // ------------------------------ SaturatedAdd
 
-HWY_SVE_FOREACH_UI08(HWY_SVE_RETV_ARGVV, SaturatedAdd, qadd)
-HWY_SVE_FOREACH_UI16(HWY_SVE_RETV_ARGVV, SaturatedAdd, qadd)
+#ifdef HWY_NATIVE_I32_SATURATED_ADDSUB
+#undef HWY_NATIVE_I32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I32_SATURATED_ADDSUB
+#endif
+
+#ifdef HWY_NATIVE_U32_SATURATED_ADDSUB
+#undef HWY_NATIVE_U32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_U32_SATURATED_ADDSUB
+#endif
+
+#ifdef HWY_NATIVE_I64_SATURATED_ADDSUB
+#undef HWY_NATIVE_I64_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I64_SATURATED_ADDSUB
+#endif
+
+#ifdef HWY_NATIVE_U64_SATURATED_ADDSUB
+#undef HWY_NATIVE_U64_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_U64_SATURATED_ADDSUB
+#endif
+
+HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGVV, SaturatedAdd, qadd)
 
 // ------------------------------ SaturatedSub
 
-HWY_SVE_FOREACH_UI08(HWY_SVE_RETV_ARGVV, SaturatedSub, qsub)
-HWY_SVE_FOREACH_UI16(HWY_SVE_RETV_ARGVV, SaturatedSub, qsub)
+HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGVV, SaturatedSub, qsub)
 
 // ------------------------------ AbsDiff
 #ifdef HWY_NATIVE_INTEGER_ABS_DIFF
@@ -1008,6 +1030,19 @@ HWY_API V IfVecThenElse(const V mask, const V yes, const V no) {
 }
 
 #endif  // HWY_SVE_HAVE_2
+
+// ------------------------------ BitwiseIfThenElse
+
+#ifdef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#undef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#else
+#define HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#endif
+
+template <class V>
+HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
+  return IfVecThenElse(mask, yes, no);
+}
 
 // ------------------------------ Floating-point classification (Ne)
 

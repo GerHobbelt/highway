@@ -122,6 +122,21 @@ HWY_API void SafeCopyN(const size_t num, D d, const T* HWY_RESTRICT from,
 #endif
 }
 
+// ------------------------------ BitwiseIfThenElse
+#if (defined(HWY_NATIVE_BITWISE_IF_THEN_ELSE) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#undef HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#else
+#define HWY_NATIVE_BITWISE_IF_THEN_ELSE
+#endif
+
+template <class V>
+HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
+  return Or(And(mask, yes), AndNot(mask, no));
+}
+
+#endif  // HWY_NATIVE_BITWISE_IF_THEN_ELSE
+
 // "Include guard": skip if native instructions are available. The generic
 // implementation is currently shared between x86_* and wasm_*, and is too large
 // to duplicate.
@@ -1015,6 +1030,108 @@ HWY_API Vec<Repartition<uint64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
 }
 
 #endif  // HWY_NATIVE_SUMS_OF_8_ABS_DIFF
+
+// ------------------------------ SaturatedAdd/SaturatedSub for UI32/UI64
+
+#if (defined(HWY_NATIVE_I32_SATURATED_ADDSUB) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_I32_SATURATED_ADDSUB
+#undef HWY_NATIVE_I32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I32_SATURATED_ADDSUB
+#endif
+
+template <class V, HWY_IF_I32_D(DFromV<V>)>
+HWY_API V SaturatedAdd(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const auto sum = Add(a, b);
+  const auto overflow_mask =
+      MaskFromVec(BroadcastSignBit(AndNot(Xor(a, b), Xor(a, sum))));
+  const auto overflow_result =
+      Xor(BroadcastSignBit(a), Set(d, LimitsMax<int32_t>()));
+  return IfThenElse(overflow_mask, overflow_result, sum);
+}
+
+template <class V, HWY_IF_I32_D(DFromV<V>)>
+HWY_API V SaturatedSub(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const auto diff = Sub(a, b);
+  const auto overflow_mask =
+      MaskFromVec(BroadcastSignBit(And(Xor(a, b), Xor(a, diff))));
+  const auto overflow_result =
+      Xor(BroadcastSignBit(a), Set(d, LimitsMax<int32_t>()));
+  return IfThenElse(overflow_mask, overflow_result, diff);
+}
+
+#endif  // HWY_NATIVE_I32_SATURATED_ADDSUB
+
+#if (defined(HWY_NATIVE_I64_SATURATED_ADDSUB) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_I64_SATURATED_ADDSUB
+#undef HWY_NATIVE_I64_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_I64_SATURATED_ADDSUB
+#endif
+
+template <class V, HWY_IF_I64_D(DFromV<V>)>
+HWY_API V SaturatedAdd(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const auto sum = Add(a, b);
+  const auto overflow_mask =
+      MaskFromVec(BroadcastSignBit(AndNot(Xor(a, b), Xor(a, sum))));
+  const auto overflow_result =
+      Xor(BroadcastSignBit(a), Set(d, LimitsMax<int64_t>()));
+  return IfThenElse(overflow_mask, overflow_result, sum);
+}
+
+template <class V, HWY_IF_I64_D(DFromV<V>)>
+HWY_API V SaturatedSub(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const auto diff = Sub(a, b);
+  const auto overflow_mask =
+      MaskFromVec(BroadcastSignBit(And(Xor(a, b), Xor(a, diff))));
+  const auto overflow_result =
+      Xor(BroadcastSignBit(a), Set(d, LimitsMax<int64_t>()));
+  return IfThenElse(overflow_mask, overflow_result, diff);
+}
+
+#endif  // HWY_NATIVE_I64_SATURATED_ADDSUB
+
+#if (defined(HWY_NATIVE_U32_SATURATED_ADDSUB) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_U32_SATURATED_ADDSUB
+#undef HWY_NATIVE_U32_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_U32_SATURATED_ADDSUB
+#endif
+
+template <class V, HWY_IF_U32_D(DFromV<V>)>
+HWY_API V SaturatedAdd(V a, V b) {
+  return Add(a, Min(b, Not(a)));
+}
+
+template <class V, HWY_IF_U32_D(DFromV<V>)>
+HWY_API V SaturatedSub(V a, V b) {
+  return Sub(a, Min(a, b));
+}
+
+#endif  // HWY_NATIVE_U32_SATURATED_ADDSUB
+
+#if (defined(HWY_NATIVE_U64_SATURATED_ADDSUB) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_U64_SATURATED_ADDSUB
+#undef HWY_NATIVE_U64_SATURATED_ADDSUB
+#else
+#define HWY_NATIVE_U64_SATURATED_ADDSUB
+#endif
+
+template <class V, HWY_IF_U64_D(DFromV<V>)>
+HWY_API V SaturatedAdd(V a, V b) {
+  return Add(a, Min(b, Not(a)));
+}
+
+template <class V, HWY_IF_U64_D(DFromV<V>)>
+HWY_API V SaturatedSub(V a, V b) {
+  return Sub(a, Min(a, b));
+}
+
+#endif  // HWY_NATIVE_U64_SATURATED_ADDSUB
 
 // ------------------------------ Unsigned to signed demotions
 
