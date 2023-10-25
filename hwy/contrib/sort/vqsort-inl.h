@@ -46,6 +46,8 @@
 #include "hwy/contrib/algo/copy-inl.h"
 #include "hwy/contrib/sort/shared-inl.h"
 #include "hwy/contrib/sort/sorting_networks-inl.h"
+#include "hwy/contrib/sort/traits-inl.h"
+#include "hwy/contrib/sort/traits128-inl.h"
 // Placeholder for internal instrumentation. Do not remove.
 #include "hwy/highway.h"
 
@@ -1094,14 +1096,27 @@ HWY_INLINE bool UnsortedSampleEqual(D d, Traits st,
   using V = Vec<D>;
 
   const V first = st.SetKey(d, samples);
-  // OR of XOR-difference may be faster than comparison.
-  V diff = Zero(d);
-  for (size_t i = 0; i < kSampleLanes; i += N) {
-    const V v = Load(d, samples + i);
-    diff = OrXor(diff, first, v);
-  }
 
-  return st.NoKeyDifference(d, diff);
+  if (!hwy::IsFloat<TFromD<D>>()) {
+    // OR of XOR-difference may be faster than comparison.
+    V diff = Zero(d);
+    for (size_t i = 0; i < kSampleLanes; i += N) {
+      const V v = Load(d, samples + i);
+      diff = OrXor(diff, first, v);
+    }
+    return st.NoKeyDifference(d, diff);
+  } else {
+    // Disable the OrXor optimization for floats because OrXor will not treat
+    // subnormals the same as actual comparisons, leading to logic errors for
+    // 2-value cases.
+    for (size_t i = 0; i < kSampleLanes; i += N) {
+      const V v = Load(d, samples + i);
+      if (!AllTrue(d, st.EqualKeys(d, v, first))) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 template <class D, class Traits, typename T>
@@ -1231,41 +1246,46 @@ HWY_INLINE bool AllEqual(D d, Traits st, const Vec<D> pivot,
   HWY_DASSERT(((reinterpret_cast<uintptr_t>(keys + i) / sizeof(T)) & (N - 1)) ==
               0);
 
-  // Sticky bits registering any difference between `keys` and the first key.
-  // We use vector XOR because it may be cheaper than comparisons, especially
-  // for 128-bit. 2x unrolled for more ILP.
-  Vec<D> diff0 = zero;
-  Vec<D> diff1 = zero;
+  // Disable the OrXor optimization for floats because OrXor will not treat
+  // subnormals the same as actual comparisons, leading to logic errors for
+  // 2-value cases.
+  if (!hwy::IsFloat<T>()) {
+    // Sticky bits registering any difference between `keys` and the first key.
+    // We use vector XOR because it may be cheaper than comparisons, especially
+    // for 128-bit. 2x unrolled for more ILP.
+    Vec<D> diff0 = zero;
+    Vec<D> diff1 = zero;
 
-  // We want to stop once a difference has been found, but without slowing
-  // down the loop by comparing during each iteration. The compromise is to
-  // compare after a 'group', which consists of kLoops times two vectors.
-  constexpr size_t kLoops = 8;
-  const size_t lanes_per_group = kLoops * 2 * N;
+    // We want to stop once a difference has been found, but without slowing
+    // down the loop by comparing during each iteration. The compromise is to
+    // compare after a 'group', which consists of kLoops times two vectors.
+    constexpr size_t kLoops = 8;
+    const size_t lanes_per_group = kLoops * 2 * N;
 
-  for (; i + lanes_per_group <= num; i += lanes_per_group) {
-    HWY_DEFAULT_UNROLL
-    for (size_t loop = 0; loop < kLoops; ++loop) {
-      const Vec<D> v0 = Load(d, keys + i + loop * 2 * N);
-      const Vec<D> v1 = Load(d, keys + i + loop * 2 * N + N);
-      diff0 = OrXor(diff0, v0, pivot);
-      diff1 = OrXor(diff1, v1, pivot);
-    }
+    for (; i + lanes_per_group <= num; i += lanes_per_group) {
+      HWY_DEFAULT_UNROLL
+      for (size_t loop = 0; loop < kLoops; ++loop) {
+        const Vec<D> v0 = Load(d, keys + i + loop * 2 * N);
+        const Vec<D> v1 = Load(d, keys + i + loop * 2 * N + N);
+        diff0 = OrXor(diff0, v0, pivot);
+        diff1 = OrXor(diff1, v1, pivot);
+      }
 
-    // If there was a difference in the entire group:
-    if (HWY_UNLIKELY(!st.NoKeyDifference(d, Or(diff0, diff1)))) {
-      // .. then loop until the first one, with termination guarantee.
-      for (;; i += N) {
-        const Vec<D> v = Load(d, keys + i);
-        const Mask<D> diff = st.NotEqualKeys(d, v, pivot);
-        if (HWY_UNLIKELY(!AllFalse(d, diff))) {
-          const size_t lane = FindKnownFirstTrue(d, diff);
-          *first_mismatch = i + lane;
-          return false;
+      // If there was a difference in the entire group:
+      if (HWY_UNLIKELY(!st.NoKeyDifference(d, Or(diff0, diff1)))) {
+        // .. then loop until the first one, with termination guarantee.
+        for (;; i += N) {
+          const Vec<D> v = Load(d, keys + i);
+          const Mask<D> diff = st.NotEqualKeys(d, v, pivot);
+          if (HWY_UNLIKELY(!AllFalse(d, diff))) {
+            const size_t lane = FindKnownFirstTrue(d, diff);
+            *first_mismatch = i + lane;
+            return false;
+          }
         }
       }
     }
-  }
+  }  // !hwy::IsFloat<T>()
 
   // Whole vectors, no unrolling, compare directly
   for (; i + N <= num; i += N) {
@@ -1422,9 +1442,15 @@ HWY_INLINE Vec<D> ChoosePivotForEqualSamples(D d, Traits st,
   // Early out for mostly-0 arrays, where pivot is often FirstValue.
   if (HWY_UNLIKELY(AllTrue(d, st.EqualKeys(d, pivot, st.FirstValue(d))))) {
     result = PivotResult::kIsFirst;
+    if (VQSORT_PRINT >= 2) {
+      fprintf(stderr, "Pivot equals first possible value\n");
+    }
     return pivot;
   }
   if (HWY_UNLIKELY(AllTrue(d, st.EqualKeys(d, pivot, st.LastValue(d))))) {
+    if (VQSORT_PRINT >= 2) {
+      fprintf(stderr, "Pivot equals last possible value\n");
+    }
     result = PivotResult::kWasLast;
     return st.PrevValue(d, pivot);
   }
@@ -1610,10 +1636,12 @@ HWY_NOINLINE void Recurse(D d, Traits st, T* HWY_RESTRICT keys,
     fprintf(stderr, "bound %zu num %zu result %s\n", bound, num,
             PivotResultString(result));
   }
-  // The left partition is not empty because the pivot is one of the keys
-  // (unless kWasLast, in which case the pivot is PrevValue, but we still
-  // have at least one value <= pivot because AllEqual ruled out the case of
-  // only one unique value, and there is exactly one value after pivot).
+  // The left partition is not empty because the pivot is usually one of the
+  // keys. Exception: if kWasLast, we set pivot to PrevValue(pivot), but we
+  // still have at least one value <= pivot because AllEqual ruled out the case
+  // of only one unique value. Note that for floating-point, PrevValue can
+  // return the same value (for -inf inputs), but that would just mean the
+  // pivot is again one of the keys.
   HWY_DASSERT(bound != 0);
   // ChoosePivot* ensure pivot != last, so the right partition is never empty
   // except in the rare case of the pivot matching the last-in-sort-order value,
@@ -1675,13 +1703,12 @@ HWY_INLINE bool HandleSpecialCases(D d, Traits st, T* HWY_RESTRICT keys,
 
 #endif  // VQSORT_ENABLED
 
-template <class D, class Order, typename T, HWY_IF_FLOAT(T)>
-HWY_INLINE size_t CountAndReplaceNaN(D d, Order order, T* HWY_RESTRICT keys,
+template <class D, class Traits, typename T, HWY_IF_FLOAT(T)>
+HWY_INLINE size_t CountAndReplaceNaN(D d, Traits st, T* HWY_RESTRICT keys,
                                      size_t num) {
   const size_t N = Lanes(d);
-  // +/- infinity so that it will be sorted to the back of the array.
-  const Vec<D> sentinel =
-      order.IsAscending() ? Inf(d) : Xor(Inf(d), SignBit(d));
+  // Will be sorted to the back of the array.
+  const Vec<D> sentinel = st.LastValue(d);
   size_t num_nan = 0;
   size_t i = 0;
   for (; i + N <= num; i += N) {
@@ -1710,8 +1737,8 @@ HWY_INLINE size_t CountAndReplaceNaN(D d, Order order, T* HWY_RESTRICT keys,
 }
 
 // IsNaN is not implemented for non-float, so skip it.
-template <class D, class Order, typename T, HWY_IF_NOT_FLOAT(T)>
-HWY_INLINE size_t CountAndReplaceNaN(D, Order, T* HWY_RESTRICT, size_t) {
+template <class D, class Traits, typename T, HWY_IF_NOT_FLOAT(T)>
+HWY_INLINE size_t CountAndReplaceNaN(D, Traits, T* HWY_RESTRICT, size_t) {
   return 0;
 }
 
@@ -1735,8 +1762,7 @@ void Sort(D d, Traits st, T* HWY_RESTRICT keys, size_t num,
   }
 #endif  // HWY_MAX_BYTES > 64
 
-  const size_t num_nan =
-      detail::CountAndReplaceNaN(d, typename Traits::Order(), keys, num);
+  const size_t num_nan = detail::CountAndReplaceNaN(d, st, keys, num);
 
 #if VQSORT_ENABLED || HWY_IDE
   if (!detail::HandleSpecialCases(d, st, keys, num, buf)) {
@@ -1777,6 +1803,23 @@ HWY_API void Sort(D d, Traits st, T* HWY_RESTRICT keys, size_t num) {
   constexpr size_t kLPK = st.LanesPerKey();
   HWY_ALIGN T buf[SortConstants::BufBytes<T, kLPK>(HWY_MAX_BYTES) / sizeof(T)];
   return Sort(d, st, keys, num, buf);
+}
+
+// Simpler interface matching VQSort(), but without dynamic dispatch. This uses
+// the instructions available in the current target (HWY_NAMESPACE). Supports
+// integer and floating-point keys, but not uint128_t nor key-value types.
+template <typename T>
+void VQSortStatic(T* HWY_RESTRICT keys, size_t num, SortAscending) {
+  SortTag<T> d;
+  detail::SharedTraits<detail::TraitsLane<detail::OrderAscending<T>>> st;
+  Sort(d, st, keys, num);
+}
+
+template <typename T>
+void VQSortStatic(T* HWY_RESTRICT keys, size_t num, SortDescending) {
+  SortTag<T> d;
+  detail::SharedTraits<detail::TraitsLane<detail::OrderDescending<T>>> st;
+  Sort(d, st, keys, num);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
