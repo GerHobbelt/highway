@@ -13,13 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <stdio.h>
 
 #include <algorithm>  // std::fill
 #include <bitset>
-
-#include "hwy/base.h"
+#include <string>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "highway_test.cc"
@@ -311,7 +309,7 @@ struct TestNaN {
     HWY_ASSERT_NAN(d, Min(v1, nan));
     HWY_ASSERT_NAN(d, Max(v1, nan));
 #elif HWY_TARGET <= HWY_NEON_WITHOUT_AES && HWY_ARCH_ARM_V7
-    // ARMv7 NEON returns NaN if any input is NaN.
+    // Armv7 NEON returns NaN if any input is NaN.
     HWY_ASSERT_NAN(d, Min(v1, nan));
     HWY_ASSERT_NAN(d, Max(v1, nan));
     HWY_ASSERT_NAN(d, Min(nan, v1));

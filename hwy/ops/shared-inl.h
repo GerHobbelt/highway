@@ -15,6 +15,12 @@
 
 // Per-target definitions shared by ops/*.h and user code.
 
+// Export does not seem to be recursive, so re-export these (also in base.h)
+#include <stddef.h>  // IWYU pragma: export
+#include <stdint.h>  // IWYU pragma: export
+
+#include "hwy/base.h"  // IWYU pragma: export
+
 // We are covered by the highway.h include guard, but generic_ops-inl.h
 // includes this again #if HWY_IDE.
 #if defined(HIGHWAY_HWY_OPS_SHARED_TOGGLE) == \
@@ -24,8 +30,6 @@
 #else
 #define HIGHWAY_HWY_OPS_SHARED_TOGGLE
 #endif
-
-#include "hwy/base.h"
 
 // Separate header because foreach_target.h re-enables its include guard.
 #include "hwy/ops/set_macros-inl.h"
@@ -38,10 +42,10 @@ namespace HWY_NAMESPACE {
 // functions in two situations:
 // - on Windows and GCC 10.3, passing by value crashes due to unaligned loads:
 //   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=54412.
-// - on ARM64 and GCC 9.3.0 or 11.2.1, passing by value causes many (but not
+// - on aarch64 and GCC 9.3.0 or 11.2.1, passing by value causes many (but not
 //   all) tests to fail.
 //
-// We therefore pass by const& only on GCC and (Windows or ARM64). This alias
+// We therefore pass by const& only on GCC and (Windows or aarch64). This alias
 // must be used for all vector/mask parameters of functions marked HWY_NOINLINE,
 // and possibly also other functions that are not inlined.
 #if HWY_COMPILER_GCC_ACTUAL && (HWY_OS_WIN || HWY_ARCH_ARM_A64)

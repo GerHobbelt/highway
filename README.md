@@ -68,7 +68,8 @@ us via the below email.
 *   Cryptography: google/distributed_point_functions
 *   Image codecs: eustas/2im, [Grok JPEG 2000](https://github.com/GrokImageCompression/grok), [JPEG XL](https://github.com/libjxl/libjxl), OpenHTJ2K
 *   Image processing: cloudinary/ssimulacra2, m-ab-s/media-autobuild_suite
-*   Image viewers: AlienCowEatCake/ImageViewer, mirillis/jpegxl-wic
+*   Image viewers: AlienCowEatCake/ImageViewer, mirillis/jpegxl-wic,
+    [Lux panorama/image viewer](https://bitbucket.org/kfj/pv/)
 *   Information retrieval: [iresearch database index](https://github.com/iresearch-toolkit/iresearch/blob/e7638e7a4b99136ca41f82be6edccf01351a7223/core/utils/simd_utils.hpp), michaeljclark/zvec
 
 Other
@@ -89,7 +90,7 @@ Xilinx/Vitis_Libraries.
 Highway supports 17 targets, listed in alphabetical order of platform:
 
 -   Any: `EMU128`, `SCALAR`;
--   Arm: `NEON` (ARMv7 and v8), `SVE`, `SVE2`;
+-   Arm: `NEON` (Armv7+), `SVE`, `SVE2`;
 -   POWER: `PPC8` (v2.07), `PPC9` (v3.0), `PPC10` (v3.1B, not yet supported
     due to compiler bugs, see #1207; also requires QEMU 7.2);
 -   RISC-V: `RVV` (1.0);
@@ -117,10 +118,10 @@ updates that have the same major version number.
 ### Testing
 
 Continuous integration tests build with a recent version of Clang (running on
-native x86, or QEMU for RVV and ARM) and MSVC 2019 (v19.28, running on native
+native x86, or QEMU for RISC-V and Arm) and MSVC 2019 (v19.28, running on native
 x86).
 
-Before releases, we also test on x86 with Clang and GCC, and ARMv7/8 via GCC
+Before releases, we also test on x86 with Clang and GCC, and Armv7/8 via GCC
 cross-compile. See the [testing process](g3doc/release_testing_process.md) for
 details.
 
@@ -174,9 +175,17 @@ Or you can run `run_tests.sh` (`run_tests.bat` on Windows).
 
 Bazel is also supported for building, but it is not as widely used/tested.
 
-When building for Arm v7, a limitation of current compilers requires you to add
+When building for Armv7, a limitation of current compilers requires you to add
 `-DHWY_CMAKE_ARM7:BOOL=ON` to the CMake command line; see #834 and #1032. We
 understand that work is underway to remove this limitation.
+
+Building on 32-bit x86 is not officially supported, and AVX2/3 are disabled by
+default there. Note that johnplatts has successfully built and run the Highway
+tests on 32-bit x86, including AVX2/3, on GCC 7/8 and Clang 8/11/12. On Ubuntu
+22.04, Clang 11 and 12, but not later versions, require extra compiler flags
+`-m32 -isystem /usr/i686-linux-gnu/include`. Clang 10 and earlier require the
+above plus `-isystem /usr/i686-linux-gnu/include/c++/12/i686-linux-gnu`. See
+#1279.
 
 ## Quick start
 

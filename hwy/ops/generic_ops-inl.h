@@ -20,6 +20,7 @@
 // Define detail::Shuffle1230 etc, but only when viewing the current header;
 // normally this is included via highway.h, which includes ops/*.h.
 #if HWY_IDE && !defined(HWY_HIGHWAY_INCLUDED)
+#include "hwy/detect_targets.h"
 #include "hwy/ops/emu128-inl.h"
 #endif  // HWY_IDE
 
@@ -1362,8 +1363,10 @@ namespace detail {
 // A brute-force 256 byte table lookup can also be made constant-time, and
 // possibly competitive on NEON, but this is more performance-portable
 // especially for x86 and large vectors.
+
 template <class V>  // u8
-HWY_INLINE V SubBytes(V state) {
+HWY_INLINE V SubBytesMulInverseAndAffineLookup(V state, V affine_tblL,
+                                               V affine_tblU) {
   const DFromV<V> du;
   const auto mask = Set(du, uint8_t{0xF});
 
@@ -1398,6 +1401,14 @@ HWY_INLINE V SubBytes(V state) {
   const auto outL = Xor(sX, TableLookupBytesOr0(tbl, Xor(invL, invU)));
   const auto outU = Xor(sU, TableLookupBytesOr0(tbl, Xor(invL, invX)));
 
+  const auto affL = TableLookupBytesOr0(affine_tblL, outL);
+  const auto affU = TableLookupBytesOr0(affine_tblU, outU);
+  return Xor(affL, affU);
+}
+
+template <class V>  // u8
+HWY_INLINE V SubBytes(V state) {
+  const DFromV<V> du;
   // Linear skew (cannot bake 0x63 bias into the table because out* indices
   // may have the infinity flag set).
   alignas(16) static constexpr uint8_t kAffineL[16] = {
@@ -1406,9 +1417,36 @@ HWY_INLINE V SubBytes(V state) {
   alignas(16) static constexpr uint8_t kAffineU[16] = {
       0x00, 0x6A, 0xBB, 0x5F, 0xA5, 0x74, 0xE4, 0xCF,
       0xFA, 0x35, 0x2B, 0x41, 0xD1, 0x90, 0x1E, 0x8E};
-  const auto affL = TableLookupBytesOr0(LoadDup128(du, kAffineL), outL);
-  const auto affU = TableLookupBytesOr0(LoadDup128(du, kAffineU), outU);
-  return Xor(Xor(affL, affU), Set(du, uint8_t{0x63}));
+  return Xor(SubBytesMulInverseAndAffineLookup(state, LoadDup128(du, kAffineL),
+                                               LoadDup128(du, kAffineU)),
+             Set(du, uint8_t{0x63}));
+}
+
+template <class V>  // u8
+HWY_INLINE V InvSubBytes(V state) {
+  const DFromV<V> du;
+  alignas(16) static constexpr uint8_t kGF2P4InvToGF2P8InvL[16]{
+      0x00, 0x40, 0xF9, 0x7E, 0x53, 0xEA, 0x87, 0x13,
+      0x2D, 0x3E, 0x94, 0xD4, 0xB9, 0x6D, 0xAA, 0xC7};
+  alignas(16) static constexpr uint8_t kGF2P4InvToGF2P8InvU[16]{
+      0x00, 0x1D, 0x44, 0x93, 0x0F, 0x56, 0xD7, 0x12,
+      0x9C, 0x8E, 0xC5, 0xD8, 0x59, 0x81, 0x4B, 0xCA};
+
+  // Apply the inverse affine transformation
+  const auto b = Xor(Xor3(Or(ShiftLeft<1>(state), ShiftRight<7>(state)),
+                          Or(ShiftLeft<3>(state), ShiftRight<5>(state)),
+                          Or(ShiftLeft<6>(state), ShiftRight<2>(state))),
+                     Set(du, uint8_t{0x05}));
+
+  // The GF(2^8) multiplicative inverse is computed as follows:
+  // - Changing the polynomial basis to GF(2^4)
+  // - Computing the GF(2^4) multiplicative inverse
+  // - Converting the GF(2^4) multiplicative inverse to the GF(2^8)
+  //   multiplicative inverse through table lookups using the
+  //   kGF2P4InvToGF2P8InvL and kGF2P4InvToGF2P8InvU tables
+  return SubBytesMulInverseAndAffineLookup(
+      b, LoadDup128(du, kGF2P4InvToGF2P8InvL),
+      LoadDup128(du, kGF2P4InvToGF2P8InvU));
 }
 
 }  // namespace detail
@@ -1441,6 +1479,27 @@ HWY_API V ShiftRows(const V state) {
 }
 
 template <class V>  // u8
+HWY_API V InvShiftRows(const V state) {
+  const DFromV<V> du;
+  alignas(16) static constexpr uint8_t kShiftRow[16] = {
+      0,  13, 10, 7,   // transposed: state is column major
+      4,  1,  14, 11,  //
+      8,  5,  2,  15,  //
+      12, 9,  6,  3};
+  const auto shift_row = LoadDup128(du, kShiftRow);
+  return TableLookupBytes(state, shift_row);
+}
+
+template <class V>  // u8
+HWY_API V GF2P8Mod11BMulBy2(V v) {
+  const DFromV<V> du;
+  const RebindToSigned<decltype(du)> di;  // can only do signed comparisons
+  const auto msb = Lt(BitCast(di, v), Zero(di));
+  const auto overflow = BitCast(du, IfThenElseZero(msb, Set(di, int8_t{0x1B})));
+  return Xor(Add(v, v), overflow);  // = v*2 in GF(2^8).
+}
+
+template <class V>  // u8
 HWY_API V MixColumns(const V state) {
   const DFromV<V> du;
   // For each column, the rows are the sum of GF(2^8) matrix multiplication by:
@@ -1452,15 +1511,41 @@ HWY_API V MixColumns(const V state) {
       2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13};
   alignas(16) static constexpr uint8_t k1230[16] = {
       1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12};
-  const RebindToSigned<decltype(du)> di;  // can only do signed comparisons
-  const auto msb = Lt(BitCast(di, state), Zero(di));
-  const auto overflow = BitCast(du, IfThenElseZero(msb, Set(di, int8_t{0x1B})));
-  const auto d = Xor(Add(state, state), overflow);  // = state*2 in GF(2^8).
+  const auto d = GF2P8Mod11BMulBy2(state);  // = state*2 in GF(2^8).
   const auto s2301 = TableLookupBytes(state, LoadDup128(du, k2301));
   const auto d_s2301 = Xor(d, s2301);
   const auto t_s2301 = Xor(state, d_s2301);  // t(s*3) = XOR-sum {s, d(s*2)}
   const auto t1230_s3012 = TableLookupBytes(t_s2301, LoadDup128(du, k1230));
   return Xor(d_s2301, t1230_s3012);  // XOR-sum of 4 terms
+}
+
+template <class V>  // u8
+HWY_API V InvMixColumns(const V state) {
+  const DFromV<V> du;
+  // For each column, the rows are the sum of GF(2^8) matrix multiplication by:
+  // 14 11 13  9
+  //  9 14 11 13
+  // 13  9 14 11
+  // 11 13  9 14
+  alignas(16) static constexpr uint8_t k2301[16] = {
+      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13};
+  alignas(16) static constexpr uint8_t k1230[16] = {
+      1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12};
+  const auto v1230 = LoadDup128(du, k1230);
+
+  const auto sx2 = GF2P8Mod11BMulBy2(state); /* = state*2 in GF(2^8) */
+  const auto sx4 = GF2P8Mod11BMulBy2(sx2);   /* = state*4 in GF(2^8) */
+  const auto sx8 = GF2P8Mod11BMulBy2(sx4);   /* = state*8 in GF(2^8) */
+  const auto sx9 = Xor(sx8, state);          /* = state*9 in GF(2^8) */
+  const auto sx11 = Xor(sx9, sx2);           /* = state*11 in GF(2^8) */
+  const auto sx13 = Xor(sx9, sx4);           /* = state*13 in GF(2^8) */
+  const auto sx14 = Xor3(sx8, sx4, sx2);     /* = state*14 in GF(2^8) */
+
+  const auto sx13_0123_sx9_1230 = Xor(sx13, TableLookupBytes(sx9, v1230));
+  const auto sx14_0123_sx11_1230 = Xor(sx14, TableLookupBytes(sx11, v1230));
+  const auto sx13_2301_sx9_3012 =
+      TableLookupBytes(sx13_0123_sx9_1230, LoadDup128(du, k2301));
+  return Xor(sx14_0123_sx11_1230, sx13_2301_sx9_3012);
 }
 
 }  // namespace detail
@@ -1481,6 +1566,29 @@ HWY_API V AESLastRound(V state, const V round_key) {
   // LIke AESRound, but without MixColumns.
   state = detail::SubBytes(state);
   state = detail::ShiftRows(state);
+  state = Xor(state, round_key);  // AddRoundKey
+  return state;
+}
+
+template <class V>
+HWY_API V AESInvMixColumns(V state) {
+  return detail::InvMixColumns(state);
+}
+
+template <class V>  // u8
+HWY_API V AESRoundInv(V state, const V round_key) {
+  state = detail::InvSubBytes(state);
+  state = detail::InvShiftRows(state);
+  state = detail::InvMixColumns(state);
+  state = Xor(state, round_key);  // AddRoundKey
+  return state;
+}
+
+template <class V>  // u8
+HWY_API V AESLastRoundInv(V state, const V round_key) {
+  // Like AESRoundInv, but without InvMixColumns.
+  state = detail::InvSubBytes(state);
+  state = detail::InvShiftRows(state);
   state = Xor(state, round_key);  // AddRoundKey
   return state;
 }
@@ -1668,11 +1776,13 @@ HWY_API V operator*(const V a, const V b) {
 
 // ------------------------------ 64-bit multiplication
 
-// Single-lane f64
-template <class V, HWY_IF_V_SIZE_V(V, 8), HWY_IF_F64_D(DFromV<V>)>
-HWY_API V operator*(V x, V y) {
-  return Set(DFromV<V>(), GetLane(x) * GetLane(y));
-}
+// "Include guard": skip if native 64-bit mul instructions are available.
+#if (defined(HWY_NATIVE_MUL_64) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_MUL_64
+#undef HWY_NATIVE_MUL_64
+#else
+#define HWY_NATIVE_MUL_64
+#endif
 
 // Single-lane i64 or u64
 template <class V, HWY_IF_T_SIZE_V(V, 8), HWY_IF_V_SIZE_V(V, 8),
@@ -1685,14 +1795,6 @@ HWY_API V operator*(V x, V y) {
   const TU yu = static_cast<TU>(GetLane(y));
   return Set(d, static_cast<T>(xu * yu));
 }
-
-// "Include guard": skip if native 64-bit mul instructions are available.
-#if (defined(HWY_NATIVE_MUL_64) == defined(HWY_TARGET_TOGGLE))
-#ifdef HWY_NATIVE_MUL_64
-#undef HWY_NATIVE_MUL_64
-#else
-#define HWY_NATIVE_MUL_64
-#endif
 
 template <class V, class D64 = DFromV<V>, HWY_IF_U64_D(D64),
           HWY_IF_V_SIZE_GT_D(D64, 8)>
@@ -2712,11 +2814,14 @@ HWY_API V ReverseBits(V v) {
 
 // ================================================== Operator wrapper
 
-// These targets currently cannot define operators and have already defined
+// SVE* and RVV currently cannot define operators and have already defined
 // (only) the corresponding functions such as Add.
-#if HWY_TARGET != HWY_RVV && HWY_TARGET != HWY_SVE &&      \
-    HWY_TARGET != HWY_SVE2 && HWY_TARGET != HWY_SVE_256 && \
-    HWY_TARGET != HWY_SVE2_128
+#if (defined(HWY_NATIVE_OPERATOR_REPLACEMENTS) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_OPERATOR_REPLACEMENTS
+#undef HWY_NATIVE_OPERATOR_REPLACEMENTS
+#else
+#define HWY_NATIVE_OPERATOR_REPLACEMENTS
+#endif
 
 template <class V>
 HWY_API V Add(V a, V b) {
@@ -2772,7 +2877,7 @@ HWY_API auto Le(V a, V b) -> decltype(a == b) {
   return a <= b;
 }
 
-#endif  // HWY_TARGET for operators
+#endif  // HWY_NATIVE_OPERATOR_REPLACEMENTS
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE

@@ -18,15 +18,13 @@
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS  // before inttypes.h
 #endif
-#include <inttypes.h>
-#include <stddef.h>
+#include <inttypes.h>  // IWYU pragma: keep
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>    // clock_gettime
 
 #include <algorithm>  // std::sort, std::find_if
 #include <array>
-#include <atomic>
 #include <chrono>  //NOLINT
 #include <limits>
 #include <numeric>  // std::iota
@@ -329,7 +327,7 @@ namespace {
 // Measures the actual current frequency of Ticks. We cannot rely on the nominal
 // frequency encoded in x86 BrandString because it is misleading on M1 Rosetta,
 // and not reported by AMD. CPUID 0x15 is also not yet widely supported. Also
-// used on RISC-V and ARM64.
+// used on RISC-V and aarch64.
 HWY_MAYBE_UNUSED double MeasureNominalClockRate() {
   double max_ticks_per_sec = 0.0;
   // Arbitrary, enough to ignore 2 outliers without excessive init time.

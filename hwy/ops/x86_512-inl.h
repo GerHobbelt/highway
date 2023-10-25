@@ -68,9 +68,6 @@ HWY_DIAGNOSTICS_OFF(disable : 4703 6001 26494, ignored "-Wmaybe-uninitialized")
 // clang-format on
 #endif  // HWY_COMPILER_CLANGCL
 
-#include <stddef.h>
-#include <stdint.h>
-
 #if HWY_IS_MSAN
 #include <sanitizer/msan_interface.h>
 #endif
@@ -539,7 +536,7 @@ HWY_INLINE Mask512<T> FirstN(size_t n) {
 #endif
 }
 #else
-template <typename T, HWY_IF_LANE_SIZE(T, 1)>
+template <typename T, HWY_IF_T_SIZE(T, 1)>
 HWY_INLINE Mask512<T> FirstN(size_t n) {
   const uint64_t bits = n < 64 ? ((1ULL << n) - 1) : ~uint64_t{0};
   return Mask512<T>{static_cast<__mmask64>(bits)};
@@ -1343,8 +1340,10 @@ HWY_API Vec512<uint64_t> operator*(Vec512<uint64_t> a, Vec512<uint64_t> b) {
 HWY_API Vec256<uint64_t> operator*(Vec256<uint64_t> a, Vec256<uint64_t> b) {
   return Vec256<uint64_t>{_mm256_mullo_epi64(a.raw, b.raw)};
 }
-HWY_API Vec128<uint64_t> operator*(Vec128<uint64_t> a, Vec128<uint64_t> b) {
-  return Vec128<uint64_t>{_mm_mullo_epi64(a.raw, b.raw)};
+template <size_t N>
+HWY_API Vec128<uint64_t, N> operator*(Vec128<uint64_t, N> a,
+                                      Vec128<uint64_t, N> b) {
+  return Vec128<uint64_t, N>{_mm_mullo_epi64(a.raw, b.raw)};
 }
 
 // Signed
@@ -1360,8 +1359,10 @@ HWY_API Vec512<int64_t> operator*(Vec512<int64_t> a, Vec512<int64_t> b) {
 HWY_API Vec256<int64_t> operator*(Vec256<int64_t> a, Vec256<int64_t> b) {
   return Vec256<int64_t>{_mm256_mullo_epi64(a.raw, b.raw)};
 }
-HWY_API Vec128<int64_t> operator*(Vec128<int64_t> a, Vec128<int64_t> b) {
-  return Vec128<int64_t>{_mm_mullo_epi64(a.raw, b.raw)};
+template <size_t N>
+HWY_API Vec128<int64_t, N> operator*(Vec128<int64_t, N> a,
+                                     Vec128<int64_t, N> b) {
+  return Vec128<int64_t, N>{_mm_mullo_epi64(a.raw, b.raw)};
 }
 // Returns the upper 16 bits of a * b in each lane.
 HWY_API Vec512<uint16_t> MulHigh(Vec512<uint16_t> a, Vec512<uint16_t> b) {
@@ -3819,13 +3820,6 @@ HWY_API Vec512<int32_t> NearestInt(const Vec512<float> v) {
 
 #if !defined(HWY_DISABLE_PCLMUL_AES)
 
-// Per-target flag to prevent generic_ops-inl.h from defining AESRound.
-#ifdef HWY_NATIVE_AES
-#undef HWY_NATIVE_AES
-#else
-#define HWY_NATIVE_AES
-#endif
-
 HWY_API Vec512<uint8_t> AESRound(Vec512<uint8_t> state,
                                  Vec512<uint8_t> round_key) {
 #if HWY_TARGET <= HWY_AVX3_DL
@@ -3848,6 +3842,31 @@ HWY_API Vec512<uint8_t> AESLastRound(Vec512<uint8_t> state,
   return Combine(d,
                  AESLastRound(UpperHalf(d2, state), UpperHalf(d2, round_key)),
                  AESLastRound(LowerHalf(state), LowerHalf(round_key)));
+#endif
+}
+
+HWY_API Vec512<uint8_t> AESRoundInv(Vec512<uint8_t> state,
+                                    Vec512<uint8_t> round_key) {
+#if HWY_TARGET <= HWY_AVX3_DL
+  return Vec512<uint8_t>{_mm512_aesdec_epi128(state.raw, round_key.raw)};
+#else
+  const Full512<uint8_t> d;
+  const Half<decltype(d)> d2;
+  return Combine(d, AESRoundInv(UpperHalf(d2, state), UpperHalf(d2, round_key)),
+                 AESRoundInv(LowerHalf(state), LowerHalf(round_key)));
+#endif
+}
+
+HWY_API Vec512<uint8_t> AESLastRoundInv(Vec512<uint8_t> state,
+                                        Vec512<uint8_t> round_key) {
+#if HWY_TARGET <= HWY_AVX3_DL
+  return Vec512<uint8_t>{_mm512_aesdeclast_epi128(state.raw, round_key.raw)};
+#else
+  const Full512<uint8_t> d;
+  const Half<decltype(d)> d2;
+  return Combine(
+      d, AESLastRoundInv(UpperHalf(d2, state), UpperHalf(d2, round_key)),
+      AESLastRoundInv(LowerHalf(state), LowerHalf(round_key)));
 #endif
 }
 
@@ -4473,7 +4492,7 @@ HWY_API Vec512<T> Expand(Vec512<T> v, const Mask512<T> mask) {
   Store(v, d, lanes);
   using Bits = typename Mask256<T>::Raw;
   const Mask256<T> maskL{
-      static_cast<Bits>(mask.raw& Bits{(1ULL << (N / 2)) - 1})};
+      static_cast<Bits>(mask.raw & Bits{(1ULL << (N / 2)) - 1})};
   const Mask256<T> maskH{static_cast<Bits>(mask.raw >> (N / 2))};
   const size_t countL = CountTrue(dh, maskL);
   const Vec256<T> expandL = Expand(LowerHalf(v), maskL);
@@ -4496,7 +4515,7 @@ HWY_API Vec512<T> Expand(Vec512<T> v, const Mask512<T> mask) {
   constexpr size_t N = 64 / sizeof(T);
   using Bits = typename Mask256<T>::Raw;
   const Mask256<T> maskL{
-      static_cast<Bits>(mask.raw& Bits{(1ULL << (N / 2)) - 1})};
+      static_cast<Bits>(mask.raw & Bits{(1ULL << (N / 2)) - 1})};
   const Mask256<T> maskH{static_cast<Bits>(mask.raw >> (N / 2))};
   // In AVX3 we can permutevar, which avoids a potential store to load
   // forwarding stall vs. reloading the input.

@@ -13,9 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stddef.h>
-#include <stdint.h>
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/mul_test.cc"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
@@ -193,7 +190,7 @@ struct TestMulFixedPoint15 {
       }
 
       for (size_t i = 0; i < N; ++i) {
-        // There are three ways to compute the results. x86 and ARM are defined
+        // There are three ways to compute the results. x86 and Arm are defined
         // using 32-bit multiplication results:
         const int arm = (2 * in1[i] * in2[i] + 0x8000) >> 16;
         const int x86 = (((in1[i] * in2[i]) >> 14) + 1) >> 1;

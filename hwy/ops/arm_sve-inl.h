@@ -13,14 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// ARM SVE[2] vectors (length not known at compile time).
+// Arm SVE[2] vectors (length not known at compile time).
 // External include guard in highway.h - see comment there.
 
 #include <arm_sve.h>
-#include <stddef.h>
-#include <stdint.h>
 
-#include "hwy/base.h"
 #include "hwy/ops/shared-inl.h"
 
 // Arm C215 declares that SVE vector lengths will always be a power of two.
@@ -520,6 +517,13 @@ HWY_API V CopySignToAbs(const V abs, const V sign) {
 
 // ================================================== ARITHMETIC
 
+// Per-target flags to prevent generic_ops-inl.h defining Add etc.
+#ifdef HWY_NATIVE_OPERATOR_REPLACEMENTS
+#undef HWY_NATIVE_OPERATOR_REPLACEMENTS
+#else
+#define HWY_NATIVE_OPERATOR_REPLACEMENTS
+#endif
+
 // ------------------------------ Add
 
 namespace detail {
@@ -742,7 +746,7 @@ HWY_API svbool_t RebindMask(const D /*d*/, const MFrom mask) {
 HWY_API svbool_t Not(svbool_t m) {
   // We don't know the lane type, so assume 8-bit. For larger types, this will
   // de-canonicalize the predicate, i.e. set bits to 1 even though they do not
-  // correspond to the lowest byte in the lane. Per ARM, such bits are ignored.
+  // correspond to the lowest byte in the lane. Arm says such bits are ignored.
   return svnot_b_z(HWY_SVE_PTRUE(8), m);
 }
 HWY_API svbool_t And(svbool_t a, svbool_t b) {
@@ -4030,12 +4034,23 @@ HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
 
 HWY_API svuint8_t AESRound(svuint8_t state, svuint8_t round_key) {
   // It is not clear whether E and MC fuse like they did on NEON.
-  const svuint8_t zero = svdup_n_u8(0);
-  return Xor(svaesmc_u8(svaese_u8(state, zero)), round_key);
+  return Xor(svaesmc_u8(svaese_u8(state, svdup_n_u8(0))), round_key);
 }
 
 HWY_API svuint8_t AESLastRound(svuint8_t state, svuint8_t round_key) {
   return Xor(svaese_u8(state, svdup_n_u8(0)), round_key);
+}
+
+HWY_API svuint8_t AESInvMixColumns(svuint8_t state) {
+  return svaesimc_u8(state);
+}
+
+HWY_API svuint8_t AESRoundInv(svuint8_t state, svuint8_t round_key) {
+  return Xor(svaesimc_u8(svaesd_u8(state, svdup_n_u8(0))), round_key);
+}
+
+HWY_API svuint8_t AESLastRoundInv(svuint8_t state, svuint8_t round_key) {
+  return Xor(svaesd_u8(state, svdup_n_u8(0)), round_key);
 }
 
 HWY_API svuint64_t CLMulLower(const svuint64_t a, const svuint64_t b) {

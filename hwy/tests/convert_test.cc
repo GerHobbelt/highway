@@ -13,13 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 
 #include <cmath>  // std::isfinite
-
-#include "hwy/base.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/convert_test.cc"
@@ -272,7 +268,7 @@ AlignedFreeUniquePtr<float[]> F16TestCases(D d, size_t& padded) {
       2.00390625f, 3.99609375f,
       // negative +/- delta
       -2.00390625f, -3.99609375f,
-      // No infinity/NaN - implementation-defined due to ARM.
+      // No infinity/NaN - implementation-defined due to Arm.
   };
   constexpr size_t kNumTestCases = sizeof(test_cases) / sizeof(test_cases[0]);
   const size_t N = Lanes(d);
@@ -481,12 +477,12 @@ HWY_NOINLINE void TestAllOrderedTruncate2To() {
   ForU163264(ForShrinkableVectors<TestOrderedTruncate2To>());
 }
 
-// Separate function to attempt to work around a compiler bug on ARM: when this
+// Separate function to attempt to work around a compiler bug on Arm: when this
 // is merged with TestIntFromFloat, outputs match a previous Iota(-(N+1)) input.
 struct TestIntFromFloatHuge {
   template <typename TF, class DF>
   HWY_NOINLINE void operator()(TF /*unused*/, const DF df) {
-    // The ARMv7 manual says that float->int saturates, i.e. chooses the
+    // The Armv7 manual says that float->int saturates, i.e. chooses the
     // nearest representable value. This works correctly on armhf with GCC, but
     // not with clang. For reasons unknown, MSVC also runs into an out-of-memory
     // error here.

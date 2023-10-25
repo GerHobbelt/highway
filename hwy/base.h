@@ -18,17 +18,20 @@
 
 // For SIMD module implementations and their callers, target-independent.
 
+// IWYU pragma: begin_exports
 #include <stddef.h>
 #include <stdint.h>
 
 #include "hwy/detect_compiler_arch.h"
 #include "hwy/highway_export.h"
 
+#if (HWY_ARCH_X86 && !defined(HWY_NO_LIBCXX)) || HWY_COMPILER_MSVC
+#include <atomic>  // IWYU pragma: keep
+#endif
+// IWYU pragma: end_exports
+
 #if HWY_COMPILER_MSVC
 #include <string.h>  // memcpy
-#endif
-#if HWY_ARCH_X86 && !defined(HWY_NO_LIBCXX)
-#include <atomic>
 #endif
 
 //------------------------------------------------------------------------------
@@ -178,7 +181,7 @@
 #if HWY_ARCH_X86 && !defined(HWY_NO_LIBCXX)
 #define HWY_FENCE std::atomic_thread_fence(std::memory_order_acq_rel)
 #else
-// TODO(janwas): investigate alternatives. On ARM, the above generates barriers.
+// TODO(janwas): investigate alternatives. On Arm, the above generates barriers.
 #define HWY_FENCE
 #endif
 
@@ -249,7 +252,8 @@ namespace hwy {
 
 #if HWY_ARCH_X86
 static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 64;  // AVX-512
-#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 11000
+#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && \
+    __riscv_v_intrinsic >= 11000
 // Not actually an upper bound on the size.
 static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 4096;
 #else
@@ -264,7 +268,8 @@ static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 16;
 // exceed the stack size.
 #if HWY_ARCH_X86
 #define HWY_ALIGN_MAX alignas(64)
-#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 11000
+#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && \
+    __riscv_v_intrinsic >= 11000
 #define HWY_ALIGN_MAX alignas(8)  // only elements need be aligned
 #else
 #define HWY_ALIGN_MAX alignas(16)
@@ -279,7 +284,7 @@ static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 16;
 #pragma pack(push, 1)
 
 // ACLE (https://gcc.gnu.org/onlinedocs/gcc/Half-Precision.html):
-// always supported on aarch64, for v7 only if -mfp16-format is given.
+// always supported on Armv8, for Armv7 only if -mfp16-format is given.
 #if ((HWY_ARCH_ARM_A64 || (__ARM_FP & 2)) && HWY_COMPILER_GCC)
 using float16_t = __fp16;
 // C11 extension ISO/IEC TS 18661-3:2015 but not supported on all targets.
