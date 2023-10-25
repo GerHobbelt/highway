@@ -1422,8 +1422,9 @@ HWY_API Vec128<TI, NI> TableLookupBytes(const Vec128<T, N> bytes,
   Store(Vec128<uint8_t>{BitCast(du8_bytes, bytes).raw}, du8_full, u8_bytes);
   Store(Vec128<uint8_t>{BitCast(du8, from).raw}, du8_full, from_bytes);
 
-  for(int i = 0; i < 16; i++)
+  for (int i = 0; i < 16; i++) {
     result_bytes[i] = u8_bytes[from_bytes[i] & 15];
+  }
 
   return BitCast(d, VFromD<decltype(du8)>{Load(du8_full, result_bytes).raw});
 #endif
@@ -1914,6 +1915,48 @@ HWY_API Mask128<double, N> operator>=(Vec128<double, N> a,
   return Mask128<double, N>{_mm_cmp_pd_mask(a.raw, b.raw, _CMP_GE_OQ)};
 }
 
+template <size_t N>
+HWY_API Mask128<int8_t, N> operator>=(Vec128<int8_t, N> a,
+                                      Vec128<int8_t, N> b) {
+  return Mask128<int8_t, N>{_mm_cmpge_epi8_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<int16_t, N> operator>=(Vec128<int16_t, N> a,
+                                       Vec128<int16_t, N> b) {
+  return Mask128<int16_t, N>{_mm_cmpge_epi16_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<int32_t, N> operator>=(Vec128<int32_t, N> a,
+                                       Vec128<int32_t, N> b) {
+  return Mask128<int32_t, N>{_mm_cmpge_epi32_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<int64_t, N> operator>=(Vec128<int64_t, N> a,
+                                       Vec128<int64_t, N> b) {
+  return Mask128<int64_t, N>{_mm_cmpge_epi64_mask(a.raw, b.raw)};
+}
+
+template <size_t N>
+HWY_API Mask128<uint8_t, N> operator>=(Vec128<uint8_t, N> a,
+                                       Vec128<uint8_t, N> b) {
+  return Mask128<uint8_t, N>{_mm_cmpge_epu8_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<uint16_t, N> operator>=(Vec128<uint16_t, N> a,
+                                        Vec128<uint16_t, N> b) {
+  return Mask128<uint16_t, N>{_mm_cmpge_epu16_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<uint32_t, N> operator>=(Vec128<uint32_t, N> a,
+                                        Vec128<uint32_t, N> b) {
+  return Mask128<uint32_t, N>{_mm_cmpge_epu32_mask(a.raw, b.raw)};
+}
+template <size_t N>
+HWY_API Mask128<uint64_t, N> operator>=(Vec128<uint64_t, N> a,
+                                        Vec128<uint64_t, N> b) {
+  return Mask128<uint64_t, N>{_mm_cmpge_epu64_mask(a.raw, b.raw)};
+}
+
 #else  // AVX2 or below
 
 // Comparisons fill a lane with 1-bits if the condition is true, else 0.
@@ -2128,15 +2171,35 @@ HWY_INLINE Mask128<T, N> operator>(Vec128<T, N> a, Vec128<T, N> b) {
 
 // ------------------------------ Weak inequality
 
+namespace detail {
+template <typename T, size_t N>
+HWY_INLINE Mask128<T, N> Ge(hwy::SignedTag tag,
+                            Vec128<T, N> a, Vec128<T, N> b) {
+  return Not(Gt(tag, b, a));
+}
+
+template <typename T, size_t N>
+HWY_INLINE Mask128<T, N> Ge(hwy::UnsignedTag tag,
+                            Vec128<T, N> a, Vec128<T, N> b) {
+  return Not(Gt(tag, b, a));
+}
+
 template <size_t N>
-HWY_API Mask128<float, N> operator>=(const Vec128<float, N> a,
-                                     const Vec128<float, N> b) {
+HWY_INLINE Mask128<float, N> Ge(hwy::FloatTag /*tag*/, Vec128<float, N> a,
+                                Vec128<float, N> b) {
   return Mask128<float, N>{_mm_cmpge_ps(a.raw, b.raw)};
 }
 template <size_t N>
-HWY_API Mask128<double, N> operator>=(const Vec128<double, N> a,
-                                      const Vec128<double, N> b) {
+HWY_INLINE Mask128<double, N> Ge(hwy::FloatTag /*tag*/, Vec128<double, N> a,
+                                 Vec128<double, N> b) {
   return Mask128<double, N>{_mm_cmpge_pd(a.raw, b.raw)};
+}
+
+}  // namespace detail
+
+template <typename T, size_t N>
+HWY_API Mask128<T, N> operator>=(Vec128<T, N> a, Vec128<T, N> b) {
+  return detail::Ge(hwy::TypeTag<T>(), a, b);
 }
 
 #endif  // HWY_TARGET <= HWY_AVX3
@@ -2826,7 +2889,8 @@ using Shift64Count = unsigned int;
 template <int kBits, size_t N>
 HWY_API Vec128<int64_t, N> ShiftRight(const Vec128<int64_t, N> v) {
 #if HWY_TARGET <= HWY_AVX3
-  return Vec128<int64_t, N>{_mm_srai_epi64(v.raw, static_cast<Shift64Count>(kBits))};
+  return Vec128<int64_t, N>{
+      _mm_srai_epi64(v.raw, static_cast<Shift64Count>(kBits))};
 #else
   const DFromV<decltype(v)> di;
   const RebindToUnsigned<decltype(di)> du;
@@ -3028,7 +3092,8 @@ HWY_API Vec128<int64_t, N> ShiftRightSame(const Vec128<int64_t, N> v,
 #if HWY_TARGET <= HWY_AVX3
 #if HWY_COMPILER_GCC
   if (__builtin_constant_p(bits)) {
-    return Vec128<int64_t, N>{_mm_srai_epi64(v.raw, static_cast<Shift64Count>(bits))};
+    return Vec128<int64_t, N>{
+        _mm_srai_epi64(v.raw, static_cast<Shift64Count>(bits))};
   }
 #endif
   return Vec128<int64_t, N>{_mm_sra_epi64(v.raw, _mm_cvtsi32_si128(bits))};
@@ -4281,8 +4346,9 @@ HWY_API Vec128<T, N> TableLookupLanes(Vec128<T, N> v, Indices128<T, N> idx) {
   Store(Vec128<T>{v.raw}, d_full, src_lanes);
   _mm_store_si128(reinterpret_cast<__m128i*>(indices), idx.raw);
 
-  for(int i = 0; i < 4; i++)
+  for (int i = 0; i < 4; i++) {
     result_lanes[i] = src_lanes[indices[i] & 3u];
+  }
 
   return Vec128<T, N>{Load(d_full, result_lanes).raw};
 #else

@@ -493,12 +493,55 @@ HWY_INLINE Mask512<T> FirstN(size_t n) {
   return m;
 }
 
-template <typename T, HWY_IF_T_SIZE(T, 1)>
+#if HWY_COMPILER_MSVC >= 1920 || HWY_COMPILER_GCC_ACTUAL >= 900 || \
+    HWY_COMPILER_CLANG || HWY_COMPILER_ICC
+template <typename T, HWY_IF_LANE_SIZE(T, 1)>
+HWY_INLINE Mask512<T> FirstN(size_t n) {
+  uint32_t loMask;
+  uint32_t hiMask;
+  uint32_t hiMaskOutLen;
+#if HWY_COMPILER_GCC
+  if (__builtin_constant_p(n >= 32) && n >= 32) {
+    if (__builtin_constant_p(n >= 64) && n >= 64) {
+      hiMaskOutLen = 32u;
+    } else {
+      hiMaskOutLen = ((n <= 287) ? static_cast<uint32_t>(n) : 287u) - 32u;
+    }
+    loMask = hiMask = 0xFFFFFFFFu;
+  } else  // NOLINT(readability/braces)
+#endif
+  {
+    const uint32_t maskOutLen = (n <= 255) ? static_cast<uint32_t>(n) : 255u;
+    loMask = _bzhi_u32(0xFFFFFFFFu, maskOutLen);
+
+#if HWY_COMPILER_GCC
+    if (__builtin_constant_p(maskOutLen <= 32) && maskOutLen <= 32) {
+      return Mask512<T>{static_cast<__mmask64>(loMask)};
+    }
+#endif
+
+    _addcarry_u32(_subborrow_u32(0, maskOutLen, 32u, &hiMaskOutLen),
+                  0xFFFFFFFFu, 0u, &hiMask);
+  }
+  hiMask = _bzhi_u32(hiMask, hiMaskOutLen);
+#if HWY_COMPILER_GCC && !HWY_COMPILER_ICC
+  if (__builtin_constant_p((static_cast<uint64_t>(hiMask) << 32) | loMask))
+#endif
+    return Mask512<T>{
+        static_cast<__mmask64>((static_cast<uint64_t>(hiMask) << 32) | loMask)};
+#if HWY_COMPILER_GCC && !HWY_COMPILER_ICC
+  else
+    return Mask512<T>{_mm512_kunpackd(static_cast<__mmask64>(hiMask),
+                                      static_cast<__mmask64>(loMask))};
+#endif
+}
+#else
+template <typename T, HWY_IF_LANE_SIZE(T, 1)>
 HWY_INLINE Mask512<T> FirstN(size_t n) {
   const uint64_t bits = n < 64 ? ((1ULL << n) - 1) : ~uint64_t{0};
   return Mask512<T>{static_cast<__mmask64>(bits)};
 }
-
+#endif
 }  // namespace detail
 #endif  // HWY_ARCH_X86_32
 
@@ -1624,6 +1667,32 @@ HWY_API Mask512<float> operator>=(Vec512<float> a, Vec512<float> b) {
 }
 HWY_API Mask512<double> operator>=(Vec512<double> a, Vec512<double> b) {
   return Mask512<double>{_mm512_cmp_pd_mask(a.raw, b.raw, _CMP_GE_OQ)};
+}
+
+HWY_API Mask512<uint8_t> operator>=(Vec512<uint8_t> a, Vec512<uint8_t> b) {
+  return Mask512<uint8_t>{_mm512_cmpge_epu8_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<uint16_t> operator>=(Vec512<uint16_t> a, Vec512<uint16_t> b) {
+  return Mask512<uint16_t>{_mm512_cmpge_epu16_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<uint32_t> operator>=(Vec512<uint32_t> a, Vec512<uint32_t> b) {
+  return Mask512<uint32_t>{_mm512_cmpge_epu32_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<uint64_t> operator>=(Vec512<uint64_t> a, Vec512<uint64_t> b) {
+  return Mask512<uint64_t>{_mm512_cmpge_epu64_mask(a.raw, b.raw)};
+}
+
+HWY_API Mask512<int8_t> operator>=(Vec512<int8_t> a, Vec512<int8_t> b) {
+  return Mask512<int8_t>{_mm512_cmpge_epi8_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<int16_t> operator>=(Vec512<int16_t> a, Vec512<int16_t> b) {
+  return Mask512<int16_t>{_mm512_cmpge_epi16_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<int32_t> operator>=(Vec512<int32_t> a, Vec512<int32_t> b) {
+  return Mask512<int32_t>{_mm512_cmpge_epi32_mask(a.raw, b.raw)};
+}
+HWY_API Mask512<int64_t> operator>=(Vec512<int64_t> a, Vec512<int64_t> b) {
+  return Mask512<int64_t>{_mm512_cmpge_epi64_mask(a.raw, b.raw)};
 }
 
 // ------------------------------ Reversed comparisons
@@ -3548,9 +3617,8 @@ HWY_API Vec512<uint32_t> ReorderDemote2To(D dn, Vec512<uint64_t> a,
   return Combine(dn, DemoteTo(dnh, b), DemoteTo(dnh, a));
 }
 
-template <class D, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<D>),
-          HWY_IF_V_SIZE_D(D, 64),
-          class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+template <class D, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<D>),
+          HWY_IF_V_SIZE_D(D, 64), HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
           HWY_IF_T_SIZE_V(V, sizeof(TFromD<D>) * 2),
           HWY_IF_LANES_D(D, HWY_MAX_LANES_D(DFromV<V>) * 2),
           HWY_IF_T_SIZE_ONE_OF_V(V, (1 << 1) | (1 << 2) | (1 << 4))>

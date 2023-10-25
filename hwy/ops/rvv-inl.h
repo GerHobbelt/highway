@@ -1110,6 +1110,8 @@ HWY_RVV_FOREACH_F(HWY_RVV_RETM_ARGVS, LtS, mflt_vf, _ALL)
 }  // namespace detail
 
 // ------------------------------ Le
+HWY_RVV_FOREACH_U(HWY_RVV_RETM_ARGVV, Le, msleu, _ALL)
+HWY_RVV_FOREACH_I(HWY_RVV_RETM_ARGVV, Le, msle, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_RETM_ARGVV, Le, mfle, _ALL)
 
 #undef HWY_RVV_RETM_ARGVV
@@ -1672,7 +1674,7 @@ HWY_API auto PromoteTo(Simd<float32_t, N, kPow2> d,
 
 // ------------------------------ DemoteTo U
 
-// SEW is for the source so we can use _DEMOTE.
+// SEW is for the source so we can use _DEMOTE_VIRT.
 #define HWY_RVV_DEMOTE(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, SHIFT, \
                        MLEN, NAME, OP)                                         \
   template <size_t N>                                                          \
@@ -1686,7 +1688,7 @@ HWY_RVV_FOREACH_U16(HWY_RVV_DEMOTE, DemoteTo, nclipu_wx_, _DEMOTE_VIRT)
 HWY_RVV_FOREACH_U32(HWY_RVV_DEMOTE, DemoteTo, nclipu_wx_, _DEMOTE_VIRT)
 HWY_RVV_FOREACH_U64(HWY_RVV_DEMOTE, DemoteTo, nclipu_wx_, _DEMOTE_VIRT)
 
-// SEW is for the source so we can use _DEMOTE.
+// SEW is for the source so we can use _DEMOTE_VIRT.
 #define HWY_RVV_DEMOTE_I_TO_U(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, \
                               SHIFT, MLEN, NAME, OP)                           \
   template <size_t N>                                                          \
@@ -2084,7 +2086,7 @@ HWY_API VFromD<Simd<int16_t, N, kPow2>> DemoteTo(
 
 // ------------------------------ DemoteTo F
 
-// SEW is for the source so we can use _DEMOTE.
+// SEW is for the source so we can use _DEMOTE_VIRT.
 #define HWY_RVV_DEMOTE_F(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH,    \
                          SHIFT, MLEN, NAME, OP)                              \
   template <size_t N>                                                        \
@@ -2121,7 +2123,7 @@ HWY_API vint32m4_t DemoteTo(Simd<int32_t, N, 2> d, const vfloat64m8_t v) {
   return __riscv_vfncvt_rtz_x_f_w_i32m4(v, Lanes(d));
 }
 
-// SEW is for the source so we can use _DEMOTE_TO_SHR_16.
+// SEW is for the source so we can use _DEMOTE_VIRT.
 #define HWY_RVV_DEMOTE_TO_SHR_16(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD,     \
                                  LMULH, SHIFT, MLEN, NAME, OP)                 \
   template <size_t N>                                                          \

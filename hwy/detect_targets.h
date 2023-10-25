@@ -61,7 +61,7 @@
 // Bits 0..5 reserved (6 targets)
 // Currently HWY_AVX3_DL plus a special case for CompressStore (10x as fast).
 // We may later also use VPCONFLICT.
-#define HWY_AVX3_ZEN4 (1LL << 6)
+#define HWY_AVX3_ZEN4 (1LL << 6)  // see HWY_WANT_AVX3_ZEN4 below
 // Currently satisfiable by Ice Lake (VNNI, VPCLMULQDQ, VPOPCNTDQ, VBMI, VBMI2,
 // VAES, BITALG). Later to be added: BF16 (Cooper Lake). VP2INTERSECT is only in
 // Tiger Lake? We do not yet have uses for GFNI.
@@ -449,9 +449,16 @@
     defined(__AVX512VBMI2__) && defined(__AVX512VPOPCNTDQ__) &&            \
     defined(__AVX512BITALG__)
 #define HWY_BASELINE_AVX3_DL HWY_AVX3_DL
-#define HWY_BASELINE_AVX3_ZEN4 HWY_AVX3_ZEN4
 #else
 #define HWY_BASELINE_AVX3_DL 0
+#endif
+
+// The ZEN4-optimized AVX3 target is numerically lower than AVX3_DL and is thus
+// considered better. Do not enable it unless the user explicitly requests it -
+// we do not want to choose the ZEN4 path on Intel because it could be slower.
+#if defined(HWY_WANT_AVX3_ZEN4) && HWY_BASELINE_AVX3_DL != 0
+#define HWY_BASELINE_AVX3_ZEN4 HWY_AVX3_ZEN4
+#else
 #define HWY_BASELINE_AVX3_ZEN4 0
 #endif
 
@@ -514,7 +521,7 @@
 // AVX3_DL is not widely available yet. To reduce code size and compile time,
 // only include it in the set of attainable targets (for dynamic dispatch) if
 // the user opts in, OR it is in the baseline (we check whether enabled below).
-#if defined(HWY_WANT_AVX3_DL) || (HWY_BASELINE & HWY_AVX3_DL)
+#if defined(HWY_WANT_AVX3_DL) || (HWY_BASELINE_TARGETS & HWY_AVX3_DL)
 #define HWY_ATTAINABLE_AVX3_DL (HWY_AVX3_DL)
 #else
 #define HWY_ATTAINABLE_AVX3_DL 0
