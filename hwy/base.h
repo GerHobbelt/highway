@@ -815,7 +815,8 @@ static constexpr bool IsAssignable() {
 #define HWY_SVE_HAVE_BFLOAT16 0
 #endif
 
-#if HWY_ARCH_X86 && defined(__SSE2__) && HWY_COMPILER_GCC_ACTUAL >= 1300
+#if HWY_ARCH_X86 && defined(__SSE2__) && \
+    (HWY_COMPILER_CLANG >= 1700 || HWY_COMPILER_GCC_ACTUAL >= 1300)
 #define HWY_SSE2_HAVE_BFLOAT16 1
 #else
 #define HWY_SSE2_HAVE_BFLOAT16 0
@@ -981,7 +982,8 @@ constexpr inline std::partial_ordering operator<=>(float16_t lhs,
 #endif  // HWY_EMULATE_FLOAT16
 
 #if (HWY_CXX_LANG >= 202100L && defined(__STDCPP_BFLOAT16_T__)) || \
-    (HWY_HAVE_GCC_OR_ARM_BFLOAT16 && HWY_COMPILER_GCC_ACTUAL >= 1300)
+    (HWY_HAVE_GCC_OR_ARM_BFLOAT16 &&                               \
+     (HWY_COMPILER_CLANG >= 1700 || HWY_COMPILER_GCC_ACTUAL >= 1300))
 #define HWY_HAVE_BF16_ARITHMETIC_OPS 1
 #else
 #define HWY_HAVE_BF16_ARITHMETIC_OPS 0
@@ -1017,7 +1019,7 @@ struct alignas(2) bfloat16_t {
   constexpr bfloat16_t(bfloat16_t&&) noexcept = default;
   constexpr bfloat16_t(const bfloat16_t&) noexcept = default;
 
-  constexpr bfloat16_t(Raw arg) noexcept : raw(arg){};
+  constexpr bfloat16_t(Raw arg) noexcept : raw(arg) {}
 
 #if HWY_HAVE_BF16_ARITHMETIC_OPS
   template <typename T, hwy::EnableIf<!IsSame<RemoveCvRef<T>, Raw>() &&
@@ -2054,8 +2056,8 @@ HWY_API void PreventElision(T&& output) {
   // RTL constraints). Self-assignment with #pragma optimize("off") might be
   // expected to prevent elision, but it does not with MSVC 2015. Type-punning
   // with volatile pointers generates inefficient code on MSVC 2017.
-  static std::atomic<RemoveCvRef<T>> dummy;
-  dummy.store(output, std::memory_order_relaxed);
+  static std::atomic<RemoveCvRef<T>> sink;
+  sink.store(output, std::memory_order_relaxed);
 #else
   // Works by indicating to the compiler that "output" is being read and
   // modified. The +r constraint avoids unnecessary writes to memory, but only
