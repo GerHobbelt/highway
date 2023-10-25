@@ -906,8 +906,14 @@ HWY_RVV_FOREACH_I(HWY_RVV_RETV_ARGVV, SaturatedSub, ssub, _ALL)
 // how to detect whether it is supported or required. #ifdef __RISCV_VXRM_RDN
 // does not work because it seems to be a compiler built-in, but neither does
 // __has_builtin(__RISCV_VXRM_RDN). The intrinsics version was also not updated,
-// so we can only support the new-style intrinsics.
+// so we require a macro to opt out of the new intrinsics.
+#ifdef HWY_RVV_AVOID_VXRM
+#define HWY_RVV_INSERT_VXRM(vxrm, avl) avl
+#define __RISCV_VXRM_RNU
+#define __RISCV_VXRM_RDN
+#else  // default: use new vxrm arguments
 #define HWY_RVV_INSERT_VXRM(vxrm, avl) vxrm, avl
+#endif
 
 // Extra rounding mode = up argument.
 #define HWY_RVV_RETV_AVERAGE(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH,  \
@@ -2263,8 +2269,8 @@ HWY_API vint32m4_t DemoteTo(Simd<int32_t, N, 2> d, const vfloat64m8_t v) {
   template <size_t N>                                                        \
   HWY_API HWY_RVV_V(BASE, SEWH, LMULH) NAME(                                 \
       HWY_RVV_D(BASE, SEWH, N, SHIFT - 1) d, HWY_RVV_V(BASE, SEW, LMUL) v) { \
-    return __riscv_v##OP##CHAR##SEWH##LMULH(v, 16, __RISCV_VXRM_RDN,         \
-                                            Lanes(d));                       \
+    return __riscv_v##OP##CHAR##SEWH##LMULH(                                 \
+        v, 16, HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, Lanes(d)));             \
   }
 namespace detail {
 HWY_RVV_FOREACH_U32(HWY_RVV_DEMOTE_TO_SHR_16, DemoteToShr16, nclipu_wx_,
@@ -2320,7 +2326,7 @@ namespace detail {
 // For x86-compatible behaviour mandated by Highway API: TableLookupBytes
 // offsets are implicitly relative to the start of their 128-bit block.
 template <typename T, size_t N, int kPow2>
-size_t LanesPerBlock(Simd<T, N, kPow2> d) {
+HWY_INLINE size_t LanesPerBlock(Simd<T, N, kPow2> d) {
   // kMinVecBytes is the minimum size of VFromD<decltype(d)> in bytes
   constexpr size_t kMinVecBytes =
       ScaleByPower(16, HWY_MAX(HWY_MIN(kPow2, 3), -3));
@@ -2376,6 +2382,23 @@ HWY_RVV_FOREACH(HWY_RVV_SLIDE_DOWN, SlideDown, slidedown, _ALL)
 #undef HWY_RVV_SLIDE_DOWN
 
 }  // namespace detail
+
+// ------------------------------ SlideUpLanes
+template <class D>
+HWY_API VFromD<D> SlideUpLanes(D d, VFromD<D> v, size_t amt) {
+  return detail::SlideUp(Zero(d), v, amt);
+}
+
+// ------------------------------ SlideDownLanes
+template <class D>
+HWY_API VFromD<D> SlideDownLanes(D d, VFromD<D> v, size_t amt) {
+  v = detail::SlideDown(v, amt);
+  // Zero out upper lanes if v is a partial vector
+  if (MaxLanes(d) < MaxLanes(DFromV<decltype(v)>())) {
+    v = IfThenElseZero(FirstN(d, Lanes(d) - amt), v);
+  }
+  return v;
+}
 
 // ------------------------------ ConcatUpperLower
 template <class D, class V>
@@ -2477,6 +2500,28 @@ HWY_RVV_FOREACH_UI(HWY_RVV_SLIDE1, Slide1Down, slide1down_vx, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_SLIDE1, Slide1Down, fslide1down_vf, _ALL)
 #undef HWY_RVV_SLIDE1
 }  // namespace detail
+
+// ------------------------------ Slide1Up and Slide1Down
+#ifdef HWY_NATIVE_SLIDE1_UP_DOWN
+#undef HWY_NATIVE_SLIDE1_UP_DOWN
+#else
+#define HWY_NATIVE_SLIDE1_UP_DOWN
+#endif
+
+template <class D>
+HWY_API VFromD<D> Slide1Up(D /*d*/, VFromD<D> v) {
+  return detail::Slide1Up(v);
+}
+
+template <class D>
+HWY_API VFromD<D> Slide1Down(D d, VFromD<D> v) {
+  v = detail::Slide1Down(v);
+  // Zero out upper lanes if v is a partial vector
+  if (MaxLanes(d) < MaxLanes(DFromV<decltype(v)>())) {
+    v = IfThenElseZero(FirstN(d, Lanes(d) - 1), v);
+  }
+  return v;
+}
 
 // ------------------------------ GetLane
 
