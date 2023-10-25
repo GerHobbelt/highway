@@ -200,13 +200,12 @@
 #define HWY_BROKEN_SVE 0
 #endif
 
-// HWY_PPC8, HWY_PPC9, and HWY_PPC10 are currently broken on big-endian
-#if HWY_ARCH_PPC && defined(__BYTE_ORDER__) && \
-    defined(__ORDER_LITTLE_ENDIAN__) &&        \
-    __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-#define HWY_BROKEN_PPC (HWY_PPC8 | HWY_PPC9 | HWY_PPC10)
+// RVV compiles with current clang but not GCC.
+// TODO(janwas): re-enable for new GCC once the required version is known.
+#if HWY_COMPILER_GCC_ACTUAL
+#define HWY_BROKEN_RVV HWY_RVV
 #else
-#define HWY_BROKEN_PPC 0
+#define HWY_BROKEN_RVV 0
 #endif
 
 // Allow the user to override this without any guarantee of success.
@@ -215,7 +214,7 @@
 #define HWY_BROKEN_TARGETS                                  \
   (HWY_BROKEN_CLANG6 | HWY_BROKEN_32BIT | HWY_BROKEN_MSVC | \
    HWY_BROKEN_AVX3_DL_ZEN4 | HWY_BROKEN_ARM7_BIG_ENDIAN |   \
-   HWY_BROKEN_ARM7_WITHOUT_VFP4 | HWY_BROKEN_SVE | HWY_BROKEN_PPC)
+   HWY_BROKEN_ARM7_WITHOUT_VFP4 | HWY_BROKEN_SVE | HWY_BROKEN_RVV)
 
 #endif  // HWY_BROKEN_TARGETS
 
@@ -264,8 +263,7 @@
 #endif
 
 #if HWY_ARCH_PPC && (HWY_COMPILER_GCC || HWY_COMPILER_CLANG)
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    defined(__ALTIVEC__) && defined(__VSX__) && defined(__POWER8_VECTOR__) && \
+#if defined(__ALTIVEC__) && defined(__VSX__) && defined(__POWER8_VECTOR__) && \
     (defined(__CRYPTO__) || defined(HWY_DISABLE_PPC8_CRYPTO))
 #define HWY_BASELINE_PPC8 HWY_PPC8
 #else
