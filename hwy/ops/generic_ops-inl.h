@@ -1246,9 +1246,20 @@ HWY_API V PopulationCount(V v) {
 #endif  // HWY_NATIVE_POPCNT
 
 template <class V, class D = DFromV<V>, HWY_IF_LANE_SIZE_D(D, 8),
-          HWY_IF_LT128_D(D)>
+          HWY_IF_LT128_D(D), HWY_IF_FLOAT_D(D)>
 HWY_API V operator*(V x, V y) {
   return Set(D(), GetLane(x) * GetLane(y));
+}
+
+template <class V, class D = DFromV<V>, HWY_IF_LANE_SIZE_D(D, 8),
+          HWY_IF_LT128_D(D), HWY_IF_NOT_FLOAT_D(D)>
+HWY_API V operator*(V x, V y) {
+  const DFromV<V> d;
+  using T = TFromD<decltype(d)>;
+  using TU = MakeUnsigned<T>;
+  const TU xu = static_cast<TU>(GetLane(x));
+  const TU yu = static_cast<TU>(GetLane(y));
+  return Set(d, static_cast<T>(xu * yu));
 }
 
 // "Include guard": skip if native 64-bit mul instructions are available.
@@ -1297,7 +1308,7 @@ HWY_API size_t CompressBitsStore(V v, const uint8_t* HWY_RESTRICT bits, D d,
   const Simd<T, HWY_MIN(MaxLanes(d), 8), 0> d8;
   T* HWY_RESTRICT pos = unaligned;
 
-  HWY_ALIGN constexpr T table[256 * 8] = {
+  HWY_ALIGN constexpr T table[2048] = {
       0, 1, 2, 3, 4, 5, 6, 7, /**/ 0, 1, 2, 3, 4, 5, 6, 7,  //
       1, 0, 2, 3, 4, 5, 6, 7, /**/ 0, 1, 2, 3, 4, 5, 6, 7,  //
       2, 0, 1, 3, 4, 5, 6, 7, /**/ 0, 2, 1, 3, 4, 5, 6, 7,  //
