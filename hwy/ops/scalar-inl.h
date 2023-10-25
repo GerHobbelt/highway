@@ -734,17 +734,16 @@ HWY_API Vec1<uint16_t> MulHigh(const Vec1<uint16_t> a, const Vec1<uint16_t> b) {
 }
 
 HWY_API Vec1<int16_t> MulFixedPoint15(Vec1<int16_t> a, Vec1<int16_t> b) {
-  return Vec1<int16_t>(static_cast<int16_t>((2 * a.raw * b.raw + 32768) >> 16));
+  return Vec1<int16_t>(static_cast<int16_t>((a.raw * b.raw + 16384) >> 15));
 }
 
 // Multiplies even lanes (0, 2 ..) and returns the double-wide result.
-HWY_API Vec1<int64_t> MulEven(const Vec1<int32_t> a, const Vec1<int32_t> b) {
-  const int64_t a64 = a.raw;
-  return Vec1<int64_t>(a64 * b.raw);
-}
-HWY_API Vec1<uint64_t> MulEven(const Vec1<uint32_t> a, const Vec1<uint32_t> b) {
-  const uint64_t a64 = a.raw;
-  return Vec1<uint64_t>(a64 * b.raw);
+template <class T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4)),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec1<MakeWide<T>> MulEven(const Vec1<T> a, const Vec1<T> b) {
+  using TW = MakeWide<T>;
+  const TW a_wide = a.raw;
+  return Vec1<TW>(static_cast<TW>(a_wide * b.raw));
 }
 
 // Approximate reciprocal
@@ -756,8 +755,9 @@ HWY_API Vec1<float> ApproximateReciprocal(const Vec1<float> v) {
   return Vec1<float>(1.0f / v.raw);
 }
 
-// Absolute value of difference.
-HWY_API Vec1<float> AbsDiff(const Vec1<float> a, const Vec1<float> b) {
+// generic_ops takes care of integer T.
+template <typename T, HWY_IF_FLOAT(T)>
+HWY_API Vec1<T> AbsDiff(const Vec1<T> a, const Vec1<T> b) {
   return Abs(a - b);
 }
 
@@ -1206,6 +1206,12 @@ HWY_API void ScatterIndex(Vec1<T> v, D d, T* HWY_RESTRICT base,
 
 // ------------------------------ Gather
 
+#ifdef HWY_NATIVE_GATHER
+#undef HWY_NATIVE_GATHER
+#else
+#define HWY_NATIVE_GATHER
+#endif
+
 template <class D, typename T = TFromD<D>, typename TI>
 HWY_API Vec1<T> GatherOffset(D d, const T* base, Vec1<TI> offset) {
   static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
@@ -1218,6 +1224,13 @@ template <class D, typename T = TFromD<D>, typename TI>
 HWY_API Vec1<T> GatherIndex(D d, const T* HWY_RESTRICT base, Vec1<TI> index) {
   static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
   return Load(d, base + index.raw);
+}
+
+template <class D, typename T = TFromD<D>, typename TI>
+HWY_API Vec1<T> MaskedGatherIndex(Mask1<T> m, D d, const T* HWY_RESTRICT base,
+                                  Vec1<TI> index) {
+  static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
+  return MaskedLoad(m, d, base + index.raw);
 }
 
 // ================================================== CONVERT
@@ -1852,6 +1865,15 @@ HWY_API Vec1<int32_t> ReorderWidenMulAccumulate(D32 /* tag */, Vec1<int16_t> a,
                                                 const Vec1<int32_t> sum0,
                                                 Vec1<int32_t>& /* sum1 */) {
   return Vec1<int32_t>(a.raw * b.raw + sum0.raw);
+}
+
+template <class DU32, HWY_IF_U32_D(DU32)>
+HWY_API Vec1<uint32_t> ReorderWidenMulAccumulate(DU32 /* tag */,
+                                                 Vec1<uint16_t> a,
+                                                 Vec1<uint16_t> b,
+                                                 const Vec1<uint32_t> sum0,
+                                                 Vec1<uint32_t>& /* sum1 */) {
+  return Vec1<uint32_t>(static_cast<uint32_t>(a.raw) * b.raw + sum0.raw);
 }
 
 // ------------------------------ RearrangeToOddPlusEven

@@ -254,23 +254,27 @@ HWY_API Vec256<T> MulFixedPoint15(Vec256<T> a, const Vec256<T> b) {
 
 // Cannot use MakeWide because that returns uint128_t for uint64_t, but we want
 // uint64_t.
-HWY_API Vec256<uint64_t> MulEven(Vec256<uint32_t> a, const Vec256<uint32_t> b) {
-  Vec256<uint64_t> ret;
+template <class T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4)),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec256<MakeWide<T>> MulEven(Vec256<T> a, const Vec256<T> b) {
+  Vec256<MakeWide<T>> ret;
   ret.v0 = MulEven(a.v0, b.v0);
   ret.v1 = MulEven(a.v1, b.v1);
   return ret;
 }
-HWY_API Vec256<int64_t> MulEven(Vec256<int32_t> a, const Vec256<int32_t> b) {
-  Vec256<int64_t> ret;
+HWY_API Vec256<uint64_t> MulEven(Vec256<uint64_t> a, const Vec256<uint64_t> b) {
+  Vec256<uint64_t> ret;
   ret.v0 = MulEven(a.v0, b.v0);
   ret.v1 = MulEven(a.v1, b.v1);
   return ret;
 }
 
-HWY_API Vec256<uint64_t> MulEven(Vec256<uint64_t> a, const Vec256<uint64_t> b) {
-  Vec256<uint64_t> ret;
-  ret.v0 = MulEven(a.v0, b.v0);
-  ret.v1 = MulEven(a.v1, b.v1);
+template <class T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4)),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec256<MakeWide<T>> MulOdd(Vec256<T> a, const Vec256<T> b) {
+  Vec256<MakeWide<T>> ret;
+  ret.v0 = MulOdd(a.v0, b.v0);
+  ret.v1 = MulOdd(a.v1, b.v1);
   return ret;
 }
 HWY_API Vec256<uint64_t> MulOdd(Vec256<uint64_t> a, const Vec256<uint64_t> b) {
@@ -288,6 +292,13 @@ HWY_API Vec256<T> Neg(Vec256<T> v) {
   return v;
 }
 
+// ------------------------------ AbsDiff
+// generic_ops takes care of integer T.
+template <typename T, HWY_IF_FLOAT(T)>
+HWY_API Vec256<T> AbsDiff(const Vec256<T> a, const Vec256<T> b) {
+  return Abs(a - b);
+}
+
 // ------------------------------ Floating-point division
 template <typename T>
 HWY_API Vec256<T> operator/(Vec256<T> a, const Vec256<T> b) {
@@ -300,11 +311,6 @@ HWY_API Vec256<T> operator/(Vec256<T> a, const Vec256<T> b) {
 HWY_API Vec256<float> ApproximateReciprocal(const Vec256<float> v) {
   const Vec256<float> one = Set(Full256<float>(), 1.0f);
   return one / v;
-}
-
-// Absolute value of difference.
-HWY_API Vec256<float> AbsDiff(const Vec256<float> a, const Vec256<float> b) {
-  return Abs(a - b);
 }
 
 // ------------------------------ Floating-point multiply-add variants
