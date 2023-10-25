@@ -125,6 +125,7 @@ cc_library(
     deps = [
         ":intel",  # required if HAVE_INTEL
         ":vxsort",  # required if HAVE_VXSORT
+        "//:algo",
         "//:hwy",
     ],
 )

@@ -270,9 +270,6 @@ endif()  # !MSVC
 include(CheckIncludeFile)
 check_include_file(sys/auxv.h  HAVE_SYS_AUXV_H)
 check_include_file(asm/hwcap.h HAVE_ASM_HWCAP_H)
-if (NOT HAVE_ASM_HWCAP_H)
-  list(APPEND HWY_FLAGS -DTOOLCHAIN_MISS_ASM_HWCAP_H)
-endif()
 
 # By default prefer STATIC build (legacy behavior)
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
@@ -300,6 +297,9 @@ endif()
 add_library(hwy ${HWY_LIBRARY_TYPE} ${HWY_SOURCES})
 if(NOT HAVE_SYS_AUXV_H)
   target_compile_definitions(hwy PUBLIC TOOLCHAIN_MISS_SYS_AUXV_H)
+endif()
+if(NOT HAVE_ASM_HWCAP_H)
+  target_compile_definitions(hwy PUBLIC TOOLCHAIN_MISS_ASM_HWCAP_H)
 endif()
 target_compile_definitions(hwy PUBLIC "${DLLEXPORT_TO_DEFINE}")
 target_compile_options(hwy PRIVATE ${HWY_FLAGS})
@@ -331,6 +331,8 @@ target_include_directories(hwy_contrib PUBLIC
 target_compile_features(hwy_contrib PUBLIC cxx_std_11)
 set_target_properties(hwy_contrib PROPERTIES
   LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hwy/hwy.version)
+# For GCC __atomic_store_8, see #887
+target_link_libraries(hwy_contrib PRIVATE ${ATOMICS_LIBRARIES})
 # not supported by MSVC/Clang, safe to skip (we use DLLEXPORT annotations)
 if(UNIX AND NOT APPLE)
   set_property(TARGET hwy_contrib APPEND_STRING PROPERTY
@@ -339,7 +341,7 @@ endif()
 endif()  # HWY_ENABLE_CONTRIB
 
 add_library(hwy_test ${HWY_LIBRARY_TYPE} ${HWY_TEST_SOURCES})
-target_link_libraries(hwy_test hwy)
+target_link_libraries(hwy_test PUBLIC hwy)
 target_compile_options(hwy_test PRIVATE ${HWY_FLAGS})
 set_property(TARGET hwy_test PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_target_properties(hwy_test PROPERTIES VERSION ${LIBRARY_VERSION} SOVERSION ${LIBRARY_SOVERSION})
@@ -360,7 +362,7 @@ endif()
 # flags. This tool will print to stderr at build time, after building hwy.
 add_executable(hwy_list_targets hwy/tests/list_targets.cc)
 target_compile_options(hwy_list_targets PRIVATE ${HWY_FLAGS})
-target_link_libraries(hwy_list_targets hwy)
+target_link_libraries(hwy_list_targets PRIVATE hwy)
 target_include_directories(hwy_list_targets PRIVATE
   $<TARGET_PROPERTY:hwy,INCLUDE_DIRECTORIES>)
 # TARGET_FILE always returns the path to executable
@@ -540,7 +542,7 @@ list(APPEND HWY_TEST_FILES
   hwy/contrib/image/image_test.cc
   # Disabled due to SIGILL in clang7 debug build during gtest discovery phase,
   # not reproducible locally. Still tested via bazel build.
-  # hwy/contrib/math/math_test.cc
+  hwy/contrib/math/math_test.cc
   hwy/contrib/sort/sort_test.cc
   hwy/contrib/sort/bench_sort.cc
 )

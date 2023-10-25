@@ -15,10 +15,6 @@
 
 #include "hwy/targets.h"
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS  // before inttypes.h
-#endif
-#include <inttypes.h>  // IWYU pragma: keep (PRIx64)
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>  // abort / exit
@@ -415,6 +411,8 @@ constexpr CapBits kGroupPPC10 = kGroupPPC9 | PPC_FEATURE2_ARCH_3_1;
 
 int64_t DetectTargets() {
   int64_t bits = 0;  // return value of supported targets.
+
+#if defined(AT_HWCAP) && defined(AT_HWCAP2)
   const CapBits hw = getauxval(AT_HWCAP);
 
   if ((hw & kGroupVSX) == kGroupVSX) {
@@ -429,6 +427,8 @@ int64_t DetectTargets() {
       bits |= HWY_PPC10;
     }
   }  // VSX
+#endif  // defined(AT_HWCAP) && defined(AT_HWCAP2)
+
   return bits;
 }
 }  // namespace ppc

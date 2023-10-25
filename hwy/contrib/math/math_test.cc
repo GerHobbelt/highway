@@ -141,6 +141,39 @@ constexpr uint64_t ACosh32ULP() {
 #endif
 }
 
+template <class D, class V>
+HWY_INLINE V SinCosSin(const D d, V x)
+{
+  Vec<D> s, c;
+  SinCos(d, x, s, c);
+  return s;
+}
+
+template <class D, class V>
+HWY_INLINE V SinCosCos(const D d, V x)
+{
+  Vec<D> s, c;
+  SinCos(d, x, s, c);
+  return c;
+}
+
+// on targets without FMA the result is less inaccurate
+constexpr uint64_t SinCosSin32ULP() {
+#if !(HWY_NATIVE_FMA)
+  return 256;
+#else
+  return 3;
+#endif
+}
+
+constexpr uint64_t SinCosCos32ULP() {
+#if !(HWY_NATIVE_FMA)
+  return 64;
+#else
+  return 3;
+#endif
+}
+
 // clang-format off
 DEFINE_MATH_TEST(Acos,
   std::acos,  CallAcos,  -1.0f,      +1.0f,       3,  // NEON is 3 instead of 2
@@ -190,6 +223,12 @@ DEFINE_MATH_TEST(Sinh,
 DEFINE_MATH_TEST(Tanh,
   std::tanh,  CallTanh,  -FLT_MAX,   +FLT_MAX,    4,
   std::tanh,  CallTanh,  -DBL_MAX,   +DBL_MAX,    4)
+DEFINE_MATH_TEST(SinCosSin,
+  std::sin,   SinCosSin,   -39000.0f,  +39000.0f,   SinCosSin32ULP(),
+  std::sin,   SinCosSin,   -39000.0,   +39000.0,    1)
+DEFINE_MATH_TEST(SinCosCos,
+  std::cos,   SinCosCos,   -39000.0f,  +39000.0f,   SinCosCos32ULP(),
+  std::cos,   SinCosCos,   -39000.0,   +39000.0,    1)
 // clang-format on
 
 template <typename T, class D>
@@ -210,50 +249,48 @@ void Atan2TestCases(T /*unused*/, D d, size_t& padded,
   const T nan = GetLane(NaN(d));
 
   const T pi = static_cast<T>(3.141592653589793238);
-  const YX test_cases[] = {
+  const YX test_cases[] = {                                  // 45 degree steps:
+                           {T{0.0}, T{1.0}, T{0}},           // E
+                           {T{-1.0}, T{1.0}, -pi / 4},       // SE
+                           {T{-1.0}, T{0.0}, -pi / 2},       // S
+                           {T{-1.0}, T{-1.0}, -3 * pi / 4},  // SW
+                           {T{0.0}, T{-1.0}, pi},            // W
+                           {T{1.0}, T{-1.0}, 3 * pi / 4},    // NW
+                           {T{1.0}, T{0.0}, pi / 2},         // N
+                           {T{1.0}, T{1.0}, pi / 4},         // NE
 
-      // 8 points of the compass
-      {T{0.0}, T{1.0}, T{0}},           // E
-      {T{-1.0}, T{1.0}, -pi / 4},       // SE
-      {T{-1.0}, T{0.0}, -pi / 2},       // S
-      {T{-1.0}, T{-1.0}, -3 * pi / 4},  // SW
-      {T{0.0}, T{-1.0}, pi},            // W
-      {T{1.0}, T{-1.0}, 3 * pi / 4},    // NW
-      {T{1.0}, T{0.0}, pi / 2},         // N
-      {T{1.0}, T{1.0}, pi / 4},         // NE
-
-      // y = ±0, x < 0 or -0
-      {T{0}, T{-1}, pi},
-      {n0, T{-2}, -pi},
-      // y = ±0, x > 0 or +0
-      {T{0}, T{2}, T{0}},
-      {n0, T{2}, n0},
-      // y = ±∞, x finite
-      {inf, T{3}, pi / 2},
-      {-inf, T{3}, -pi / 2},
-      // y = ±∞, x = -∞
-      {inf, -inf, 3 * pi / 4},
-      {-inf, -inf, -3 * pi / 4},
-      // y = ±∞, x = +∞
-      {inf, inf, pi / 4},
-      {-inf, inf, -pi / 4},
-      // y < 0, x = ±0
-      {T{-2}, T{0}, -pi / 2},
-      {T{-1}, n0, -pi / 2},
-      // y > 0, x = ±0
-      {pos, T{0}, pi / 2},
-      {T{4}, n0, pi / 2},
-      // finite y > 0, x = -∞
-      {pos, -inf, pi},
-      // finite y < 0, x = -∞
-      {neg, -inf, -pi},
-      // finite y > 0, x = +∞
-      {pos, inf, T{0}},
-      // finite y < 0, x = +∞
-      {neg, inf, n0},
-      // y NaN xor x NaN
-      {nan, T{0}, nan},
-      {pos, nan, nan}};
+                           // y = ±0, x < 0 or -0
+                           {T{0}, T{-1}, pi},
+                           {n0, T{-2}, -pi},
+                           // y = ±0, x > 0 or +0
+                           {T{0}, T{2}, T{0}},
+                           {n0, T{2}, n0},
+                           // y = ±∞, x finite
+                           {inf, T{3}, pi / 2},
+                           {-inf, T{3}, -pi / 2},
+                           // y = ±∞, x = -∞
+                           {inf, -inf, 3 * pi / 4},
+                           {-inf, -inf, -3 * pi / 4},
+                           // y = ±∞, x = +∞
+                           {inf, inf, pi / 4},
+                           {-inf, inf, -pi / 4},
+                           // y < 0, x = ±0
+                           {T{-2}, T{0}, -pi / 2},
+                           {T{-1}, n0, -pi / 2},
+                           // y > 0, x = ±0
+                           {pos, T{0}, pi / 2},
+                           {T{4}, n0, pi / 2},
+                           // finite y > 0, x = -∞
+                           {pos, -inf, pi},
+                           // finite y < 0, x = -∞
+                           {neg, -inf, -pi},
+                           // finite y > 0, x = +∞
+                           {pos, inf, T{0}},
+                           // finite y < 0, x = +∞
+                           {neg, inf, n0},
+                           // y NaN xor x NaN
+                           {nan, T{0}, nan},
+                           {pos, nan, nan}};
   const size_t kNumTestCases = sizeof(test_cases) / sizeof(test_cases[0]);
   const size_t N = Lanes(d);
   padded = RoundUpTo(kNumTestCases, N);  // allow loading whole vectors
@@ -283,10 +320,10 @@ struct TestAtan2 {
     AlignedFreeUniquePtr<T[]> in_y, in_x, expected;
     Atan2TestCases(t, d, padded, in_y, in_x, expected);
 
-    const Vec<D> tolerance = Set(d, 1E-5);
+    const Vec<D> tolerance = Set(d, T(1E-5));
 
     for (size_t i = 0; i < padded; ++i) {
-      const T actual = atan2(in_y[i], in_x[i]);
+      const T actual = static_cast<T>(atan2(in_y[i], in_x[i]));
       // fprintf(stderr, "%zu: table %f atan2 %f\n", i, expected[i], actual);
       HWY_ASSERT_EQ(expected[i], actual);
     }
@@ -315,7 +352,7 @@ struct TestAtan2 {
         fprintf(stderr, "Mismatch for i=%d expected %f actual %f\n",
                 static_cast<int>(i + mismatch), expected[i + mismatch],
                 ExtractLane(actual, mismatch));
-        HWY_ABORT("");
+        HWY_ASSERT(0);
       }
     }
   }
@@ -351,6 +388,8 @@ HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSin);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinh);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllTanh);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllAtan2);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinCosSin);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllSinCosCos);
 }  // namespace hwy
 
 #endif
