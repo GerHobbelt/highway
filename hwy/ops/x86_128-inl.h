@@ -4001,15 +4001,27 @@ HWY_API T ExtractLane(const Vec128<T, 16> v, size_t i) {
 
 namespace detail {
 
+template <class V>
+HWY_INLINE V InsertLaneUsingBroadcastAndBlend(V v, size_t i, TFromV<V> t) {
+  const DFromV<decltype(v)> d;
+
+#if HWY_TARGET <= HWY_AVX3
+  using RawMask = decltype(MaskFromVec(VFromD<decltype(d)>()).raw);
+  const auto mask = MFromD<decltype(d)>{static_cast<RawMask>(uint64_t{1} << i)};
+#else
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  const auto mask = RebindMask(d, Iota(du, 0) == Set(du, static_cast<TU>(i)));
+#endif
+
+  return IfThenElse(mask, Set(d, t), v);
+}
+
 template <size_t kLane, typename T, size_t N, HWY_IF_T_SIZE(T, 1)>
 HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3
-  const DFromV<decltype(v)> d;
-  alignas(16) T lanes[16];
-  Store(v, d, lanes);
-  lanes[kLane] = t;
-  return Load(d, lanes);
+  return InsertLaneUsingBroadcastAndBlend(v, kLane, t);
 #else
   return Vec128<T, N>{_mm_insert_epi8(v.raw, t, kLane)};
 #endif
@@ -4025,11 +4037,7 @@ template <size_t kLane, typename T, size_t N, HWY_IF_T_SIZE(T, 4)>
 HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3
-  alignas(16) T lanes[4];
-  const DFromV<decltype(v)> d;
-  Store(v, d, lanes);
-  lanes[kLane] = t;
-  return Load(d, lanes);
+  return InsertLaneUsingBroadcastAndBlend(v, kLane, t);
 #else
   MakeSigned<T> ti;
   CopySameSize(&t, &ti);  // don't just cast because T might be float.
@@ -4042,10 +4050,14 @@ HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3 || HWY_ARCH_X86_32
   const DFromV<decltype(v)> d;
-  alignas(16) T lanes[2];
-  Store(v, d, lanes);
-  lanes[kLane] = t;
-  return Load(d, lanes);
+  const RebindToFloat<decltype(d)> df;
+  const auto vt = BitCast(df, Set(d, t));
+  if (kLane == 0) {
+    return BitCast(
+        d, Vec128<double, N>{_mm_shuffle_pd(vt.raw, BitCast(df, v).raw, 2)});
+  }
+  return BitCast(
+      d, Vec128<double, N>{_mm_shuffle_pd(BitCast(df, v).raw, vt.raw, 0)});
 #else
   MakeSigned<T> ti;
   CopySameSize(&t, &ti);  // don't just cast because T might be float.
@@ -4057,11 +4069,7 @@ template <size_t kLane, size_t N>
 HWY_INLINE Vec128<float, N> InsertLane(const Vec128<float, N> v, float t) {
   static_assert(kLane < N, "Lane index out of bounds");
 #if HWY_TARGET >= HWY_SSSE3
-  const DFromV<decltype(v)> d;
-  alignas(16) float lanes[4];
-  Store(v, d, lanes);
-  lanes[kLane] = t;
-  return Load(d, lanes);
+  return InsertLaneUsingBroadcastAndBlend(v, kLane, t);
 #else
   return Vec128<float, N>{_mm_insert_ps(v.raw, _mm_set_ss(t), kLane << 4)};
 #endif
@@ -4109,11 +4117,7 @@ HWY_API Vec128<T, 2> InsertLane(const Vec128<T, 2> v, size_t i, T t) {
     }
   }
 #endif
-  const DFromV<decltype(v)> d;
-  alignas(16) T lanes[2];
-  Store(v, d, lanes);
-  lanes[i] = t;
-  return Load(d, lanes);
+  return detail::InsertLaneUsingBroadcastAndBlend(v, i, t);
 }
 
 template <typename T>
@@ -4132,11 +4136,7 @@ HWY_API Vec128<T, 4> InsertLane(const Vec128<T, 4> v, size_t i, T t) {
     }
   }
 #endif
-  const DFromV<decltype(v)> d;
-  alignas(16) T lanes[4];
-  Store(v, d, lanes);
-  lanes[i] = t;
-  return Load(d, lanes);
+  return detail::InsertLaneUsingBroadcastAndBlend(v, i, t);
 }
 
 template <typename T>
@@ -4163,11 +4163,7 @@ HWY_API Vec128<T, 8> InsertLane(const Vec128<T, 8> v, size_t i, T t) {
     }
   }
 #endif
-  const DFromV<decltype(v)> d;
-  alignas(16) T lanes[8];
-  Store(v, d, lanes);
-  lanes[i] = t;
-  return Load(d, lanes);
+  return detail::InsertLaneUsingBroadcastAndBlend(v, i, t);
 }
 
 template <typename T>
@@ -4210,11 +4206,7 @@ HWY_API Vec128<T, 16> InsertLane(const Vec128<T, 16> v, size_t i, T t) {
     }
   }
 #endif
-  const DFromV<decltype(v)> d;
-  alignas(16) T lanes[16];
-  Store(v, d, lanes);
-  lanes[i] = t;
-  return Load(d, lanes);
+  return detail::InsertLaneUsingBroadcastAndBlend(v, i, t);
 }
 
 // ------------------------------ CombineShiftRightBytes
@@ -5889,7 +5881,11 @@ template <class D32, HWY_IF_I32_D(D32), HWY_IF_V_SIZE_LE_D(D32, 16),
 HWY_API VFromD<D32> ReorderWidenMulAccumulate(D32 /* tag */, V16 a, V16 b,
                                               const VFromD<D32> sum0,
                                               VFromD<D32>& /*sum1*/) {
+#if HWY_TARGET <= HWY_AVX3_DL
+  return VFromD<D32>{_mm_dpwssd_epi32(sum0.raw, a.raw, b.raw)};
+#else
   return sum0 + VFromD<D32>{_mm_madd_epi16(a.raw, b.raw)};
+#endif
 }
 
 // ------------------------------ RearrangeToOddPlusEven
@@ -8333,6 +8329,10 @@ HWY_INLINE Vec128<T, 1> SumOfLanes(Vec128<T, 1> v) {
   return v;
 }
 template <typename T>
+HWY_INLINE T ReduceSum(Vec128<T, 1> v) {
+  return GetLane(v);
+}
+template <typename T>
 HWY_INLINE Vec128<T, 1> MinOfLanes(Vec128<T, 1> v) {
   return v;
 }
@@ -8347,6 +8347,10 @@ HWY_INLINE Vec128<T, 1> MaxOfLanes(Vec128<T, 1> v) {
 template <typename T, HWY_IF_T_SIZE(T, 4)>
 HWY_INLINE Vec128<T, 2> SumOfLanes(Vec128<T, 2> v10) {
   return v10 + Shuffle2301(v10);
+}
+template <typename T, HWY_IF_T_SIZE(T, 4)>
+HWY_INLINE T ReduceSum(Vec128<T, 2> v10) {
+  return GetLane(SumOfLanes(v10));
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
 HWY_INLINE Vec128<T, 2> MinOfLanes(Vec128<T, 2> v10) {
@@ -8364,6 +8368,10 @@ HWY_INLINE Vec128<T> SumOfLanes(Vec128<T> v3210) {
   const Vec128<T> v31_20_31_20 = v3210 + v1032;
   const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
   return v20_31_20_31 + v31_20_31_20;
+}
+template <typename T, HWY_IF_T_SIZE(T, 4)>
+HWY_INLINE T ReduceSum(Vec128<T> v3210) {
+  return GetLane(SumOfLanes(v3210));
 }
 template <typename T, HWY_IF_T_SIZE(T, 4)>
 HWY_INLINE Vec128<T> MinOfLanes(Vec128<T> v3210) {
@@ -8389,6 +8397,10 @@ HWY_INLINE Vec128<T> SumOfLanes(Vec128<T> v10) {
   return v10 + v01;
 }
 template <typename T, HWY_IF_T_SIZE(T, 8)>
+HWY_INLINE T ReduceSum(Vec128<T> v10) {
+  return GetLane(SumOfLanes(v10));
+}
+template <typename T, HWY_IF_T_SIZE(T, 8)>
 HWY_INLINE Vec128<T> MinOfLanes(Vec128<T> v10) {
   const Vec128<T> v01 = Shuffle01(v10);
   return Min(v10, v01);
@@ -8400,40 +8412,52 @@ HWY_INLINE Vec128<T> MaxOfLanes(Vec128<T> v10) {
 }
 
 template <size_t N, HWY_IF_V_SIZE_GT(uint16_t, N, 2)>
-HWY_INLINE Vec128<uint16_t, N> SumOfLanes(Vec128<uint16_t, N> v) {
+HWY_INLINE uint16_t ReduceSum(Vec128<uint16_t, N> v) {
   const DFromV<decltype(v)> d;
   const RepartitionToWide<decltype(d)> d32;
   const auto even = And(BitCast(d32, v), Set(d32, 0xFFFF));
   const auto odd = ShiftRight<16>(BitCast(d32, v));
-  const auto sum = SumOfLanes(even + odd);
-  // Also broadcast into odd lanes.
-  return OddEven(BitCast(d, ShiftLeft<16>(sum)), BitCast(d, sum));
+  const auto sum = ReduceSum(even + odd);
+  return static_cast<uint16_t>(sum);
 }
 template <size_t N, HWY_IF_V_SIZE_GT(uint16_t, N, 2)>
-HWY_INLINE Vec128<int16_t, N> SumOfLanes(Vec128<int16_t, N> v) {
+HWY_INLINE Vec128<uint16_t, N> SumOfLanes(Vec128<uint16_t, N> v) {
+  const DFromV<decltype(v)> d;
+  return Set(d, ReduceSum(v));
+}
+template <size_t N, HWY_IF_V_SIZE_GT(uint16_t, N, 2)>
+HWY_INLINE int16_t ReduceSum(Vec128<int16_t, N> v) {
   const DFromV<decltype(v)> d;
   const RepartitionToWide<decltype(d)> d32;
   // Sign-extend
   const auto even = ShiftRight<16>(ShiftLeft<16>(BitCast(d32, v)));
   const auto odd = ShiftRight<16>(BitCast(d32, v));
-  const auto sum = SumOfLanes(even + odd);
-  // Also broadcast into odd lanes.
-  return OddEven(BitCast(d, ShiftLeft<16>(sum)), BitCast(d, sum));
+  const auto sum = ReduceSum(even + odd);
+  return static_cast<int16_t>(sum);
 }
-
+template <size_t N, HWY_IF_V_SIZE_GT(uint16_t, N, 2)>
+HWY_INLINE Vec128<int16_t, N> SumOfLanes(Vec128<int16_t, N> v) {
+  const DFromV<decltype(v)> d;
+  return Set(d, ReduceSum(v));
+}
 // u8, N=8, N=16:
+HWY_INLINE uint8_t ReduceSum(Vec64<uint8_t> v) {
+  return static_cast<uint8_t>(GetLane(SumsOf8(v)) & 0xFF);
+}
 HWY_INLINE Vec64<uint8_t> SumOfLanes(Vec64<uint8_t> v) {
   const Full64<uint8_t> d;
-  return Set(d, static_cast<uint8_t>(GetLane(SumsOf8(v)) & 0xFF));
+  return Set(d, ReduceSum(v));
+}
+HWY_INLINE uint8_t ReduceSum(Vec128<uint8_t> v) {
+  uint64_t sums = ReduceSum(SumsOf8(v));
+  return static_cast<uint8_t>(sums & 0xFF);
 }
 HWY_INLINE Vec128<uint8_t> SumOfLanes(Vec128<uint8_t> v) {
   const DFromV<decltype(v)> d;
-  Vec128<uint64_t> sums = SumOfLanes(SumsOf8(v));
-  return Set(d, static_cast<uint8_t>(GetLane(sums) & 0xFF));
+  return Set(d, ReduceSum(v));
 }
-
 template <size_t N, HWY_IF_V_SIZE_GT(int8_t, N, 4)>
-HWY_INLINE Vec128<int8_t, N> SumOfLanes(const Vec128<int8_t, N> v) {
+HWY_INLINE int8_t ReduceSum(const Vec128<int8_t, N> v) {
   const DFromV<decltype(v)> d;
   const RebindToUnsigned<decltype(d)> du;
   const auto is_neg = v < Zero(d);
@@ -8441,8 +8465,12 @@ HWY_INLINE Vec128<int8_t, N> SumOfLanes(const Vec128<int8_t, N> v) {
   // Sum positive and negative lanes separately, then combine to get the result.
   const auto positive = SumsOf8(BitCast(du, IfThenZeroElse(is_neg, v)));
   const auto negative = SumsOf8(BitCast(du, IfThenElseZero(is_neg, Abs(v))));
-  return Set(
-      d, static_cast<int8_t>(GetLane(SumOfLanes(positive - negative)) & 0xFF));
+  return static_cast<int8_t>(ReduceSum(positive - negative) & 0xFF);
+}
+template <size_t N, HWY_IF_V_SIZE_GT(int8_t, N, 4)>
+HWY_INLINE Vec128<int8_t, N> SumOfLanes(const Vec128<int8_t, N> v) {
+  const DFromV<decltype(v)> d;
+  return Set(d, ReduceSum(v));
 }
 
 #if HWY_TARGET <= HWY_SSE4
@@ -8574,6 +8602,10 @@ HWY_INLINE Vec128<int16_t, N> MaxOfLanes(Vec128<int16_t, N> v) {
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API VFromD<D> SumOfLanes(D /* tag */, VFromD<D> v) {
   return detail::SumOfLanes(v);
+}
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
+HWY_API TFromD<D> ReduceSum(D /* tag */, VFromD<D> v) {
+  return detail::ReduceSum(v);
 }
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API VFromD<D> MinOfLanes(D /* tag */, VFromD<D> v) {
