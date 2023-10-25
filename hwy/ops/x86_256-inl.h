@@ -1624,18 +1624,18 @@ HWY_API VFromD<D> Iota(D d, const T2 first) {
 
 template <class D, HWY_IF_V_SIZE_D(D, 32), class M = MFromD<D>>
 HWY_API M FirstN(const D d, size_t n) {
-#if HWY_TARGET <= HWY_AVX3
-  (void)d;
   constexpr size_t kN = MaxLanes(d);
+  // For AVX3, this ensures `num` <= 255 as required by bzhi, which only looks
+  // at the lower 8 bits; for AVX2 and below, this ensures `num` fits in TI.
+  n = HWY_MIN(n, kN);
+
+#if HWY_TARGET <= HWY_AVX3
 #if HWY_ARCH_X86_64
   const uint64_t all = (1ull << kN) - 1;
-  // BZHI only looks at the lower 8 bits of n!
-  return M::FromBits((n > 255) ? all : _bzhi_u64(all, n));
+  return M::FromBits(_bzhi_u64(all, n));
 #else
   const uint32_t all = static_cast<uint32_t>((1ull << kN) - 1);
-  // BZHI only looks at the lower 8 bits of n!
-  return M::FromBits((n > 255) ? all
-                               : _bzhi_u32(all, static_cast<uint32_t>(n)));
+  return M::FromBits(_bzhi_u32(all, static_cast<uint32_t>(n)));
 #endif  // HWY_ARCH_X86_64
 #else
   const RebindToSigned<decltype(d)> di;  // Signed comparisons are cheaper.
@@ -3354,14 +3354,16 @@ HWY_API Vec128<T> ExtractBlock(Vec256<T> v) {
 // compiler could decide to optimize out code that relies on this.
 //
 // The newer _mm256_zextsi128_si256 intrinsic fixes this by specifying the
-// zeroing, but it is not available on MSVC until 15.7 nor GCC until 10.1. For
-// older GCC, we can still obtain the desired code thanks to pattern
-// recognition; note that the expensive insert instruction is not actually
+// zeroing, but it is not available on MSVC until 1920 nor GCC until 10.1.
+// Unfortunately as of 2023-08 it still seems to cause internal compiler errors
+// on MSVC, so we consider it unavailable there.
+//
+// Without zext we can still possibly obtain the desired code thanks to pattern
+// recognition; note that the expensive insert instruction might not actually be
 // generated, see https://gcc.godbolt.org/z/1MKGaP.
 
 #if !defined(HWY_HAVE_ZEXT)
-#if (HWY_COMPILER_MSVC && HWY_COMPILER_MSVC >= 1915) ||  \
-    (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG >= 500) || \
+#if (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG >= 500) || \
     (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL >= 1000)
 #define HWY_HAVE_ZEXT 1
 #else

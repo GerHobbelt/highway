@@ -447,18 +447,35 @@ HWY_RVV_FOREACH(HWY_SPECIALIZE, _, _, _ALL)
     /* If no cap, avoid generating a constant by using VLMAX. */              \
     return N == kFull ? __riscv_vsetvlmax_e##SEW##LMUL()                      \
                       : __riscv_vsetvl_e##SEW##LMUL(kCap);                    \
+  }                                                                           \
+  template <size_t N>                                                         \
+  HWY_API size_t Capped##NAME(HWY_RVV_D(BASE, SEW, N, SHIFT) d, size_t cap) { \
+    /* If no cap, avoid the HWY_MIN. */                                       \
+    return detail::IsFull(d)                                                  \
+               ? __riscv_vsetvl_e##SEW##LMUL(cap)                             \
+               : __riscv_vsetvl_e##SEW##LMUL(HWY_MIN(cap, MaxLanes(d)));      \
   }
 
-#define HWY_RVV_LANES_VIRT(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, \
-                           SHIFT, MLEN, NAME, OP)                           \
-  template <size_t N>                                                       \
-  HWY_API size_t NAME(HWY_RVV_D(BASE, SEW, N, SHIFT) d) {                   \
-    constexpr size_t kCap = MaxLanes(d);                                    \
-    /* In case of virtual LMUL (intrinsics do not provide "uint16mf8_t") */ \
-    /* vsetvl may or may not be correct, so do it ourselves. */             \
-    const size_t actual =                                                   \
-        detail::ScaleByPower(__riscv_vlenb() / (SEW / 8), SHIFT);           \
-    return HWY_MIN(actual, kCap);                                           \
+#define HWY_RVV_LANES_VIRT(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH,   \
+                           SHIFT, MLEN, NAME, OP)                             \
+  template <size_t N>                                                         \
+  HWY_API size_t NAME(HWY_RVV_D(BASE, SEW, N, SHIFT) d) {                     \
+    constexpr size_t kCap = MaxLanes(d);                                      \
+    /* In case of virtual LMUL (intrinsics do not provide "uint16mf8_t") */   \
+    /* vsetvl may or may not be correct, so do it ourselves. */               \
+    const size_t actual =                                                     \
+        detail::ScaleByPower(__riscv_vlenb() / (SEW / 8), SHIFT);             \
+    return HWY_MIN(actual, kCap);                                             \
+  }                                                                           \
+  template <size_t N>                                                         \
+  HWY_API size_t Capped##NAME(HWY_RVV_D(BASE, SEW, N, SHIFT) d, size_t cap) { \
+    /* In case of virtual LMUL (intrinsics do not provide "uint16mf8_t") */   \
+    /* vsetvl may or may not be correct, so do it ourselves. */               \
+    const size_t actual =                                                     \
+        detail::ScaleByPower(__riscv_vlenb() / (SEW / 8), SHIFT);             \
+    /* If no cap, avoid an extra HWY_MIN. */                                  \
+    return detail::IsFull(d) ? HWY_MIN(actual, cap)                           \
+                             : HWY_MIN(HWY_MIN(actual, cap), MaxLanes(d));    \
   }
 
 HWY_RVV_FOREACH(HWY_RVV_LANES, Lanes, setvlmax_e, _ALL)
@@ -1579,6 +1596,42 @@ HWY_API VFromD<D> LoadU(D d, const TFromD<D>* HWY_RESTRICT p) {
 HWY_RVV_FOREACH(HWY_RVV_MASKED_LOAD, MaskedLoad, le, _ALL_VIRT)
 #undef HWY_RVV_MASKED_LOAD
 
+// ------------------------------ LoadN
+
+// Native with avl is faster than the generic_ops using FirstN.
+#ifdef HWY_NATIVE_LOAD_N
+#undef HWY_NATIVE_LOAD_N
+#else
+#define HWY_NATIVE_LOAD_N
+#endif
+
+#define HWY_RVV_LOADN(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, SHIFT, \
+                      MLEN, NAME, OP)                                         \
+  template <size_t N>                                                         \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                          \
+      NAME(HWY_RVV_D(BASE, SEW, N, SHIFT) d,                                  \
+           const HWY_RVV_T(BASE, SEW) * HWY_RESTRICT p, size_t num_lanes) {   \
+    /* Use a tail-undisturbed load in LoadN as the tail-undisturbed load */   \
+    /* operation below will leave any lanes past the first */                 \
+    /* (lowest-indexed) HWY_MIN(num_lanes, Lanes(d)) lanes unchanged */       \
+    return __riscv_v##OP##SEW##_v_##CHAR##SEW##LMUL##_tu(                     \
+        Zero(d), p, CappedLanes(d, num_lanes));                               \
+  }                                                                           \
+  template <size_t N>                                                         \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL) NAME##Or(                                \
+      HWY_RVV_V(BASE, SEW, LMUL) no, HWY_RVV_D(BASE, SEW, N, SHIFT) d,        \
+      const HWY_RVV_T(BASE, SEW) * HWY_RESTRICT p, size_t num_lanes) {        \
+    /* Use a tail-undisturbed load in LoadNOr as the tail-undisturbed load */ \
+    /* operation below will set any lanes past the first */                   \
+    /* (lowest-indexed) HWY_MIN(num_lanes, Lanes(d)) lanes to the */          \
+    /* corresponding lanes in no */                                           \
+    return __riscv_v##OP##SEW##_v_##CHAR##SEW##LMUL##_tu(                     \
+        no, p, CappedLanes(d, num_lanes));                                    \
+  }
+
+HWY_RVV_FOREACH(HWY_RVV_LOADN, LoadN, le, _ALL_VIRT)
+#undef HWY_RVV_LOADN
+
 // ------------------------------ Store
 
 #define HWY_RVV_STORE(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, SHIFT, \
@@ -2140,6 +2193,17 @@ HWY_API vuint8m1_t TruncateTo(Simd<uint8_t, N, 0> d,
 }
 
 template <size_t N>
+HWY_API vuint16mf4_t TruncateTo(Simd<uint16_t, N, -3> d,
+                                const VFromD<Simd<uint64_t, N, -1>> v) {
+  const size_t avl = Lanes(d);
+  const vuint64m1_t v1 = __riscv_vand(v, 0xFFFF, avl);
+  const vuint32mf2_t v2 = __riscv_vnclipu_wx_u32mf2(
+      v1, 0, HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
+  return __riscv_vnclipu_wx_u16mf4(v2, 0,
+                                   HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
+}
+
+template <size_t N>
 HWY_API vuint16mf4_t TruncateTo(Simd<uint16_t, N, -2> d,
                                 const VFromD<Simd<uint64_t, N, 0>> v) {
   const size_t avl = Lanes(d);
@@ -2181,6 +2245,15 @@ HWY_API vuint16m2_t TruncateTo(Simd<uint16_t, N, 1> d,
       v1, 0, HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
   return __riscv_vnclipu_wx_u16m2(v2, 0,
                                   HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
+}
+
+template <size_t N>
+HWY_API vuint32mf2_t TruncateTo(Simd<uint32_t, N, -2> d,
+                                const VFromD<Simd<uint64_t, N, -1>> v) {
+  const size_t avl = Lanes(d);
+  const vuint64m1_t v1 = __riscv_vand(v, 0xFFFFFFFFu, avl);
+  return __riscv_vnclipu_wx_u32mf2(v1, 0,
+                                   HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
 }
 
 template <size_t N>
@@ -2272,6 +2345,15 @@ HWY_API vuint8m2_t TruncateTo(Simd<uint8_t, N, 1> d,
       v1, 0, HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
   return __riscv_vnclipu_wx_u8m2(v2, 0,
                                  HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
+}
+
+template <size_t N>
+HWY_API vuint16mf4_t TruncateTo(Simd<uint16_t, N, -3> d,
+                                const VFromD<Simd<uint32_t, N, -2>> v) {
+  const size_t avl = Lanes(d);
+  const vuint32mf2_t v1 = __riscv_vand(v, 0xFFFF, avl);
+  return __riscv_vnclipu_wx_u16mf4(v1, 0,
+                                   HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RDN, avl));
 }
 
 template <size_t N>
@@ -2653,7 +2735,7 @@ HWY_API VFromD<D> SlideDownLanes(D d, VFromD<D> v, size_t amt) {
   v = detail::SlideDown(v, amt);
   // Zero out upper lanes if v is a partial vector
   if (MaxLanes(d) < MaxLanes(DFromV<decltype(v)>())) {
-    v = IfThenElseZero(FirstN(d, Lanes(d) - amt), v);
+    v = detail::SlideUp(v, Zero(d), Lanes(d) - amt);
   }
   return v;
 }
@@ -2661,7 +2743,9 @@ HWY_API VFromD<D> SlideDownLanes(D d, VFromD<D> v, size_t amt) {
 // ------------------------------ ConcatUpperLower
 template <class D, class V>
 HWY_API V ConcatUpperLower(D d, const V hi, const V lo) {
-  return IfThenElse(FirstN(d, Lanes(d) / 2), lo, hi);
+  const size_t half = Lanes(d) / 2;
+  const V hi_down = detail::SlideDown(hi, half);
+  return detail::SlideUp(lo, hi_down, half);
 }
 
 // ------------------------------ ConcatLowerLower
@@ -2673,18 +2757,18 @@ HWY_API V ConcatLowerLower(D d, const V hi, const V lo) {
 // ------------------------------ ConcatUpperUpper
 template <class D, class V>
 HWY_API V ConcatUpperUpper(D d, const V hi, const V lo) {
-  // Move upper half into lower
-  const auto lo_down = detail::SlideDown(lo, Lanes(d) / 2);
-  return ConcatUpperLower(d, hi, lo_down);
+  const size_t half = Lanes(d) / 2;
+  const V hi_down = detail::SlideDown(hi, half);
+  const V lo_down = detail::SlideDown(lo, half);
+  return detail::SlideUp(lo_down, hi_down, half);
 }
 
 // ------------------------------ ConcatLowerUpper
 template <class D, class V>
 HWY_API V ConcatLowerUpper(D d, const V hi, const V lo) {
-  // Move half of both inputs to the other half
-  const auto hi_up = detail::SlideUp(hi, hi, Lanes(d) / 2);
-  const auto lo_down = detail::SlideDown(lo, Lanes(d) / 2);
-  return ConcatUpperLower(d, hi_up, lo_down);
+  const size_t half = Lanes(d) / 2;
+  const V lo_down = detail::SlideDown(lo, half);
+  return detail::SlideUp(lo_down, hi, half);
 }
 
 // ------------------------------ Combine
@@ -2776,7 +2860,7 @@ HWY_API VFromD<D> Slide1Down(D d, VFromD<D> v) {
   v = detail::Slide1Down(v);
   // Zero out upper lanes if v is a partial vector
   if (MaxLanes(d) < MaxLanes(DFromV<decltype(v)>())) {
-    v = IfThenElseZero(FirstN(d, Lanes(d) - 1), v);
+    v = detail::SlideUp(v, Zero(d), Lanes(d) - 1);
   }
   return v;
 }
@@ -3656,7 +3740,7 @@ HWY_API V ShiftRightLanes(const Simd<T, N, kPow2> d, V v) {
   using TI = TFromD<decltype(di)>;
   // For partial vectors, clear upper lanes so we shift in zeros.
   if (N <= 16 / sizeof(T)) {
-    v = IfThenElseZero(FirstN(d, N), v);
+    v = detail::SlideUp(v, Zero(d), N);
   }
 
   const auto shifted = detail::SlideDown(v, kLanes);
@@ -4244,6 +4328,9 @@ HWY_API size_t CompressBitsStore(VFromD<D> v, const uint8_t* HWY_RESTRICT bits,
 }
 
 // ------------------------------ FirstN (Iota0, Lt, RebindMask, SlideUp)
+
+// NOTE: do not use this as a building block within rvv-inl - it is likely more
+// efficient to use avl or detail::SlideUp.
 
 // Disallow for 8-bit because Iota is likely to overflow.
 template <class D, HWY_IF_NOT_T_SIZE_D(D, 1)>
