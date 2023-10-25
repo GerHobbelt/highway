@@ -3285,7 +3285,7 @@ HWY_API Vec128<uint64_t, N / 8> SumsOf8(const Vec128<uint8_t, N> v) {
 
 // Generic for all vector lengths
 template <class V, HWY_IF_I8_D(DFromV<V>)>
-HWY_API VFromD<Repartition<int64_t, DFromV<V>>> SumsOf8(V v) {
+HWY_API VFromD<RepartitionToWideX3<DFromV<V>>> SumsOf8(V v) {
   const DFromV<decltype(v)> d;
   const RebindToUnsigned<decltype(d)> du;
   const Repartition<int64_t, decltype(d)> di64;
@@ -3314,10 +3314,10 @@ HWY_API Vec128<uint64_t, N / 8> SumsOf8AbsDiff(const Vec128<uint8_t, N> a,
 
 // Generic for all vector lengths
 template <class V, HWY_IF_I8_D(DFromV<V>)>
-HWY_API VFromD<Repartition<int64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
-  const DFromV<decltype(a)> d;
+HWY_API VFromD<RepartitionToWideX3<DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
+  const DFromV<V> d;
   const RebindToUnsigned<decltype(d)> du;
-  const Repartition<int64_t, decltype(d)> di64;
+  const RepartitionToWideX3<decltype(d)> di64;
 
   // Adjust the values of a and b to be in the 0..255 range by adding 128 to
   // each lane of a and b (which is the same as an bitwise XOR of each i8 lane
@@ -3331,6 +3331,28 @@ HWY_API VFromD<Repartition<int64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
   // i64 vector as |(a[i] + 128) - (b[i] + 128)| == |a[i] - b[i]| is true
   return BitCast(di64, SumsOf8AbsDiff(a_adj, b_adj));
 }
+
+// ------------------------------ SumsOf4
+#if HWY_TARGET <= HWY_AVX3
+namespace detail {
+
+template <size_t N>
+HWY_INLINE Vec128<uint32_t, (N + 3) / 4> SumsOf4(
+    hwy::UnsignedTag /*type_tag*/, hwy::SizeTag<1> /*lane_size_tag*/,
+    Vec128<uint8_t, N> v) {
+  const DFromV<decltype(v)> d;
+
+  // _mm_maskz_dbsad_epu8 is used below as the odd uint16_t lanes need to be
+  // zeroed out and the sums of the 4 consecutive lanes are already in the
+  // even uint16_t lanes of the _mm_maskz_dbsad_epu8 result.
+  return Vec128<uint32_t, (N + 3) / 4>{
+      _mm_maskz_dbsad_epu8(static_cast<__mmask8>(0x55), v.raw, Zero(d).raw, 0)};
+}
+
+// detail::SumsOf4 for Vec128<int8_t, N> on AVX3 is implemented in x86_512-inl.h
+
+}  // namespace detail
+#endif  // HWY_TARGET <= HWY_AVX3
 
 // ------------------------------ SaturatedAdd
 

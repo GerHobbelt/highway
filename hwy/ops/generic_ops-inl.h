@@ -2052,16 +2052,14 @@ HWY_API V AbsDiff(V a, V b) {
 #define HWY_NATIVE_SUMS_OF_8_ABS_DIFF
 #endif
 
-template <class V, HWY_IF_U8_D(DFromV<V>),
+template <class V, HWY_IF_UI8_D(DFromV<V>),
           HWY_IF_V_SIZE_GT_D(DFromV<V>, (HWY_TARGET == HWY_SCALAR ? 0 : 4))>
-HWY_API Vec<Repartition<uint64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
-  return SumsOf8(AbsDiff(a, b));
-}
+HWY_API Vec<RepartitionToWideX3<DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RebindToUnsigned<decltype(d)> du;
+  const RepartitionToWideX3<decltype(d)> dw;
 
-template <class V, HWY_IF_I8_D(DFromV<V>),
-          HWY_IF_V_SIZE_GT_D(DFromV<V>, (HWY_TARGET == HWY_SCALAR ? 0 : 4))>
-HWY_API Vec<Repartition<int64_t, DFromV<V>>> SumsOf8AbsDiff(V a, V b) {
-  return SumsOf8(AbsDiff(a, b));
+  return BitCast(dw, SumsOf8(BitCast(du, AbsDiff(a, b))));
 }
 
 #endif  // HWY_NATIVE_SUMS_OF_8_ABS_DIFF
@@ -2583,7 +2581,7 @@ HWY_API VFromD<RepartitionToWide<DFromV<V>>> SumsOf2(V v) {
 namespace detail {
 
 template <class TypeTag, size_t kLaneSize, class V>
-HWY_INLINE VFromD<RepartitionToWide<RepartitionToWide<DFromV<V>>>> SumsOf4(
+HWY_INLINE VFromD<RepartitionToWideX2<DFromV<V>>> SumsOf4(
     TypeTag /*type_tag*/, hwy::SizeTag<kLaneSize> /*lane_size_tag*/, V v) {
   using hwy::HWY_NAMESPACE::SumsOf2;
   return SumsOf2(SumsOf2(v));
@@ -2592,7 +2590,7 @@ HWY_INLINE VFromD<RepartitionToWide<RepartitionToWide<DFromV<V>>>> SumsOf4(
 }  // namespace detail
 
 template <class V>
-HWY_API VFromD<RepartitionToWide<RepartitionToWide<DFromV<V>>>> SumsOf4(V v) {
+HWY_API VFromD<RepartitionToWideX2<DFromV<V>>> SumsOf4(V v) {
   return detail::SumsOf4(hwy::TypeTag<TFromV<V>>(),
                          hwy::SizeTag<sizeof(TFromV<V>)>(), v);
 }
