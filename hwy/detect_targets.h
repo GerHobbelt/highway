@@ -58,7 +58,10 @@
 // left-shifting 2^62), but still do not use bit 63 because it is the sign bit.
 
 // --------------------------- x86: 15 targets (+ one fallback)
-// Bits 0..6 reserved (7 targets)
+// Bits 0..5 reserved (6 targets)
+// Currently HWY_AVX3_DL plus a special case for CompressStore (10x as fast).
+// We may later also use VPCONFLICT.
+#define HWY_AVX3_ZEN4 (1LL << 6)
 // Currently satisfiable by Ice Lake (VNNI, VPCLMULQDQ, VPOPCNTDQ, VBMI, VBMI2,
 // VAES, BITALG). Later to be added: BF16 (Cooper Lake). VP2INTERSECT is only in
 // Tiger Lake? We do not yet have uses for GFNI.
@@ -96,8 +99,10 @@
 
 
 // --------------------------- IBM Power: 9 targets (+ one fallback)
-// Bits 43..48 reserved (6 targets)
-#define HWY_PPC8 (1LL << 49)  // v2.07 or 3
+// Bits 43..46 reserved (4 targets)
+#define HWY_PPC10 (1LL << 47)  // v3.1
+#define HWY_PPC9 (1LL << 48)   // v3.0
+#define HWY_PPC8 (1LL << 49)   // v2.07
 // Bits 50..51 reserved for prior VSX/AltiVec (2 targets)
 #define HWY_HIGHEST_TARGET_BIT_PPC 51
 
@@ -133,7 +138,8 @@
 // x86 clang-6: we saw multiple AVX2/3 compile errors and in one case invalid
 // SSE4 codegen (possibly only for msan), so disable all those targets.
 #if HWY_ARCH_X86 && (HWY_COMPILER_CLANG != 0 && HWY_COMPILER_CLANG < 700)
-#define HWY_BROKEN_TARGETS (HWY_SSE4 | HWY_AVX2 | HWY_AVX3 | HWY_AVX3_DL)
+#define HWY_BROKEN_TARGETS \
+  (HWY_SSE4 | HWY_AVX2 | HWY_AVX3 | HWY_AVX3_DL | HWY_AVX3_ZEN4)
 // This entails a major speed reduction, so warn unless the user explicitly
 // opts in to scalar-only.
 #if !defined(HWY_COMPILE_ONLY_SCALAR)
@@ -142,11 +148,11 @@
 
 // 32-bit may fail to compile AVX2/3.
 #elif HWY_ARCH_X86_32
-#define HWY_BROKEN_TARGETS (HWY_AVX2 | HWY_AVX3 | HWY_AVX3_DL)
+#define HWY_BROKEN_TARGETS (HWY_AVX2 | HWY_AVX3 | HWY_AVX3_DL | HWY_AVX3_ZEN4)
 
 // MSVC AVX3 support is buggy: https://github.com/Mysticial/Flops/issues/16
 #elif HWY_COMPILER_MSVC != 0
-#define HWY_BROKEN_TARGETS (HWY_AVX3 | HWY_AVX3_DL)
+#define HWY_BROKEN_TARGETS (HWY_AVX3 | HWY_AVX3_DL | HWY_AVX3_ZEN4)
 
 // armv7be has not been tested and is not yet supported.
 #elif HWY_ARCH_ARM_V7 &&          \
@@ -168,6 +174,14 @@
 #elif (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1100) || \
     (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1000)
 #define HWY_BROKEN_TARGETS (HWY_SVE | HWY_SVE2 | HWY_SVE_256 | HWY_SVE2_128)
+
+// HWY_PPC8, HWY_PPC9, and HWY_PPC10 are currently broken on big-endian
+#elif HWY_ARCH_PPC && defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define HWY_BROKEN_TARGETS 0
+#else
+#define HWY_BROKEN_TARGETS (HWY_PPC8 | HWY_PPC9 | HWY_PPC10)
+#endif
 
 #else
 #define HWY_BROKEN_TARGETS 0
@@ -219,12 +233,32 @@
 #define HWY_BASELINE_WASM 0
 #endif
 
-// Avoid choosing the PPC target until we have an implementation.
-#if HWY_ARCH_PPC && defined(__VSX__) && 0
+#if HWY_ARCH_PPC && (HWY_COMPILER_GCC || HWY_COMPILER_CLANG)
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
+    defined(__ALTIVEC__) && defined(__VSX__) && defined(__POWER8_VECTOR__) && \
+    (defined(__CRYPTO__) || defined(HWY_DISABLE_PPC8_CRYPTO))
 #define HWY_BASELINE_PPC8 HWY_PPC8
 #else
 #define HWY_BASELINE_PPC8 0
 #endif
+
+#if HWY_BASELINE_PPC8 != 0 && defined(__POWER9_VECTOR__)
+#define HWY_BASELINE_PPC9 HWY_PPC9
+#else
+#define HWY_BASELINE_PPC9 0
+#endif
+
+#if HWY_BASELINE_PPC9 != 0 && \
+    (defined(_ARCH_PWR10) || defined(__POWER10_VECTOR__))
+#define HWY_BASELINE_PPC10 HWY_PPC10
+#else
+#define HWY_BASELINE_PPC10 0
+#endif
+#else  // Non-PPC target or non-GCC/Clang compiler
+#define HWY_BASELINE_PPC8 0
+#define HWY_BASELINE_PPC9 0
+#define HWY_BASELINE_PPC10 0
+#endif  // HWY_ARCH_PPC && HWY_COMPILER_GCC
 
 #define HWY_BASELINE_SVE2 0
 #define HWY_BASELINE_SVE 0
@@ -352,8 +386,10 @@
     defined(__AVX512VBMI2__) && defined(__AVX512VPOPCNTDQ__) &&            \
     defined(__AVX512BITALG__)
 #define HWY_BASELINE_AVX3_DL HWY_AVX3_DL
+#define HWY_BASELINE_AVX3_ZEN4 HWY_AVX3_ZEN4
 #else
 #define HWY_BASELINE_AVX3_DL 0
+#define HWY_BASELINE_AVX3_ZEN4 0
 #endif
 
 #if HWY_ARCH_RVV && defined(__riscv_vector)
@@ -366,9 +402,10 @@
 #ifndef HWY_BASELINE_TARGETS
 #define HWY_BASELINE_TARGETS                                     \
   (HWY_BASELINE_SCALAR | HWY_BASELINE_WASM | HWY_BASELINE_PPC8 | \
-   HWY_BASELINE_SVE2 | HWY_BASELINE_SVE | HWY_BASELINE_NEON |    \
-   HWY_BASELINE_SSSE3 | HWY_BASELINE_SSE4 | HWY_BASELINE_AVX2 |  \
-   HWY_BASELINE_AVX3 | HWY_BASELINE_AVX3_DL | HWY_BASELINE_RVV)
+   HWY_BASELINE_PPC9 | HWY_BASELINE_PPC10 | HWY_BASELINE_SVE2 |  \
+   HWY_BASELINE_SVE | HWY_BASELINE_NEON | HWY_BASELINE_SSSE3 |   \
+   HWY_BASELINE_SSE4 | HWY_BASELINE_AVX2 | HWY_BASELINE_AVX3 |   \
+   HWY_BASELINE_AVX3_DL | HWY_BASELINE_AVX3_ZEN4 | HWY_BASELINE_RVV)
 #endif  // HWY_BASELINE_TARGETS
 
 //------------------------------------------------------------------------------
@@ -403,7 +440,8 @@
 #define HWY_HAVE_RUNTIME_DISPATCH 1
 // On Arm, currently only GCC does, and we require Linux to detect CPU
 // capabilities.
-#elif HWY_ARCH_ARM && HWY_COMPILER_GCC_ACTUAL && HWY_OS_LINUX && !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
+#elif (HWY_ARCH_ARM || HWY_ARCH_PPC) && HWY_COMPILER_GCC_ACTUAL && \
+      HWY_OS_LINUX && !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
 #define HWY_HAVE_RUNTIME_DISPATCH 1
 #else
 #define HWY_HAVE_RUNTIME_DISPATCH 0
@@ -437,7 +475,7 @@
 #if HWY_ARCH_X86
 #define HWY_ATTAINABLE_TARGETS                                        \
   HWY_ENABLED(HWY_BASELINE_SCALAR | HWY_SSSE3 | HWY_SSE4 | HWY_AVX2 | \
-              HWY_AVX3 | HWY_ATTAINABLE_AVX3_DL)
+              HWY_AVX3 | HWY_ATTAINABLE_AVX3_DL | HWY_AVX3_ZEN4)
 #elif HWY_ARCH_ARM && HWY_HAVE_RUNTIME_DISPATCH
 #define HWY_ATTAINABLE_TARGETS                                      \
   HWY_ENABLED(HWY_BASELINE_SCALAR | HWY_NEON | HWY_ATTAINABLE_SVE | \

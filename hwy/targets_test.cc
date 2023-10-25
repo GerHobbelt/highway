@@ -25,6 +25,7 @@ namespace fake {
     int64_t FakeFunction(int) { return HWY_##TGT; }                          \
   }
 
+DECLARE_FUNCTION(AVX3_ZEN4)
 DECLARE_FUNCTION(AVX3_DL)
 DECLARE_FUNCTION(AVX3)
 DECLARE_FUNCTION(AVX2)
@@ -36,6 +37,8 @@ DECLARE_FUNCTION(SVE2)
 DECLARE_FUNCTION(SVE_256)
 DECLARE_FUNCTION(SVE2_128)
 DECLARE_FUNCTION(PPC8)
+DECLARE_FUNCTION(PPC9)
+DECLARE_FUNCTION(PPC10)
 DECLARE_FUNCTION(WASM)
 DECLARE_FUNCTION(WASM_EMU256)
 DECLARE_FUNCTION(RVV)
@@ -70,6 +73,7 @@ void CallFunctionForTarget(int64_t target, int line) {
 
 void CheckFakeFunction() {
   // When adding a target, also add to DECLARE_FUNCTION above.
+  CallFunctionForTarget(HWY_AVX3_ZEN4, __LINE__);
   CallFunctionForTarget(HWY_AVX3_DL, __LINE__);
   CallFunctionForTarget(HWY_AVX3, __LINE__);
   CallFunctionForTarget(HWY_AVX2, __LINE__);
@@ -81,6 +85,8 @@ void CheckFakeFunction() {
   CallFunctionForTarget(HWY_SVE_256, __LINE__);
   CallFunctionForTarget(HWY_SVE2_128, __LINE__);
   CallFunctionForTarget(HWY_PPC8, __LINE__);
+  CallFunctionForTarget(HWY_PPC9, __LINE__);
+  CallFunctionForTarget(HWY_PPC10, __LINE__);
   CallFunctionForTarget(HWY_WASM, __LINE__);
   CallFunctionForTarget(HWY_WASM_EMU256, __LINE__);
   CallFunctionForTarget(HWY_RVV, __LINE__);

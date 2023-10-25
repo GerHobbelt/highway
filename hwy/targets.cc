@@ -42,8 +42,36 @@
 #include <cpuid.h>
 #endif  // HWY_COMPILER_MSVC
 
-#elif HWY_ARCH_ARM && HWY_OS_LINUX && !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
+#elif (HWY_ARCH_ARM || HWY_ARCH_PPC) && HWY_OS_LINUX && \
+      !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
 #include <sys/auxv.h>
+
+#if HWY_ARCH_PPC
+#ifndef PPC_FEATURE_HAS_ALTIVEC
+#define PPC_FEATURE_HAS_ALTIVEC 0x10000000
+#endif
+
+#ifndef PPC_FEATURE_HAS_VSX
+#define PPC_FEATURE_HAS_VSX 0x00000080
+#endif
+
+#ifndef PPC_FEATURE2_ARCH_2_07
+#define PPC_FEATURE2_ARCH_2_07 0x80000000
+#endif
+
+#ifndef PPC_FEATURE2_VEC_CRYPTO
+#define PPC_FEATURE2_VEC_CRYPTO 0x02000000
+#endif
+
+#ifndef PPC_FEATURE2_ARCH_3_00
+#define PPC_FEATURE2_ARCH_3_00 0x00800000
+#endif
+
+#ifndef PPC_FEATURE2_ARCH_3_1
+#define PPC_FEATURE2_ARCH_3_1 0x00040000
+#endif
+#endif  // HWY_ARCH_PPC
+
 #endif  // HWY_ARCH_*
 
 namespace hwy {
@@ -198,12 +226,15 @@ int64_t DetectTargets() {
 
 #if HWY_ARCH_X86
   bool has_osxsave = false;
+  bool is_amd = false;
   {  // ensures we do not accidentally use flags outside this block
     uint64_t flags = 0;
     uint32_t abcd[4];
 
     Cpuid(0, 0, abcd);
     const uint32_t max_level = abcd[0];
+    is_amd = max_level >= 1 && abcd[1] == 0x68747541 && abcd[2] == 0x444d4163 &&
+             abcd[3] == 0x69746e65;
 
     // Standard feature flags
     Cpuid(1, 0, abcd);
@@ -283,6 +314,12 @@ int64_t DetectTargets() {
     }
   }
 
+  // This is mainly to work around the slow Zen4 CompressStore. It's unclear
+  // whether subsequent AMD models will be affected; assume yes.
+  if ((bits & HWY_AVX3_DL) && is_amd) {
+    bits |= HWY_AVX3_ZEN4;
+  }
+
   if ((bits & HWY_ENABLED_BASELINE) != HWY_ENABLED_BASELINE) {
     fprintf(stderr,
             "WARNING: CPU supports %" PRIx64 " but software requires %" PRIx64
@@ -335,7 +372,38 @@ int64_t DetectTargets() {
             "\n",
             bits, static_cast<int64_t>(HWY_ENABLED_BASELINE));
   }
-#else   // HWY_ARCH_ARM && HWY_HAVE_RUNTIME_DISPATCH
+#elif HWY_ARCH_PPC && HWY_HAVE_RUNTIME_DISPATCH
+  using CapBits = unsigned long;  // NOLINT
+  const CapBits hw = getauxval(AT_HWCAP);
+  (void)hw;
+
+#if defined(HWY_DISABLE_PPC8_CRYPTO)
+  constexpr CapBits kGroupPPC8 = PPC_FEATURE2_ARCH_2_07;
+#else
+  constexpr CapBits kGroupPPC8 =
+    PPC_FEATURE2_ARCH_2_07 | PPC_FEATURE2_VEC_CRYPTO;
+#endif
+  if((hw & (PPC_FEATURE_HAS_ALTIVEC | PPC_FEATURE_HAS_VSX)) ==
+     (PPC_FEATURE_HAS_ALTIVEC | PPC_FEATURE_HAS_VSX)) {
+    const CapBits hw2 = getauxval(AT_HWCAP2);
+    if((hw2 & kGroupPPC8) == kGroupPPC8) {
+      bits |= HWY_PPC8;
+      if((hw2 & PPC_FEATURE2_ARCH_3_00) == PPC_FEATURE2_ARCH_3_00) {
+        bits |= HWY_PPC9;
+        if((hw2 & PPC_FEATURE2_ARCH_3_1) == PPC_FEATURE2_ARCH_3_1) {
+          bits |= HWY_PPC10;
+        }
+      }
+    }
+  }
+
+  if ((bits & HWY_ENABLED_BASELINE) != HWY_ENABLED_BASELINE) {
+    fprintf(stderr,
+            "WARNING: CPU supports %" PRIx64 " but software requires %" PRIx64
+            "\n",
+            bits, static_cast<int64_t>(HWY_ENABLED_BASELINE));
+  }
+#else   // HWY_ARCH_PPC && HWY_HAVE_RUNTIME_DISPATCH
   // TODO(janwas): detect for other platforms and check for baseline
   // This file is typically compiled without HWY_IS_TEST, but targets_test has
   // it set, and will expect all of its HWY_TARGETS (= all attainable) to be

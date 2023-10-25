@@ -229,9 +229,9 @@ Store(v, d2, ptr);  // Use d2, NOT DFromV<decltype(v)>()
 ## Targets
 
 Let `Target` denote an instruction set, one of
-`SCALAR/EMU128/SSSE3/SSE4/AVX2/AVX3/AVX3_DL/NEON/SVE/SVE2/WASM/RVV`. Each of
-these is represented by a `HWY_Target` (for example, `HWY_SSE4`) macro which
-expands to a unique power-of-two value.
+`SCALAR/EMU128/SSSE3/SSE4/AVX2/AVX3/AVX3_DL/AVX3_ZEN4/NEON/SVE/SVE2/WASM/RVV`.
+Each of these is represented by a `HWY_Target` (for example, `HWY_SSE4`) macro
+which expands to a unique power-of-two value.
 
 Note that x86 CPUs are segmented into dozens of feature flags and capabilities,
 which are often used together because they were introduced in the same CPU
@@ -774,6 +774,19 @@ false is zero, true has all bits set:
 *   <code>size_t **CompressBitsStore**(V v, const uint8_t* HWY_RESTRICT bits, D
     d, T* p)</code>: combination of `CompressStore` and `CompressBits`, see
     remarks there.
+
+#### Expand
+
+*   <code>V **Expand**(V v, M m)</code>: returns `r` such that `r[i]` is zero
+    where `m[i]` is false, and otherwise `v[s]`, where `s` is the number of
+    `m[0, i)` which are true. Scatters inputs in ascending index order to the
+    lanes whose mask is true and zeros all other lanes. Potentially slow with 8
+    and 16-bit lanes.
+
+*   <code>V **LoadExpand**(M m, D d, const T* p)</code>: returns `r` such that
+    `r[i]` is zero where `m[i]` is false, and otherwise `p[s]`, where `s` is the
+    number of `m[0, i)` which are true. May be implemented as `LoadU` followed
+    by `Expand`. Potentially slow with 8 and 16-bit lanes.
 
 ### Comparisons
 

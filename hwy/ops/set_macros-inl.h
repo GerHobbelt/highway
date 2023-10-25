@@ -98,6 +98,26 @@
   HWY_TARGET_STR_SSE4 ",avx,avx2" HWY_TARGET_STR_BMI2_FMA HWY_TARGET_STR_F16C
 #define HWY_TARGET_STR_AVX3 \
   HWY_TARGET_STR_AVX2 ",avx512f,avx512vl,avx512dq,avx512bw"
+#define HWY_TARGET_STR_AVX3_DL                                    \
+  HWY_TARGET_STR_AVX3                                             \
+  ",vpclmulqdq,avx512vbmi,avx512vbmi2,vaes,avxvnni,avx512bitalg," \
+  "avx512vpopcntdq"
+
+#if defined(HWY_DISABLE_PPC8_CRYPTO)
+#define HWY_TARGET_STR_PPC8_CRYPTO ""
+#else
+#define HWY_TARGET_STR_PPC8_CRYPTO ",crypto"
+#endif
+
+#define HWY_TARGET_STR_PPC8 \
+  "altivec,vsx,power8-vector" HWY_TARGET_STR_PPC8_CRYPTO
+#define HWY_TARGET_STR_PPC9 HWY_TARGET_STR_PPC8 ",power9-vector"
+
+#if HWY_COMPILER_CLANG
+#define HWY_TARGET_STR_PPC10 HWY_TARGET_STR_PPC9 ",power10-vector"
+#else
+#define HWY_TARGET_STR_PPC10 HWY_TARGET_STR_PPC9 ",cpu=power10"
+#endif
 
 // Before include guard so we redefine HWY_TARGET_STR on each include,
 // governed by the current HWY_TARGET.
@@ -170,7 +190,8 @@
 
 //-----------------------------------------------------------------------------
 // AVX3[_DL]
-#elif HWY_TARGET == HWY_AVX3 || HWY_TARGET == HWY_AVX3_DL
+#elif HWY_TARGET == HWY_AVX3 || HWY_TARGET == HWY_AVX3_DL || \
+    HWY_TARGET == HWY_AVX3_ZEN4
 
 #define HWY_ALIGN alignas(64)
 #define HWY_MAX_BYTES 64
@@ -193,18 +214,22 @@
 #elif HWY_TARGET == HWY_AVX3_DL
 
 #define HWY_NAMESPACE N_AVX3_DL
-#define HWY_TARGET_STR                                            \
-  HWY_TARGET_STR_AVX3                                             \
-  ",vpclmulqdq,avx512vbmi,avx512vbmi2,vaes,avxvnni,avx512bitalg," \
-  "avx512vpopcntdq"
+#define HWY_TARGET_STR HWY_TARGET_STR_AVX3_DL
+
+#elif HWY_TARGET == HWY_AVX3_ZEN4
+
+#define HWY_NAMESPACE N_AVX3_ZEN4
+// Currently the same as HWY_AVX3_DL: both support Icelake.
+#define HWY_TARGET_STR HWY_TARGET_STR_AVX3_DL
 
 #else
 #error "Logic error"
-#endif  // HWY_TARGET == HWY_AVX3_DL
+#endif  // HWY_TARGET == HWY_AVX3_ZEN4
 
 //-----------------------------------------------------------------------------
-// PPC8
-#elif HWY_TARGET == HWY_PPC8
+// PPC8, PPC9, PPC10
+#elif HWY_TARGET == HWY_PPC8 || HWY_TARGET == HWY_PPC9 || \
+    HWY_TARGET == HWY_PPC10
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
@@ -219,9 +244,24 @@
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
-#define HWY_NAMESPACE N_PPC8
+#if HWY_TARGET == HWY_PPC8
 
-#define HWY_TARGET_STR "altivec,vsx"
+#define HWY_NAMESPACE N_PPC8
+#define HWY_TARGET_STR HWY_TARGET_STR_PPC8
+
+#elif HWY_TARGET == HWY_PPC9
+
+#define HWY_NAMESPACE N_PPC9
+#define HWY_TARGET_STR HWY_TARGET_STR_PPC9
+
+#elif HWY_TARGET == HWY_PPC10
+
+#define HWY_NAMESPACE N_PPC10
+#define HWY_TARGET_STR HWY_TARGET_STR_PPC10
+
+#else
+#error "Logic error"
+#endif  // HWY_TARGET == HWY_PPC10
 
 //-----------------------------------------------------------------------------
 // NEON

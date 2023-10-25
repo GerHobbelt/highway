@@ -155,6 +155,28 @@ struct Mask128 {
   typename detail::Raw128<T>::type raw;
 };
 
+#endif  // AVX2 or below
+
+namespace detail {
+
+// Returns the lowest N of the _mm_movemask* bits.
+template <typename T, size_t N>
+constexpr uint64_t OnlyActive(uint64_t mask_bits) {
+  return ((N * sizeof(T)) == 16) ? mask_bits : mask_bits & ((1ull << N) - 1);
+}
+
+}  // namespace detail
+
+#if HWY_TARGET <= HWY_AVX3
+namespace detail {
+
+// Used by Expand() emulation, which is required for both AVX3 and AVX2.
+template <typename T, size_t N>
+HWY_INLINE uint64_t BitsFromMask(const Mask128<T, N> mask) {
+  return OnlyActive<T, N>(mask.raw);
+}
+
+}  // namespace detail
 #endif  // HWY_TARGET <= HWY_AVX3
 
 template <class V>
@@ -6101,7 +6123,8 @@ HWY_API size_t CompressBlendedStore(VFromD<D> v, MFromD<D> m, D d,
                                     T* HWY_RESTRICT unaligned) {
   // AVX-512 already does the blending at no extra cost (latency 11,
   // rthroughput 2 - same as compress plus store).
-  if (HWY_TARGET <= HWY_AVX3_DL || sizeof(T) > 2) {
+  if (HWY_TARGET == HWY_AVX3_DL ||
+      (HWY_TARGET != HWY_AVX3_ZEN4 && sizeof(T) > 2)) {
     // We're relying on the mask to blend. Clear the undefined upper bits.
     constexpr size_t kN = MaxLanes(d);
     if (kN != 16 / sizeof(T)) {
@@ -6167,12 +6190,6 @@ HWY_INLINE uint64_t BitsFromMask(hwy::SizeTag<8> /*tag*/, Mask128<T, N> mask) {
   const Simd<double, N, 0> df;
   const auto sign_bits = BitCast(df, VecFromMask(d, mask));
   return U64FromInt(_mm_movemask_pd(sign_bits.raw));
-}
-
-// Returns the lowest N of the _mm_movemask* bits.
-template <typename T, size_t N>
-constexpr uint64_t OnlyActive(uint64_t mask_bits) {
-  return ((N * sizeof(T)) == 16) ? mask_bits : mask_bits & ((1ull << N) - 1);
 }
 
 template <typename T, size_t N>
@@ -6771,6 +6788,131 @@ HWY_API size_t CompressBitsStore(VFromD<D> v, const uint8_t* HWY_RESTRICT bits,
 
 #endif  // HWY_TARGET <= HWY_AVX3
 
+// ------------------------------ Expand
+
+// Otherwise, use the generic_ops-inl.h fallback.
+#if HWY_TARGET <= HWY_AVX3 || HWY_IDE
+
+// The native instructions for 8/16-bit actually require VBMI2 (HWY_AVX3_DL),
+// but we still want to override generic_ops-inl's table-based implementation
+// whenever we have the 32-bit expand provided by AVX3.
+#ifdef HWY_NATIVE_EXPAND
+#undef HWY_NATIVE_EXPAND
+#else
+#define HWY_NATIVE_EXPAND
+#endif
+
+namespace detail {
+
+#if HWY_TARGET <= HWY_AVX3_DL || HWY_IDE  // VBMI2
+
+template <size_t N>
+HWY_INLINE Vec128<uint8_t, N> NativeExpand(Vec128<uint8_t, N> v,
+                                           Mask128<uint8_t, N> mask) {
+  return Vec128<uint8_t, N>{_mm_maskz_expand_epi8(mask.raw, v.raw)};
+}
+
+template <size_t N>
+HWY_INLINE Vec128<uint16_t, N> NativeExpand(Vec128<uint16_t, N> v,
+                                            Mask128<uint16_t, N> mask) {
+  return Vec128<uint16_t, N>{_mm_maskz_expand_epi16(mask.raw, v.raw)};
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_U8_D(D)>
+HWY_INLINE VFromD<D> NativeLoadExpand(MFromD<D> mask, D /* d */,
+                                      const uint8_t* HWY_RESTRICT unaligned) {
+  return VFromD<D>{_mm_maskz_expandloadu_epi8(mask.raw, unaligned)};
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_U16_D(D)>
+HWY_INLINE VFromD<D> NativeLoadExpand(MFromD<D> mask, D /* d */,
+                                      const uint16_t* HWY_RESTRICT unaligned) {
+  return VFromD<D>{_mm_maskz_expandloadu_epi16(mask.raw, unaligned)};
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3_DL
+
+template <size_t N>
+HWY_INLINE Vec128<uint32_t, N> NativeExpand(Vec128<uint32_t, N> v,
+                                            Mask128<uint32_t, N> mask) {
+  return Vec128<uint32_t, N>{_mm_maskz_expand_epi32(mask.raw, v.raw)};
+}
+
+template <size_t N>
+HWY_INLINE Vec128<uint64_t, N> NativeExpand(Vec128<uint64_t, N> v,
+                                            Mask128<uint64_t, N> mask) {
+  return Vec128<uint64_t, N>{_mm_maskz_expand_epi64(mask.raw, v.raw)};
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_U32_D(D)>
+HWY_INLINE VFromD<D> NativeLoadExpand(MFromD<D> mask, D /* d */,
+                                      const uint32_t* HWY_RESTRICT unaligned) {
+  return VFromD<D>{_mm_maskz_expandloadu_epi32(mask.raw, unaligned)};
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_U64_D(D)>
+HWY_INLINE VFromD<D> NativeLoadExpand(MFromD<D> mask, D /* d */,
+                                      const uint64_t* HWY_RESTRICT unaligned) {
+  return VFromD<D>{_mm_maskz_expandloadu_epi64(mask.raw, unaligned)};
+}
+
+}  // namespace detail
+
+// Otherwise, 8/16-bit are implemented in x86_512 using PromoteTo.
+#if HWY_TARGET <= HWY_AVX3_DL || HWY_IDE  // VBMI2
+
+template <typename T, size_t N, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2))>
+HWY_API Vec128<T, N> Expand(Vec128<T, N> v, Mask128<T, N> mask) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+  const MFromD<decltype(du)> mu = RebindMask(du, mask);
+  return BitCast(d, detail::NativeExpand(BitCast(du, v), mu));
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3_DL
+
+template <typename T, size_t N, HWY_IF_T_SIZE_ONE_OF(T, (1 << 4) | (1 << 8))>
+HWY_API Vec128<T, N> Expand(Vec128<T, N> v, Mask128<T, N> mask) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+  const MFromD<decltype(du)> mu = RebindMask(du, mask);
+  return BitCast(d, detail::NativeExpand(BitCast(du, v), mu));
+}
+
+// ------------------------------ LoadExpand
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 1) | (1 << 2))>
+HWY_API VFromD<D> LoadExpand(MFromD<D> mask, D d,
+                             const TFromD<D>* HWY_RESTRICT unaligned) {
+#if HWY_TARGET <= HWY_AVX3_DL  // VBMI2
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  const TU* HWY_RESTRICT pu = reinterpret_cast<const TU*>(unaligned);
+  const MFromD<decltype(du)> mu = RebindMask(du, mask);
+  return BitCast(d, detail::NativeLoadExpand(mu, du, pu));
+#else
+  return Expand(LoadU(d, unaligned), mask);
+#endif
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 4) | (1 << 8))>
+HWY_API VFromD<D> LoadExpand(MFromD<D> mask, D d,
+                             const TFromD<D>* HWY_RESTRICT unaligned) {
+#if HWY_TARGET <= HWY_AVX3
+  const RebindToUnsigned<decltype(d)> du;
+  using TU = TFromD<decltype(du)>;
+  const TU* HWY_RESTRICT pu = reinterpret_cast<const TU*>(unaligned);
+  const MFromD<decltype(du)> mu = RebindMask(du, mask);
+  return BitCast(d, detail::NativeLoadExpand(mu, du, pu));
+#else
+  return Expand(LoadU(d, unaligned), mask);
+#endif
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3
+
 // ------------------------------ StoreInterleaved2/3/4
 
 // HWY_NATIVE_LOAD_STORE_INTERLEAVED not set, hence defined in
@@ -7044,8 +7186,7 @@ namespace detail {
 // Returns vector-mask for Lt128. Also used by x86_256/x86_512.
 template <class D, class V = VFromD<D>>
 HWY_INLINE V Lt128Vec(const D d, const V a, const V b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
-                "D must be u64");
+  static_assert(IsSame<TFromD<D>, uint64_t>(), "D must be u64");
   // Truth table of Eq and Lt for Hi and Lo u64.
   // (removed lines with (=H && cH) or (=L && cL) - cannot both be true)
   // =H =L cH cL  | out = cH | (=H & cL)
@@ -7069,8 +7210,7 @@ HWY_INLINE V Lt128Vec(const D d, const V a, const V b) {
 // Returns vector-mask for Eq128. Also used by x86_256/x86_512.
 template <class D, class V = VFromD<D>>
 HWY_INLINE V Eq128Vec(const D d, const V a, const V b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
-                "D must be u64");
+  static_assert(IsSame<TFromD<D>, uint64_t>(), "D must be u64");
   const auto eqHL = VecFromMask(d, Eq(a, b));
   const auto eqLH = Reverse2(d, eqHL);
   return And(eqHL, eqLH);
@@ -7078,8 +7218,7 @@ HWY_INLINE V Eq128Vec(const D d, const V a, const V b) {
 
 template <class D, class V = VFromD<D>>
 HWY_INLINE V Ne128Vec(const D d, const V a, const V b) {
-  static_assert(!IsSigned<TFromD<D>>() && sizeof(TFromD<D>) == 8,
-                "D must be u64");
+  static_assert(IsSame<TFromD<D>, uint64_t>(), "D must be u64");
   const auto neHL = VecFromMask(d, Ne(a, b));
   const auto neLH = Reverse2(d, neHL);
   return Or(neHL, neLH);

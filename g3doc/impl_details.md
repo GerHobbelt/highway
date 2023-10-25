@@ -222,8 +222,8 @@ and avoid duplicating those functions in x86_256 and x86_512), we use
 When adding a new op, it is often necessary to consult the reference for each
 platform's intrinsics.
 
-For x86 targets `HWY_SSSE3`, `HWY_SSE4`, `HWY_AVX2`, `HWY_AVX3`, `HWY_AVX3_DL`
-Intel provides a
+For x86 targets `HWY_SSSE3`, `HWY_SSE4`, `HWY_AVX2`, `HWY_AVX3`, `HWY_AVX3_DL`,
+`HWY_AVX3_ZEN4` Intel provides a
 [searchable reference](https://www.intel.com/content/www/us/en/docs/intrinsics-guide).
 
 For Arm targets `HWY_NEON`, `HWY_SVE` (plus its specialization for 256-bit
@@ -240,6 +240,10 @@ For WebAssembly target `HWY_WASM`, we recommend consulting the
 [intrinsics header](https://github.com/llvm/llvm-project/blob/main/clang/lib/Headers/wasm_simd128.h).
 There is also an unofficial
 [searchable list of intrinsics](https://nemequ.github.io/waspr/intrinsics).
+
+For POWER8/9/10, there is [documentation of intrinsics](https://files.openpower.foundation/s/9nRDmJgfjM8MpR7),
+the [ISA](https://files.openpower.foundation/s/dAYSdGzTfW4j2r2), plus a
+[searchable reference](https://www.ibm.com/docs/en/openxl-c-and-cpp-aix/17.1.1?).
 
 ## Why scalar target
 
