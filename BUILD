@@ -245,6 +245,35 @@ cc_library(
 )
 
 cc_library(
+    name = "thread_pool",
+    srcs = [
+        "hwy/contrib/thread_pool/thread_pool.cc",
+    ],
+    hdrs = [
+        "hwy/contrib/thread_pool/thread_pool.h",
+    ],
+    compatible_with = [],
+    copts = COPTS,
+    deps = [
+        ":hwy",  # HWY_ASSERT
+    ],
+)
+
+cc_library(
+    name = "matvec",
+    compatible_with = [],
+    copts = COPTS,
+    textual_hdrs = [
+        "hwy/contrib/matvec/matvec-inl.h",
+    ],
+    deps = [
+        ":hwy",
+        ":nanobenchmark",
+        ":thread_pool",
+    ],
+)
+
+cc_library(
     name = "image",
     srcs = [
         "hwy/contrib/image/image.cc",
@@ -269,20 +298,6 @@ cc_library(
     ],
     deps = [
         ":hwy",
-    ],
-)
-
-cc_library(
-    name = "thread_pool",
-    srcs = [
-        "hwy/contrib/thread_pool/thread_pool.cc",
-    ],
-    hdrs = [
-        "hwy/contrib/thread_pool/thread_pool.h",
-    ],
-    compatible_with = [],
-    deps = [
-        ":hwy",  # HWY_ASSERT
     ],
 )
 
@@ -375,6 +390,7 @@ HWY_TESTS = [
     ("hwy/contrib/dot/", "dot_test"),
     ("hwy/contrib/image/", "image_test"),
     ("hwy/contrib/math/", "math_test"),
+    ("hwy/contrib/matvec/", "matvec_test"),
     ("hwy/contrib/thread_pool/", "thread_pool_test"),
     ("hwy/contrib/unroller/", "unroller_test"),
     # contrib/sort has its own BUILD, we also add sort_test to GUITAR_TESTS.
@@ -396,12 +412,15 @@ HWY_TESTS = [
     ("hwy/tests/", "count_test"),
     ("hwy/tests/", "crypto_test"),
     ("hwy/tests/", "demote_test"),
+    ("hwy/tests/", "dup128_vec_test"),
     ("hwy/tests/", "expand_test"),
     ("hwy/tests/", "float_test"),
     ("hwy/tests/", "foreach_vec_test"),
     ("hwy/tests/", "if_test"),
     ("hwy/tests/", "interleaved_test"),
     ("hwy/tests/", "logical_test"),
+    ("hwy/tests/", "mask_combine_test"),
+    ("hwy/tests/", "mask_convert_test"),
     ("hwy/tests/", "mask_mem_test"),
     ("hwy/tests/", "mask_test"),
     ("hwy/tests/", "masked_arithmetic_test"),
@@ -414,10 +433,12 @@ HWY_TESTS = [
     ("hwy/tests/", "shift_test"),
     ("hwy/tests/", "shuffle4_test"),
     ("hwy/tests/", "slide_up_down_test"),
+    ("hwy/tests/", "sums_abs_diff_test"),
     ("hwy/tests/", "swizzle_block_test"),
     ("hwy/tests/", "swizzle_test"),
     ("hwy/tests/", "table_test"),
     ("hwy/tests/", "test_util_test"),
+    ("hwy/tests/", "truncate_test"),
     ("hwy/tests/", "tuple_test"),
     ("hwy/tests/", "widen_mul_test"),
 ]
@@ -440,6 +461,7 @@ HWY_TEST_DEPS = [
     ":hwy_test_util",
     ":image",
     ":math",
+    ":matvec",
     ":nanobenchmark",
     ":skeleton",
     ":thread_pool",

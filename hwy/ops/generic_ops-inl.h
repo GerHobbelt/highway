@@ -212,6 +212,146 @@ HWY_API V BitwiseIfThenElse(V mask, V yes, V no) {
 
 #endif  // HWY_NATIVE_BITWISE_IF_THEN_ELSE
 
+// ------------------------------ PromoteMaskTo
+
+#if (defined(HWY_NATIVE_PROMOTE_MASK_TO) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_PROMOTE_MASK_TO
+#undef HWY_NATIVE_PROMOTE_MASK_TO
+#else
+#define HWY_NATIVE_PROMOTE_MASK_TO
+#endif
+
+template <class DTo, class DFrom>
+HWY_API Mask<DTo> PromoteMaskTo(DTo d_to, DFrom d_from, Mask<DFrom> m) {
+  static_assert(
+      sizeof(TFromD<DTo>) > sizeof(TFromD<DFrom>),
+      "sizeof(TFromD<DTo>) must be greater than sizeof(TFromD<DFrom>)");
+  static_assert(
+      IsSame<Mask<DFrom>, Mask<Rebind<TFromD<DFrom>, DTo>>>(),
+      "Mask<DFrom> must be the same type as Mask<Rebind<TFromD<DFrom>, DTo>>");
+
+  const RebindToSigned<decltype(d_to)> di_to;
+  const RebindToSigned<decltype(d_from)> di_from;
+
+  return MaskFromVec(BitCast(
+      d_to, PromoteTo(di_to, BitCast(di_from, VecFromMask(d_from, m)))));
+}
+
+#endif  // HWY_NATIVE_PROMOTE_MASK_TO
+
+// ------------------------------ DemoteMaskTo
+
+#if (defined(HWY_NATIVE_DEMOTE_MASK_TO) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_DEMOTE_MASK_TO
+#undef HWY_NATIVE_DEMOTE_MASK_TO
+#else
+#define HWY_NATIVE_DEMOTE_MASK_TO
+#endif
+
+template <class DTo, class DFrom>
+HWY_API Mask<DTo> DemoteMaskTo(DTo d_to, DFrom d_from, Mask<DFrom> m) {
+  static_assert(sizeof(TFromD<DTo>) < sizeof(TFromD<DFrom>),
+                "sizeof(TFromD<DTo>) must be less than sizeof(TFromD<DFrom>)");
+  static_assert(
+      IsSame<Mask<DFrom>, Mask<Rebind<TFromD<DFrom>, DTo>>>(),
+      "Mask<DFrom> must be the same type as Mask<Rebind<TFromD<DFrom>, DTo>>");
+
+  const RebindToSigned<decltype(d_to)> di_to;
+  const RebindToSigned<decltype(d_from)> di_from;
+
+  return MaskFromVec(
+      BitCast(d_to, DemoteTo(di_to, BitCast(di_from, VecFromMask(d_from, m)))));
+}
+
+#endif  // HWY_NATIVE_DEMOTE_MASK_TO
+
+// ------------------------------ CombineMasks
+
+#if (defined(HWY_NATIVE_COMBINE_MASKS) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_COMBINE_MASKS
+#undef HWY_NATIVE_COMBINE_MASKS
+#else
+#define HWY_NATIVE_COMBINE_MASKS
+#endif
+
+#if HWY_TARGET != HWY_SCALAR
+template <class D>
+HWY_API Mask<D> CombineMasks(D d, Mask<Half<D>> hi, Mask<Half<D>> lo) {
+  const Half<decltype(d)> dh;
+  return MaskFromVec(Combine(d, VecFromMask(dh, hi), VecFromMask(dh, lo)));
+}
+#endif
+
+#endif  // HWY_NATIVE_COMBINE_MASKS
+
+// ------------------------------ LowerHalfOfMask
+
+#if (defined(HWY_NATIVE_LOWER_HALF_OF_MASK) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_LOWER_HALF_OF_MASK
+#undef HWY_NATIVE_LOWER_HALF_OF_MASK
+#else
+#define HWY_NATIVE_LOWER_HALF_OF_MASK
+#endif
+
+template <class D>
+HWY_API Mask<D> LowerHalfOfMask(D d, Mask<Twice<D>> m) {
+  const Twice<decltype(d)> dt;
+  return MaskFromVec(LowerHalf(d, VecFromMask(dt, m)));
+}
+
+#endif  // HWY_NATIVE_LOWER_HALF_OF_MASK
+
+// ------------------------------ UpperHalfOfMask
+
+#if (defined(HWY_NATIVE_UPPER_HALF_OF_MASK) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_UPPER_HALF_OF_MASK
+#undef HWY_NATIVE_UPPER_HALF_OF_MASK
+#else
+#define HWY_NATIVE_UPPER_HALF_OF_MASK
+#endif
+
+#if HWY_TARGET != HWY_SCALAR
+template <class D>
+HWY_API Mask<D> UpperHalfOfMask(D d, Mask<Twice<D>> m) {
+  const Twice<decltype(d)> dt;
+  return MaskFromVec(UpperHalf(d, VecFromMask(dt, m)));
+}
+#endif
+
+#endif  // HWY_NATIVE_UPPER_HALF_OF_MASK
+
+// ------------------------------ OrderedDemote2MasksTo
+
+#if (defined(HWY_NATIVE_ORDERED_DEMOTE_2_MASKS_TO) == \
+     defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_ORDERED_DEMOTE_2_MASKS_TO
+#undef HWY_NATIVE_ORDERED_DEMOTE_2_MASKS_TO
+#else
+#define HWY_NATIVE_ORDERED_DEMOTE_2_MASKS_TO
+#endif
+
+#if HWY_TARGET != HWY_SCALAR
+template <class DTo, class DFrom>
+HWY_API Mask<DTo> OrderedDemote2MasksTo(DTo d_to, DFrom d_from, Mask<DFrom> a,
+                                        Mask<DFrom> b) {
+  static_assert(
+      sizeof(TFromD<DTo>) == sizeof(TFromD<DFrom>) / 2,
+      "sizeof(TFromD<DTo>) must be equal to sizeof(TFromD<DFrom>) / 2");
+  static_assert(IsSame<Mask<DTo>, Mask<Repartition<TFromD<DTo>, DFrom>>>(),
+                "Mask<DTo> must be the same type as "
+                "Mask<Repartition<TFromD<DTo>, DFrom>>>()");
+
+  const RebindToSigned<decltype(d_from)> di_from;
+  const RebindToSigned<decltype(d_to)> di_to;
+
+  const auto va = BitCast(di_from, VecFromMask(d_from, a));
+  const auto vb = BitCast(di_from, VecFromMask(d_from, b));
+  return MaskFromVec(BitCast(d_to, OrderedDemote2To(di_to, va, vb)));
+}
+#endif
+
+#endif  // HWY_NATIVE_ORDERED_DEMOTE_2_MASKS_TO
+
 // ------------------------------ InterleaveWholeLower/InterleaveWholeUpper
 #if (defined(HWY_NATIVE_INTERLEAVE_WHOLE) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_INTERLEAVE_WHOLE
@@ -1444,19 +1584,22 @@ HWY_INLINE VFromD<DTo> LoadNResizeBitCast(DTo d_to, DFrom d_from,
 
 }  // namespace detail
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 1)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 1),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   return (num_lanes > 0) ? LoadU(d, p) : Zero(d);
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 1)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 1),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   return (num_lanes > 0) ? LoadU(d, p) : no;
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 2)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 2),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   const FixedTag<TFromD<D>, 1> d1;
@@ -1466,7 +1609,8 @@ HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
   return detail::LoadNResizeBitCast(d, d1, LoadU(d1, p));
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 2)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 2),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   const FixedTag<TFromD<D>, 1> d1;
@@ -1476,7 +1620,8 @@ HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
   return InterleaveLower(ResizeBitCast(d, LoadU(d1, p)), no);
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 4)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 4),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   const FixedTag<TFromD<D>, 2> d2;
@@ -1491,7 +1636,8 @@ HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
   return (num_lanes == 2) ? v_lo : InsertLane(v_lo, 2, p[2]);
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 4)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 4),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   const FixedTag<TFromD<D>, 2> d2;
@@ -1506,7 +1652,8 @@ HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
   return (num_lanes == 2) ? v_lo : InsertLane(v_lo, 2, p[2]);
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 8),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   const FixedTag<TFromD<D>, 4> d4;
@@ -1541,7 +1688,8 @@ HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
   }
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 8),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   const FixedTag<TFromD<D>, 4> d4;
@@ -1578,7 +1726,8 @@ HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
   }
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 16)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 16),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   const FixedTag<TFromD<D>, 8> d8;
@@ -1623,7 +1772,8 @@ HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
   }
 }
 
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 16)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_LANES_D(D, 16),
+          HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   const FixedTag<TFromD<D>, 8> d8;
@@ -1678,7 +1828,7 @@ HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
 
 #if HWY_MAX_BYTES >= 32
 
-template <class D, HWY_IF_V_SIZE_GT_D(D, 16)>
+template <class D, HWY_IF_V_SIZE_GT_D(D, 16), HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
                         size_t num_lanes) {
   if (num_lanes >= Lanes(d)) return LoadU(d, p);
@@ -1694,7 +1844,7 @@ HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
   }
 }
 
-template <class D, HWY_IF_V_SIZE_GT_D(D, 16)>
+template <class D, HWY_IF_V_SIZE_GT_D(D, 16), HWY_IF_NOT_BF16_D(D)>
 HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
                           size_t num_lanes) {
   if (num_lanes >= Lanes(d)) return LoadU(d, p);
@@ -1714,6 +1864,22 @@ HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
 }
 
 #endif  // HWY_MAX_BYTES >= 32
+
+template <class D, HWY_IF_BF16_D(D)>
+HWY_API VFromD<D> LoadN(D d, const TFromD<D>* HWY_RESTRICT p,
+                        size_t num_lanes) {
+  const RebindToUnsigned<D> du;
+  return BitCast(d, LoadN(du, reinterpret_cast<const uint16_t*>(p), num_lanes));
+}
+
+template <class D, HWY_IF_BF16_D(D)>
+HWY_API VFromD<D> LoadNOr(VFromD<D> no, D d, const TFromD<D>* HWY_RESTRICT p,
+                          size_t num_lanes) {
+  const RebindToUnsigned<D> du;
+  return BitCast(d, LoadNOr(BitCast(du, no), du,
+                            reinterpret_cast<const uint16_t*>(p), num_lanes));
+}
+
 #else   // !HWY_MEM_OPS_MIGHT_FAULT || HWY_HAVE_SCALABLE
 
 // For SVE and non-sanitizer AVX-512; RVV has its own specialization.

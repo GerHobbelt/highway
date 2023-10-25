@@ -521,6 +521,102 @@ HWY_API VFromD<D> ResizeBitCast(D d, FromV v) {
   return BitCast(d, v);
 }
 
+// ------------------------------ Dup128VecFromValues
+
+template <class D, HWY_IF_I8_D(D)>
+HWY_API svint8_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                     TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                     TFromD<D> t5, TFromD<D> t6, TFromD<D> t7,
+                                     TFromD<D> t8, TFromD<D> t9, TFromD<D> t10,
+                                     TFromD<D> t11, TFromD<D> t12,
+                                     TFromD<D> t13, TFromD<D> t14,
+                                     TFromD<D> t15) {
+  return svdupq_n_s8(t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
+                     t14, t15);
+}
+
+template <class D, HWY_IF_U8_D(D)>
+HWY_API svuint8_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6, TFromD<D> t7,
+                                      TFromD<D> t8, TFromD<D> t9, TFromD<D> t10,
+                                      TFromD<D> t11, TFromD<D> t12,
+                                      TFromD<D> t13, TFromD<D> t14,
+                                      TFromD<D> t15) {
+  return svdupq_n_u8(t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13,
+                     t14, t15);
+}
+
+template <class D, HWY_IF_I16_D(D)>
+HWY_API svint16_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  return svdupq_n_s16(t0, t1, t2, t3, t4, t5, t6, t7);
+}
+
+template <class D, HWY_IF_U16_D(D)>
+HWY_API svuint16_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                       TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                       TFromD<D> t5, TFromD<D> t6,
+                                       TFromD<D> t7) {
+  return svdupq_n_u16(t0, t1, t2, t3, t4, t5, t6, t7);
+}
+
+template <class D, HWY_IF_F16_D(D)>
+HWY_API svfloat16_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                        TFromD<D> t2, TFromD<D> t3,
+                                        TFromD<D> t4, TFromD<D> t5,
+                                        TFromD<D> t6, TFromD<D> t7) {
+  return svdupq_n_f16(t0, t1, t2, t3, t4, t5, t6, t7);
+}
+
+template <class D, HWY_IF_BF16_D(D)>
+HWY_API VBF16 Dup128VecFromValues(D d, TFromD<D> t0, TFromD<D> t1, TFromD<D> t2,
+                                  TFromD<D> t3, TFromD<D> t4, TFromD<D> t5,
+                                  TFromD<D> t6, TFromD<D> t7) {
+  const RebindToUnsigned<decltype(d)> du;
+  return BitCast(
+      d, Dup128VecFromValues(
+             du, BitCastScalar<uint16_t>(t0), BitCastScalar<uint16_t>(t1),
+             BitCastScalar<uint16_t>(t2), BitCastScalar<uint16_t>(t3),
+             BitCastScalar<uint16_t>(t4), BitCastScalar<uint16_t>(t5),
+             BitCastScalar<uint16_t>(t6), BitCastScalar<uint16_t>(t7)));
+}
+
+template <class D, HWY_IF_I32_D(D)>
+HWY_API svint32_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  return svdupq_n_s32(t0, t1, t2, t3);
+}
+
+template <class D, HWY_IF_U32_D(D)>
+HWY_API svuint32_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                       TFromD<D> t2, TFromD<D> t3) {
+  return svdupq_n_u32(t0, t1, t2, t3);
+}
+
+template <class D, HWY_IF_F32_D(D)>
+HWY_API svfloat32_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                        TFromD<D> t2, TFromD<D> t3) {
+  return svdupq_n_f32(t0, t1, t2, t3);
+}
+
+template <class D, HWY_IF_I64_D(D)>
+HWY_API svint64_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return svdupq_n_s64(t0, t1);
+}
+
+template <class D, HWY_IF_U64_D(D)>
+HWY_API svuint64_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return svdupq_n_u64(t0, t1);
+}
+
+template <class D, HWY_IF_F64_D(D)>
+HWY_API svfloat64_t Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return svdupq_n_f64(t0, t1);
+}
+
 // ================================================== LOGICAL
 
 // detail::*N() functions accept a scalar argument to avoid extra Set().
@@ -1136,6 +1232,82 @@ HWY_API svbool_t SetAtOrAfterFirst(svbool_t m) {
   return Not(SetBeforeFirst(m));
 }
 
+// ------------------------------ PromoteMaskTo
+
+#ifdef HWY_NATIVE_PROMOTE_MASK_TO
+#undef HWY_NATIVE_PROMOTE_MASK_TO
+#else
+#define HWY_NATIVE_PROMOTE_MASK_TO
+#endif
+
+template <class DTo, class DFrom,
+          HWY_IF_T_SIZE_D(DTo, sizeof(TFromD<DFrom>) * 2)>
+HWY_API svbool_t PromoteMaskTo(DTo /*d_to*/, DFrom /*d_from*/, svbool_t m) {
+  return svunpklo_b(m);
+}
+
+template <class DTo, class DFrom,
+          HWY_IF_T_SIZE_GT_D(DTo, sizeof(TFromD<DFrom>) * 2)>
+HWY_API svbool_t PromoteMaskTo(DTo d_to, DFrom d_from, svbool_t m) {
+  using TFrom = TFromD<DFrom>;
+  using TWFrom = MakeWide<MakeUnsigned<TFrom>>;
+  static_assert(sizeof(TWFrom) > sizeof(TFrom),
+                "sizeof(TWFrom) > sizeof(TFrom) must be true");
+
+  const Rebind<TWFrom, decltype(d_from)> dw_from;
+  return PromoteMaskTo(d_to, dw_from, PromoteMaskTo(dw_from, d_from, m));
+}
+
+// ------------------------------ DemoteMaskTo
+
+#ifdef HWY_NATIVE_DEMOTE_MASK_TO
+#undef HWY_NATIVE_DEMOTE_MASK_TO
+#else
+#define HWY_NATIVE_DEMOTE_MASK_TO
+#endif
+
+template <class DTo, class DFrom, HWY_IF_T_SIZE_D(DTo, 1),
+          HWY_IF_T_SIZE_D(DFrom, 2)>
+HWY_API svbool_t DemoteMaskTo(DTo /*d_to*/, DFrom /*d_from*/, svbool_t m) {
+  return svuzp1_b8(m, m);
+}
+
+template <class DTo, class DFrom, HWY_IF_T_SIZE_D(DTo, 2),
+          HWY_IF_T_SIZE_D(DFrom, 4)>
+HWY_API svbool_t DemoteMaskTo(DTo /*d_to*/, DFrom /*d_from*/, svbool_t m) {
+  return svuzp1_b16(m, m);
+}
+
+template <class DTo, class DFrom, HWY_IF_T_SIZE_D(DTo, 4),
+          HWY_IF_T_SIZE_D(DFrom, 8)>
+HWY_API svbool_t DemoteMaskTo(DTo /*d_to*/, DFrom /*d_from*/, svbool_t m) {
+  return svuzp1_b32(m, m);
+}
+
+template <class DTo, class DFrom,
+          HWY_IF_T_SIZE_LE_D(DTo, sizeof(TFromD<DFrom>) / 4)>
+HWY_API svbool_t DemoteMaskTo(DTo d_to, DFrom d_from, svbool_t m) {
+  using TFrom = TFromD<DFrom>;
+  using TNFrom = MakeNarrow<MakeUnsigned<TFrom>>;
+  static_assert(sizeof(TNFrom) < sizeof(TFrom),
+                "sizeof(TNFrom) < sizeof(TFrom) must be true");
+
+  const Rebind<TNFrom, decltype(d_from)> dn_from;
+  return DemoteMaskTo(d_to, dn_from, DemoteMaskTo(dn_from, d_from, m));
+}
+
+// ------------------------------ LowerHalfOfMask
+#ifdef HWY_NATIVE_LOWER_HALF_OF_MASK
+#undef HWY_NATIVE_LOWER_HALF_OF_MASK
+#else
+#define HWY_NATIVE_LOWER_HALF_OF_MASK
+#endif
+
+template <class D>
+HWY_API svbool_t LowerHalfOfMask(D /*d*/, svbool_t m) {
+  return m;
+}
+
 // ------------------------------ MaskedAddOr etc. (IfThenElse)
 
 #ifdef HWY_NATIVE_MASKED_ARITH
@@ -1443,6 +1615,9 @@ HWY_SVE_FOREACH_BF16(HWY_SVE_BLENDED_STORE, BlendedStore, st1)
 #if HWY_TARGET != HWY_SVE2_128
 namespace detail {
 HWY_SVE_FOREACH(HWY_SVE_LOAD_DUP128, LoadDupFull128, ld1rq)
+#if HWY_SVE_HAVE_BFLOAT16
+HWY_SVE_FOREACH_BF16(HWY_SVE_LOAD_DUP128, LoadDupFull128, ld1rq)
+#endif
 }  // namespace detail
 #endif  // HWY_TARGET != HWY_SVE2_128
 
@@ -1577,8 +1752,8 @@ HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
   HWY_API void NAME(HWY_SVE_V(BASE, BITS) v, svbool_t m,               \
                     HWY_SVE_D(BASE, BITS, N, kPow2) /*d*/,             \
                     HWY_SVE_T(BASE, BITS) * HWY_RESTRICT base,         \
-                    HWY_SVE_V(int, BITS) index) {                      \
-    sv##OP##_s##BITS##index_##CHAR##BITS(m, base, index, v);           \
+                    HWY_SVE_V(int, BITS) indices) {                    \
+    sv##OP##_s##BITS##index_##CHAR##BITS(m, base, indices, v);         \
   }
 
 HWY_SVE_FOREACH_UIF3264(HWY_SVE_SCATTER_OFFSET, ScatterOffset, st1_scatter)
@@ -1615,11 +1790,11 @@ HWY_API void ScatterIndex(VFromD<D> v, D d, TFromD<D>* HWY_RESTRICT p,
   HWY_API HWY_SVE_V(BASE, BITS)                                       \
       NAME(svbool_t m, HWY_SVE_D(BASE, BITS, N, kPow2) d,             \
            const HWY_SVE_T(BASE, BITS) * HWY_RESTRICT base,           \
-           HWY_SVE_V(int, BITS) index) {                              \
+           HWY_SVE_V(int, BITS) indices) {                            \
     const RebindToSigned<decltype(d)> di;                             \
     (void)di; /* for HWY_DASSERT */                                   \
     HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));                 \
-    return sv##OP##_s##BITS##index_##CHAR##BITS(m, base, index);      \
+    return sv##OP##_s##BITS##index_##CHAR##BITS(m, base, indices);    \
   }
 
 HWY_SVE_FOREACH_UIF3264(HWY_SVE_GATHER_OFFSET, GatherOffset, ld1_gather)
@@ -4143,6 +4318,84 @@ HWY_INLINE svbool_t LoadMaskBits(D /* tag */,
   const svuint64_t bit = Shl(Set(du, 1), Iota(du, 0));
 
   return TestBit(vbits, bit);
+}
+
+// ------------------------------ Dup128MaskFromMaskBits
+
+template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_LE_D(D, 8)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const RebindToUnsigned<decltype(d)> du;
+
+  constexpr size_t kN = MaxLanes(d);
+  if (kN < 8) mask_bits &= (1u << kN) - 1;
+
+  // Replicate the lower 8 bits of mask_bits to each u8 lane
+  const svuint8_t bytes = BitCast(du, Set(du, static_cast<uint8_t>(mask_bits)));
+
+  const svuint8_t bit =
+      svdupq_n_u8(1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128);
+  return TestBit(bytes, bit);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_GT_D(D, 8)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Repartition<uint16_t, decltype(du)> du16;
+
+  // Replicate the lower 16 bits of mask_bits to each u16 lane of a u16 vector,
+  // and then bitcast the replicated mask_bits to a u8 vector
+  const svuint8_t bytes =
+      BitCast(du, Set(du16, static_cast<uint16_t>(mask_bits)));
+  // Replicate bytes 8x such that each byte contains the bit that governs it.
+  const svuint8_t rep8 = svtbl_u8(bytes, ShiftRight<3>(Iota(du, 0)));
+
+  const svuint8_t bit =
+      svdupq_n_u8(1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128);
+  return TestBit(rep8, bit);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Repartition<uint8_t, decltype(d)> du8;
+
+  constexpr size_t kN = MaxLanes(d);
+  if (kN < 8) mask_bits &= (1u << kN) - 1;
+
+  // Set all of the u8 lanes of bytes to the lower 8 bits of mask_bits
+  const svuint8_t bytes = Set(du8, static_cast<uint8_t>(mask_bits));
+
+  const svuint16_t bit = svdupq_n_u16(1, 2, 4, 8, 16, 32, 64, 128);
+  return TestBit(BitCast(du, bytes), bit);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Repartition<uint8_t, decltype(d)> du8;
+
+  constexpr size_t kN = MaxLanes(d);
+  if (kN < 4) mask_bits &= (1u << kN) - 1;
+
+  // Set all of the u8 lanes of bytes to the lower 8 bits of mask_bits
+  const svuint8_t bytes = Set(du8, static_cast<uint8_t>(mask_bits));
+
+  const svuint32_t bit = svdupq_n_u32(1, 2, 4, 8);
+  return TestBit(BitCast(du, bytes), bit);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const RebindToUnsigned<decltype(d)> du;
+  const Repartition<uint8_t, decltype(d)> du8;
+
+  if (MaxLanes(d) < 2) mask_bits &= 1u;
+
+  // Set all of the u8 lanes of bytes to the lower 8 bits of mask_bits
+  const svuint8_t bytes = Set(du8, static_cast<uint8_t>(mask_bits));
+
+  const svuint64_t bit = svdupq_n_u64(1, 2);
+  return TestBit(BitCast(du, bytes), bit);
 }
 
 // ------------------------------ StoreMaskBits

@@ -156,6 +156,39 @@ HWY_INLINE VFromD<DTo> ZeroExtendResizeBitCast(FromSizeTag /* from_size_tag */,
 
 }  // namespace detail
 
+// ------------------------------ Dup128VecFromValues
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> /*t1*/,
+                                      TFromD<D> /*t2*/, TFromD<D> /*t3*/,
+                                      TFromD<D> /*t4*/, TFromD<D> /*t5*/,
+                                      TFromD<D> /*t6*/, TFromD<D> /*t7*/,
+                                      TFromD<D> /*t8*/, TFromD<D> /*t9*/,
+                                      TFromD<D> /*t10*/, TFromD<D> /*t11*/,
+                                      TFromD<D> /*t12*/, TFromD<D> /*t13*/,
+                                      TFromD<D> /*t14*/, TFromD<D> /*t15*/) {
+  return VFromD<D>(t0);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 2)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> /*t1*/,
+                                      TFromD<D> /*t2*/, TFromD<D> /*t3*/,
+                                      TFromD<D> /*t4*/, TFromD<D> /*t5*/,
+                                      TFromD<D> /*t6*/, TFromD<D> /*t7*/) {
+  return VFromD<D>(t0);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> /*t1*/,
+                                      TFromD<D> /*t2*/, TFromD<D> /*t3*/) {
+  return VFromD<D>(t0);
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> /*t1*/) {
+  return VFromD<D>(t0);
+}
+
 // ================================================== LOGICAL
 
 // ------------------------------ Not
@@ -405,6 +438,19 @@ HWY_API Mask1<T> SetOnlyFirst(Mask1<T> mask) {
 template <class T>
 HWY_API Mask1<T> SetAtOrBeforeFirst(Mask1<T> /*mask*/) {
   return Mask1<T>::FromBool(true);
+}
+
+// ------------------------------ LowerHalfOfMask
+
+#ifdef HWY_NATIVE_LOWER_HALF_OF_MASK
+#undef HWY_NATIVE_LOWER_HALF_OF_MASK
+#else
+#define HWY_NATIVE_LOWER_HALF_OF_MASK
+#endif
+
+template <class D>
+HWY_API MFromD<D> LowerHalfOfMask(D /*d*/, MFromD<D> m) {
+  return m;
 }
 
 // ================================================== SHIFTS
@@ -1179,8 +1225,9 @@ HWY_API void Stream(const Vec1<T> v, D d, T* HWY_RESTRICT aligned) {
 template <class D, typename T = TFromD<D>, typename TI>
 HWY_API void ScatterOffset(Vec1<T> v, D d, T* base, Vec1<TI> offset) {
   static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
-  uint8_t* const base8 = reinterpret_cast<uint8_t*>(base) + offset.raw;
-  Store(v, d, reinterpret_cast<T*>(base8));
+  const intptr_t addr =
+      reinterpret_cast<intptr_t>(base) + static_cast<intptr_t>(offset.raw);
+  Store(v, d, reinterpret_cast<T*>(addr));
 }
 
 template <class D, typename T = TFromD<D>, typename TI>
@@ -1778,6 +1825,11 @@ HWY_API bool AllTrue(D /* tag */, const Mask1<T> mask) {
 template <class D, HWY_IF_LANES_D(D, 1), typename T = TFromD<D>>
 HWY_API Mask1<T> LoadMaskBits(D /* tag */, const uint8_t* HWY_RESTRICT bits) {
   return Mask1<T>::FromBool((bits[0] & 1) != 0);
+}
+
+template <class D, HWY_IF_LANES_D(D, 1)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D /*d*/, unsigned mask_bits) {
+  return MFromD<D>::FromBool((mask_bits & 1) != 0);
 }
 
 // `p` points to at least 8 writable bytes.

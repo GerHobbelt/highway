@@ -373,6 +373,132 @@ HWY_API VFromD<D> ResizeBitCast(D d, FromV v) {
                         BitCast(Full256<uint8_t>(), v).raw)});
 }
 
+// ------------------------------ Dup128VecFromValues
+
+template <class D, HWY_IF_UI8_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D d, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6, TFromD<D> t7,
+                                      TFromD<D> t8, TFromD<D> t9, TFromD<D> t10,
+                                      TFromD<D> t11, TFromD<D> t12,
+                                      TFromD<D> t13, TFromD<D> t14,
+                                      TFromD<D> t15) {
+#if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 900
+  // Missing set_epi8/16.
+  return BroadcastBlock<0>(ResizeBitCast(
+      d, Dup128VecFromValues(Full128<TFromD<D>>(), t0, t1, t2, t3, t4, t5, t6,
+                             t7, t8, t9, t10, t11, t12, t13, t14, t15)));
+#else
+  (void)d;
+  // Need to use _mm512_set_epi8 as there is no _mm512_setr_epi8 intrinsic
+  // available
+  return VFromD<D>{_mm512_set_epi8(
+      static_cast<char>(t15), static_cast<char>(t14), static_cast<char>(t13),
+      static_cast<char>(t12), static_cast<char>(t11), static_cast<char>(t10),
+      static_cast<char>(t9), static_cast<char>(t8), static_cast<char>(t7),
+      static_cast<char>(t6), static_cast<char>(t5), static_cast<char>(t4),
+      static_cast<char>(t3), static_cast<char>(t2), static_cast<char>(t1),
+      static_cast<char>(t0), static_cast<char>(t15), static_cast<char>(t14),
+      static_cast<char>(t13), static_cast<char>(t12), static_cast<char>(t11),
+      static_cast<char>(t10), static_cast<char>(t9), static_cast<char>(t8),
+      static_cast<char>(t7), static_cast<char>(t6), static_cast<char>(t5),
+      static_cast<char>(t4), static_cast<char>(t3), static_cast<char>(t2),
+      static_cast<char>(t1), static_cast<char>(t0), static_cast<char>(t15),
+      static_cast<char>(t14), static_cast<char>(t13), static_cast<char>(t12),
+      static_cast<char>(t11), static_cast<char>(t10), static_cast<char>(t9),
+      static_cast<char>(t8), static_cast<char>(t7), static_cast<char>(t6),
+      static_cast<char>(t5), static_cast<char>(t4), static_cast<char>(t3),
+      static_cast<char>(t2), static_cast<char>(t1), static_cast<char>(t0),
+      static_cast<char>(t15), static_cast<char>(t14), static_cast<char>(t13),
+      static_cast<char>(t12), static_cast<char>(t11), static_cast<char>(t10),
+      static_cast<char>(t9), static_cast<char>(t8), static_cast<char>(t7),
+      static_cast<char>(t6), static_cast<char>(t5), static_cast<char>(t4),
+      static_cast<char>(t3), static_cast<char>(t2), static_cast<char>(t1),
+      static_cast<char>(t0))};
+#endif
+}
+
+template <class D, HWY_IF_UI16_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D d, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+#if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 900
+  // Missing set_epi8/16.
+  return BroadcastBlock<0>(
+      ResizeBitCast(d, Dup128VecFromValues(Full128<TFromD<D>>(), t0, t1, t2, t3,
+                                           t4, t5, t6, t7)));
+#else
+  (void)d;
+  // Need to use _mm512_set_epi16 as there is no _mm512_setr_epi16 intrinsic
+  // available
+  return VFromD<D>{
+      _mm512_set_epi16(static_cast<int16_t>(t7), static_cast<int16_t>(t6),
+                       static_cast<int16_t>(t5), static_cast<int16_t>(t4),
+                       static_cast<int16_t>(t3), static_cast<int16_t>(t2),
+                       static_cast<int16_t>(t1), static_cast<int16_t>(t0),
+                       static_cast<int16_t>(t7), static_cast<int16_t>(t6),
+                       static_cast<int16_t>(t5), static_cast<int16_t>(t4),
+                       static_cast<int16_t>(t3), static_cast<int16_t>(t2),
+                       static_cast<int16_t>(t1), static_cast<int16_t>(t0),
+                       static_cast<int16_t>(t7), static_cast<int16_t>(t6),
+                       static_cast<int16_t>(t5), static_cast<int16_t>(t4),
+                       static_cast<int16_t>(t3), static_cast<int16_t>(t2),
+                       static_cast<int16_t>(t1), static_cast<int16_t>(t0),
+                       static_cast<int16_t>(t7), static_cast<int16_t>(t6),
+                       static_cast<int16_t>(t5), static_cast<int16_t>(t4),
+                       static_cast<int16_t>(t3), static_cast<int16_t>(t2),
+                       static_cast<int16_t>(t1), static_cast<int16_t>(t0))};
+#endif
+}
+
+#if HWY_HAVE_FLOAT16
+template <class D, HWY_IF_F16_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  return VFromD<D>{_mm512_setr_ph(t0, t1, t2, t3, t4, t5, t6, t7, t0, t1, t2,
+                                  t3, t4, t5, t6, t7, t0, t1, t2, t3, t4, t5,
+                                  t6, t7, t0, t1, t2, t3, t4, t5, t6, t7)};
+}
+#endif
+
+template <class D, HWY_IF_UI32_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  return VFromD<D>{
+      _mm512_setr_epi32(static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3),
+                        static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3),
+                        static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3),
+                        static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3))};
+}
+
+template <class D, HWY_IF_F32_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  return VFromD<D>{_mm512_setr_ps(t0, t1, t2, t3, t0, t1, t2, t3, t0, t1, t2,
+                                  t3, t0, t1, t2, t3)};
+}
+
+template <class D, HWY_IF_UI64_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return VFromD<D>{
+      _mm512_setr_epi64(static_cast<int64_t>(t0), static_cast<int64_t>(t1),
+                        static_cast<int64_t>(t0), static_cast<int64_t>(t1),
+                        static_cast<int64_t>(t0), static_cast<int64_t>(t1),
+                        static_cast<int64_t>(t0), static_cast<int64_t>(t1))};
+}
+
+template <class D, HWY_IF_F64_D(D), HWY_IF_V_SIZE_D(D, 64)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return VFromD<D>{_mm512_setr_pd(t0, t1, t0, t1, t0, t1, t0, t1)};
+}
+
 // ----------------------------- Iota
 
 namespace detail {
@@ -2542,6 +2668,31 @@ HWY_API Mask512<T> Xor(Mask512<T> a, Mask512<T> b) {
 template <typename T>
 HWY_API Mask512<T> ExclusiveNeither(Mask512<T> a, Mask512<T> b) {
   return detail::ExclusiveNeither(hwy::SizeTag<sizeof(T)>(), a, b);
+}
+
+template <class D, HWY_IF_LANES_D(D, 64)>
+HWY_API MFromD<D> CombineMasks(D /*d*/, MFromD<Half<D>> hi,
+                               MFromD<Half<D>> lo) {
+#if HWY_COMPILER_HAS_MASK_INTRINSICS
+  const __mmask64 combined_mask = _mm512_kunpackd(
+      static_cast<__mmask64>(hi.raw), static_cast<__mmask64>(lo.raw));
+#else
+  const __mmask64 combined_mask = static_cast<__mmask64>(
+      ((static_cast<uint64_t>(hi.raw) << 32) | (lo.raw & 0xFFFFFFFFULL)));
+#endif
+
+  return MFromD<D>{combined_mask};
+}
+
+template <class D, HWY_IF_LANES_D(D, 32)>
+HWY_API MFromD<D> UpperHalfOfMask(D /*d*/, MFromD<Twice<D>> m) {
+#if HWY_COMPILER_HAS_MASK_INTRINSICS
+  const auto shifted_mask = _kshiftri_mask64(static_cast<__mmask64>(m.raw), 32);
+#else
+  const auto shifted_mask = static_cast<uint64_t>(m.raw) >> 32;
+#endif
+
+  return MFromD<D>{static_cast<decltype(MFromD<D>().raw)>(shifted_mask)};
 }
 
 // ------------------------------ BroadcastSignBit (ShiftRight, compare, mask)

@@ -103,6 +103,7 @@ list(APPEND HWY_CONTRIB_SOURCES
     hwy/contrib/image/image.cc
     hwy/contrib/image/image.h
     hwy/contrib/math/math-inl.h
+    hwy/contrib/matvec/matvec-inl.h
     hwy/contrib/sort/order.h
     hwy/contrib/sort/shared-inl.h
     hwy/contrib/sort/sorting_networks-inl.h
@@ -542,12 +543,15 @@ set(HWY_TEST_FILES
   hwy/tests/count_test.cc
   hwy/tests/crypto_test.cc
   hwy/tests/demote_test.cc
+  hwy/tests/dup128_vec_test.cc
   hwy/tests/expand_test.cc
   hwy/tests/float_test.cc
   hwy/tests/foreach_vec_test.cc
   hwy/tests/if_test.cc
   hwy/tests/interleaved_test.cc
   hwy/tests/logical_test.cc
+  hwy/tests/mask_combine_test.cc
+  hwy/tests/mask_convert_test.cc
   hwy/tests/mask_mem_test.cc
   hwy/tests/mask_test.cc
   hwy/tests/masked_arithmetic_test.cc
@@ -560,10 +564,12 @@ set(HWY_TEST_FILES
   hwy/tests/shift_test.cc
   hwy/tests/shuffle4_test.cc
   hwy/tests/slide_up_down_test.cc
+  hwy/tests/sums_abs_diff_test.cc
   hwy/tests/swizzle_block_test.cc
   hwy/tests/swizzle_test.cc
   hwy/tests/table_test.cc
   hwy/tests/test_util_test.cc
+  hwy/tests/truncate_test.cc
   hwy/tests/tuple_test.cc
   hwy/tests/widen_mul_test.cc
 )
@@ -575,6 +581,7 @@ list(APPEND HWY_TEST_LIBS hwy_contrib)
 
 list(APPEND HWY_TEST_FILES
   hwy/contrib/dot/dot_test.cc
+  hwy/contrib/matvec/matvec_test.cc
   hwy/contrib/image/image_test.cc
   # Disabled due to SIGILL in clang7 debug build during gtest discovery phase,
   # not reproducible locally. Still tested via bazel build.

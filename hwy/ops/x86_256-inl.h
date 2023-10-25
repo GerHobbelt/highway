@@ -359,6 +359,85 @@ HWY_API VFromD<D> ResizeBitCast(D d, FromV v) {
                         ResizeBitCast(Full128<uint8_t>(), v).raw)});
 }
 
+// ------------------------------ Dup128VecFromValues
+
+template <class D, HWY_IF_UI8_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6, TFromD<D> t7,
+                                      TFromD<D> t8, TFromD<D> t9, TFromD<D> t10,
+                                      TFromD<D> t11, TFromD<D> t12,
+                                      TFromD<D> t13, TFromD<D> t14,
+                                      TFromD<D> t15) {
+  return VFromD<D>{_mm256_setr_epi8(
+      static_cast<char>(t0), static_cast<char>(t1), static_cast<char>(t2),
+      static_cast<char>(t3), static_cast<char>(t4), static_cast<char>(t5),
+      static_cast<char>(t6), static_cast<char>(t7), static_cast<char>(t8),
+      static_cast<char>(t9), static_cast<char>(t10), static_cast<char>(t11),
+      static_cast<char>(t12), static_cast<char>(t13), static_cast<char>(t14),
+      static_cast<char>(t15), static_cast<char>(t0), static_cast<char>(t1),
+      static_cast<char>(t2), static_cast<char>(t3), static_cast<char>(t4),
+      static_cast<char>(t5), static_cast<char>(t6), static_cast<char>(t7),
+      static_cast<char>(t8), static_cast<char>(t9), static_cast<char>(t10),
+      static_cast<char>(t11), static_cast<char>(t12), static_cast<char>(t13),
+      static_cast<char>(t14), static_cast<char>(t15))};
+}
+
+template <class D, HWY_IF_UI16_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  return VFromD<D>{
+      _mm256_setr_epi16(static_cast<int16_t>(t0), static_cast<int16_t>(t1),
+                        static_cast<int16_t>(t2), static_cast<int16_t>(t3),
+                        static_cast<int16_t>(t4), static_cast<int16_t>(t5),
+                        static_cast<int16_t>(t6), static_cast<int16_t>(t7),
+                        static_cast<int16_t>(t0), static_cast<int16_t>(t1),
+                        static_cast<int16_t>(t2), static_cast<int16_t>(t3),
+                        static_cast<int16_t>(t4), static_cast<int16_t>(t5),
+                        static_cast<int16_t>(t6), static_cast<int16_t>(t7))};
+}
+
+#if HWY_HAVE_FLOAT16
+template <class D, HWY_IF_F16_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  return VFromD<D>{_mm256_setr_ph(t0, t1, t2, t3, t4, t5, t6, t7, t0, t1, t2,
+                                  t3, t4, t5, t6, t7)};
+}
+#endif
+
+template <class D, HWY_IF_UI32_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  return VFromD<D>{
+      _mm256_setr_epi32(static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3),
+                        static_cast<int32_t>(t0), static_cast<int32_t>(t1),
+                        static_cast<int32_t>(t2), static_cast<int32_t>(t3))};
+}
+
+template <class D, HWY_IF_F32_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  return VFromD<D>{_mm256_setr_ps(t0, t1, t2, t3, t0, t1, t2, t3)};
+}
+
+template <class D, HWY_IF_UI64_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return VFromD<D>{
+      _mm256_setr_epi64x(static_cast<int64_t>(t0), static_cast<int64_t>(t1),
+                         static_cast<int64_t>(t0), static_cast<int64_t>(t1))};
+}
+
+template <class D, HWY_IF_F64_D(D), HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  return VFromD<D>{_mm256_setr_pd(t0, t1, t0, t1)};
+}
+
 // ================================================== LOGICAL
 
 // ------------------------------ And
@@ -962,6 +1041,31 @@ HWY_API Mask256<T> Not(const Mask256<T> m) {
 template <typename T>
 HWY_API Mask256<T> ExclusiveNeither(const Mask256<T> a, Mask256<T> b) {
   return detail::ExclusiveNeither(hwy::SizeTag<sizeof(T)>(), a, b);
+}
+
+template <class D, HWY_IF_LANES_D(D, 32)>
+HWY_API MFromD<D> CombineMasks(D /*d*/, MFromD<Half<D>> hi,
+                               MFromD<Half<D>> lo) {
+#if HWY_COMPILER_HAS_MASK_INTRINSICS
+  const __mmask32 combined_mask = _mm512_kunpackw(
+      static_cast<__mmask32>(hi.raw), static_cast<__mmask32>(lo.raw));
+#else
+  const auto combined_mask =
+      ((static_cast<uint32_t>(hi.raw) << 16) | (lo.raw & 0xFFFFu));
+#endif
+
+  return MFromD<D>{static_cast<decltype(MFromD<D>().raw)>(combined_mask)};
+}
+
+template <class D, HWY_IF_LANES_D(D, 16)>
+HWY_API MFromD<D> UpperHalfOfMask(D /*d*/, MFromD<Twice<D>> m) {
+#if HWY_COMPILER_HAS_MASK_INTRINSICS
+  const auto shifted_mask = _kshiftri_mask32(static_cast<__mmask32>(m.raw), 16);
+#else
+  const auto shifted_mask = static_cast<uint32_t>(m.raw) >> 16;
+#endif
+
+  return MFromD<D>{static_cast<decltype(MFromD<D>().raw)>(shifted_mask)};
 }
 
 #else  // AVX2
@@ -7314,6 +7418,16 @@ HWY_API size_t CompressBitsStore(VFromD<D> v, const uint8_t* HWY_RESTRICT bits,
 }
 
 #endif  // HWY_TARGET <= HWY_AVX3
+
+// ------------------------------ Dup128MaskFromMaskBits
+
+// Generic for all vector lengths >= 32 bytes
+template <class D, HWY_IF_V_SIZE_GT_D(D, 16)>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  const Half<decltype(d)> dh;
+  const auto mh = Dup128MaskFromMaskBits(dh, mask_bits);
+  return CombineMasks(d, mh, mh);
+}
 
 // ------------------------------ Expand
 

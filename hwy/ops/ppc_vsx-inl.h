@@ -215,6 +215,12 @@ HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{vec_splats(static_cast<RawLane>(t))};
 }
 
+template <class D, HWY_IF_SPECIAL_FLOAT(TFromD<D>)>
+HWY_API VFromD<D> Set(D d, TFromD<D> t) {
+  const RebindToUnsigned<decltype(d)> du;
+  return BitCast(d, Set(du, BitCastScalar<TFromD<decltype(du)>>(t)));
+}
+
 // Returns a vector with uninitialized elements.
 template <class D>
 HWY_API VFromD<D> Undefined(D d) {
@@ -238,6 +244,58 @@ HWY_API VFromD<D> Undefined(D d) {
 template <typename T, size_t N>
 HWY_API T GetLane(Vec128<T, N> v) {
   return static_cast<T>(v.raw[0]);
+}
+
+// ------------------------------ Dup128VecFromValues
+
+template <class D, HWY_IF_T_SIZE_D(D, 1)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6, TFromD<D> t7,
+                                      TFromD<D> t8, TFromD<D> t9, TFromD<D> t10,
+                                      TFromD<D> t11, TFromD<D> t12,
+                                      TFromD<D> t13, TFromD<D> t14,
+                                      TFromD<D> t15) {
+  const typename detail::Raw128<TFromD<D>>::type raw = {
+      t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15};
+  return VFromD<D>{raw};
+}
+
+template <class D, HWY_IF_UI16_D(D)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  const typename detail::Raw128<TFromD<D>>::type raw = {t0, t1, t2, t3,
+                                                        t4, t5, t6, t7};
+  return VFromD<D>{raw};
+}
+
+template <class D, HWY_IF_SPECIAL_FLOAT_D(D)>
+HWY_API VFromD<D> Dup128VecFromValues(D d, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3, TFromD<D> t4,
+                                      TFromD<D> t5, TFromD<D> t6,
+                                      TFromD<D> t7) {
+  const RebindToUnsigned<decltype(d)> du;
+  return BitCast(
+      d, Dup128VecFromValues(
+             du, BitCastScalar<uint16_t>(t0), BitCastScalar<uint16_t>(t1),
+             BitCastScalar<uint16_t>(t2), BitCastScalar<uint16_t>(t3),
+             BitCastScalar<uint16_t>(t4), BitCastScalar<uint16_t>(t5),
+             BitCastScalar<uint16_t>(t6), BitCastScalar<uint16_t>(t7)));
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 4)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1,
+                                      TFromD<D> t2, TFromD<D> t3) {
+  const typename detail::Raw128<TFromD<D>>::type raw = {t0, t1, t2, t3};
+  return VFromD<D>{raw};
+}
+
+template <class D, HWY_IF_T_SIZE_D(D, 8)>
+HWY_API VFromD<D> Dup128VecFromValues(D /*d*/, TFromD<D> t0, TFromD<D> t1) {
+  const typename detail::Raw128<TFromD<D>>::type raw = {t0, t1};
+  return VFromD<D>{raw};
 }
 
 // ================================================== LOGICAL
@@ -558,7 +616,7 @@ HWY_API Vec128<T, N> CopySignToAbs(Vec128<T, N> abs, Vec128<T, N> sign) {
 template <class D, HWY_IF_V_SIZE_D(D, 16), typename T = TFromD<D>>
 HWY_API Vec128<T> Load(D /* tag */, const T* HWY_RESTRICT aligned) {
   using LoadRaw = typename detail::Raw128<T>::AlignedRawVec;
-  const LoadRaw* HWY_RESTRICT p = reinterpret_cast<const LoadRaw*>(aligned);
+  const LoadRaw* HWY_RESTRICT p = HWY_RCAST_ALIGNED(const LoadRaw*, aligned);
   using ResultRaw = typename detail::Raw128<T>::type;
   return Vec128<T>{reinterpret_cast<ResultRaw>(*p)};
 }
@@ -1156,7 +1214,7 @@ HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
 template <class D, HWY_IF_V_SIZE_D(D, 16), typename T = TFromD<D>>
 HWY_API void Store(Vec128<T> v, D /* tag */, T* HWY_RESTRICT aligned) {
   using StoreRaw = typename detail::Raw128<T>::AlignedRawVec;
-  *reinterpret_cast<StoreRaw*>(aligned) = reinterpret_cast<StoreRaw>(v.raw);
+  *HWY_RCAST_ALIGNED(StoreRaw*, aligned) = reinterpret_cast<StoreRaw>(v.raw);
 }
 
 template <class D, HWY_IF_V_SIZE_D(D, 16), typename T = TFromD<D>>
@@ -4280,6 +4338,15 @@ struct CompressIsPartition {
   // generic_ops-inl does not guarantee IsPartition for 8-bit.
   enum { value = (sizeof(T) != 1) };
 };
+
+// ------------------------------ Dup128MaskFromMaskBits
+
+template <class D>
+HWY_API MFromD<D> Dup128MaskFromMaskBits(D d, unsigned mask_bits) {
+  constexpr size_t kN = MaxLanes(d);
+  if (kN < 8) mask_bits &= (1u << kN) - 1;
+  return detail::LoadMaskBits128(d, mask_bits);
+}
 
 // ------------------------------ StoreMaskBits
 
