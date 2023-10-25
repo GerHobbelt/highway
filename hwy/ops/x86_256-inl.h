@@ -1813,6 +1813,35 @@ HWY_INLINE Vec256<uint32_t> SumsOf4(hwy::UnsignedTag /*type_tag*/,
 }  // namespace detail
 #endif  // HWY_TARGET <= HWY_AVX3
 
+// ------------------------------ SumsOfAdjQuadAbsDiff
+
+template <int kAOffset, int kBOffset>
+static Vec256<uint16_t> SumsOfAdjQuadAbsDiff(Vec256<uint8_t> a,
+                                             Vec256<uint8_t> b) {
+  static_assert(0 <= kAOffset && kAOffset <= 1,
+                "kAOffset must be between 0 and 1");
+  static_assert(0 <= kBOffset && kBOffset <= 3,
+                "kBOffset must be between 0 and 3");
+  return Vec256<uint16_t>{_mm256_mpsadbw_epu8(
+      a.raw, b.raw,
+      (kAOffset << 5) | (kBOffset << 3) | (kAOffset << 2) | kBOffset)};
+}
+
+// ------------------------------ SumsOfShuffledQuadAbsDiff
+
+#if HWY_TARGET <= HWY_AVX3
+template <int kIdx3, int kIdx2, int kIdx1, int kIdx0>
+static Vec256<uint16_t> SumsOfShuffledQuadAbsDiff(Vec256<uint8_t> a,
+                                                  Vec256<uint8_t> b) {
+  static_assert(0 <= kIdx0 && kIdx0 <= 3, "kIdx0 must be between 0 and 3");
+  static_assert(0 <= kIdx1 && kIdx1 <= 3, "kIdx1 must be between 0 and 3");
+  static_assert(0 <= kIdx2 && kIdx2 <= 3, "kIdx2 must be between 0 and 3");
+  static_assert(0 <= kIdx3 && kIdx3 <= 3, "kIdx3 must be between 0 and 3");
+  return Vec256<uint16_t>{
+      _mm256_dbsad_epu8(b.raw, a.raw, _MM_SHUFFLE(kIdx3, kIdx2, kIdx1, kIdx0))};
+}
+#endif
+
 // ------------------------------ SaturatedAdd
 
 // Returns a + b clamped to the destination range.
@@ -2879,35 +2908,6 @@ HWY_API Mask256<double> IsFinite(Vec256<double> v) {
   return Not(Mask256<double>{_mm256_fpclass_pd_mask(
       v.raw, HWY_X86_FPCLASS_SNAN | HWY_X86_FPCLASS_QNAN |
                  HWY_X86_FPCLASS_NEG_INF | HWY_X86_FPCLASS_POS_INF)});
-}
-
-#else
-
-template <typename T>
-HWY_API Mask256<T> IsInf(const Vec256<T> v) {
-  static_assert(IsFloat<T>(), "Only for float");
-  const DFromV<decltype(v)> d;
-  const RebindToSigned<decltype(d)> di;
-  const VFromD<decltype(di)> vi = BitCast(di, v);
-  // 'Shift left' to clear the sign bit, check for exponent=max and mantissa=0.
-  return RebindMask(d, Eq(Add(vi, vi), Set(di, hwy::MaxExponentTimes2<T>())));
-}
-
-// Returns whether normal/subnormal/zero.
-template <typename T>
-HWY_API Mask256<T> IsFinite(const Vec256<T> v) {
-  static_assert(IsFloat<T>(), "Only for float");
-  const DFromV<decltype(v)> d;
-  const RebindToUnsigned<decltype(d)> du;
-  const RebindToSigned<decltype(d)> di;  // cheaper than unsigned comparison
-  const VFromD<decltype(du)> vu = BitCast(du, v);
-  // Shift left to clear the sign bit, then right so we can compare with the
-  // max exponent (cannot compare with MaxExponentTimes2 directly because it is
-  // negative and non-negative floats would be greater). MSVC seems to generate
-  // incorrect code if we instead add vu + vu.
-  const VFromD<decltype(di)> exp =
-      BitCast(di, ShiftRight<hwy::MantissaBits<T>() + 1>(ShiftLeft<1>(vu)));
-  return RebindMask(d, Lt(exp, Set(di, hwy::MaxExponentField<T>())));
 }
 
 #endif  // HWY_TARGET <= HWY_AVX3

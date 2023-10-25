@@ -143,7 +143,8 @@ namespace detail {  // for code folding and Raw128
   HWY_NEON_DEF_FUNCTION(int64, 2, name, prefix##q, infix, s64, args) \
   HWY_NEON_DEF_FUNCTION(int64, 1, name, prefix, infix, s64, args)
 
-#ifdef __ARM_FEATURE_BF16_VECTOR_ARITHMETIC
+#if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) && \
+    (HWY_COMPILER_GCC >= 1300 || HWY_COMPILER_CLANG >= 1100)
 #define HWY_NEON_HAVE_BFLOAT16 1
 #else
 #define HWY_NEON_HAVE_BFLOAT16 0
@@ -978,7 +979,9 @@ namespace detail {
 #define HWY_NEON_BUILD_ARG_HWY_SET t
 
 HWY_NEON_DEF_FUNCTION_ALL_TYPES(NativeSet, vdup, _n_, HWY_SET)
+#if HWY_ARM_HAVE_BFLOAT16
 HWY_NEON_DEF_FUNCTION_BFLOAT_16(NativeSet, vdup, _n_, HWY_SET)
+#endif
 #if !HWY_HAVE_FLOAT16 && HWY_NEON_HAVE_FLOAT16C
 HWY_NEON_DEF_FUNCTION_FLOAT_16_UNCONDITIONAL(NativeSet, vdup, _n_, HWY_SET)
 #endif
@@ -988,15 +991,38 @@ HWY_NEON_DEF_FUNCTION_FLOAT_16_UNCONDITIONAL(NativeSet, vdup, _n_, HWY_SET)
 #undef HWY_NEON_BUILD_PARAM_HWY_SET
 #undef HWY_NEON_BUILD_ARG_HWY_SET
 
-#if !HWY_NEON_HAVE_BFLOAT16
+#if !HWY_NEON_HAVE_BFLOAT16 || !HWY_ARM_HAVE_BFLOAT16
+
+#if HWY_NEON_HAVE_BFLOAT16
+template <class D, HWY_IF_BF16_D(D), HWY_IF_V_SIZE_LE_D(D, 8)>
+static HWY_INLINE bfloat16x4_t BitCastRawNeonU16ToRawBF16(D /*d*/,
+                                                          uint16x4_t v) {
+  return vreinterpret_bf16_u16(v);
+}
+template <class D, HWY_IF_BF16_D(D), HWY_IF_V_SIZE_D(D, 16)>
+static HWY_INLINE bfloat16x8_t BitCastRawNeonU16ToRawBF16(D /*d*/,
+                                                          uint16x8_t v) {
+  return vreinterpretq_bf16_u16(v);
+}
+#else
+template <class D, HWY_IF_BF16_D(D), HWY_IF_V_SIZE_LE_D(D, 8)>
+static HWY_INLINE uint16x4_t BitCastRawNeonU16ToRawBF16(D /*d*/, uint16x4_t v) {
+  return v;
+}
+template <class D, HWY_IF_BF16_D(D), HWY_IF_V_SIZE_D(D, 16)>
+static HWY_INLINE uint16x8_t BitCastRawNeonU16ToRawBF16(D /*d*/, uint16x8_t v) {
+  return v;
+}
+#endif
+
 // BF16: return u16.
 template <class D, HWY_IF_BF16_D(D)>
 HWY_API Vec128<bfloat16_t, MaxLanes(D())> NativeSet(D d, bfloat16_t t) {
-  uint16_t tu;
-  CopyBytes<sizeof(tu)>(&t, &tu);
-  return Vec128<bfloat16_t, d.MaxLanes()>(Set(RebindToUnsigned<D>(), tu).raw);
+  const uint16_t tu = BitCastScalar<uint16_t>(t);
+  return Vec128<bfloat16_t, d.MaxLanes()>(
+      BitCastRawNeonU16ToRawBF16(d, Set(RebindToUnsigned<D>(), tu).raw));
 }
-#endif  // !HWY_NEON_HAVE_BFLOAT16
+#endif  // !HWY_NEON_HAVE_BFLOAT16 || !HWY_ARM_HAVE_BFLOAT16
 
 }  // namespace detail
 
@@ -1417,6 +1443,17 @@ HWY_INLINE VFromD<D> BitCastFromByte(D d, VFromD<Repartition<uint8_t, D>> v) {
 #endif
 }
 
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_BF16_D(D)>
+HWY_INLINE VFromD<D> BitCastFromByte(D d, VFromD<Repartition<uint8_t, D>> v) {
+#if HWY_NEON_HAVE_BFLOAT16
+  (void)d;
+  return VFromD<D>(vreinterpret_bf16_u8(v.raw));
+#else
+  const RebindToUnsigned<D> du;
+  return VFromD<decltype(d)>(BitCastFromByte(du, v).raw);
+#endif
+}
+
 template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_F32_D(D)>
 HWY_INLINE VFromD<D> BitCastFromByte(D /* tag */,
                                      VFromD<Repartition<uint8_t, D>> v) {
@@ -1484,9 +1521,12 @@ HWY_INLINE Vec128<double> BitCastFromByte(D /* tag */, Vec128<uint8_t> v) {
 
 // Special case for bfloat16_t, which may have the same Raw as uint16_t.
 template <class D, HWY_IF_BF16_D(D)>
-HWY_INLINE VFromD<D> BitCastFromByte(D /* tag */,
-                                     VFromD<Repartition<uint8_t, D>> v) {
-  return VFromD<D>(BitCastFromByte(RebindToUnsigned<D>(), v).raw);
+HWY_INLINE Vec128<bfloat16_t> BitCastFromByte(D /* tag */, Vec128<uint8_t> v) {
+#if HWY_NEON_HAVE_BFLOAT16
+  return Vec128<bfloat16_t>(vreinterpretq_bf16_u8(v.raw));
+#else
+  return Vec128<bfloat16_t>(BitCastFromByte(RebindToUnsigned<D>(), v).raw);
+#endif
 }
 
 }  // namespace detail
@@ -4547,30 +4587,6 @@ HWY_API Vec128<int32_t, N> NearestInt(const Vec128<float, N> v) {
 template <typename T, size_t N>
 HWY_API Mask128<T, N> IsNaN(const Vec128<T, N> v) {
   return v != v;
-}
-
-template <typename T, size_t N, HWY_IF_FLOAT(T)>
-HWY_API Mask128<T, N> IsInf(const Vec128<T, N> v) {
-  const DFromV<decltype(v)> d;
-  const RebindToSigned<decltype(d)> di;
-  const VFromD<decltype(di)> vi = BitCast(di, v);
-  // 'Shift left' to clear the sign bit, check for exponent=max and mantissa=0.
-  return RebindMask(d, Eq(Add(vi, vi), Set(di, hwy::MaxExponentTimes2<T>())));
-}
-
-// Returns whether normal/subnormal/zero.
-template <typename T, size_t N, HWY_IF_FLOAT(T)>
-HWY_API Mask128<T, N> IsFinite(const Vec128<T, N> v) {
-  const DFromV<decltype(v)> d;
-  const RebindToUnsigned<decltype(d)> du;
-  const RebindToSigned<decltype(d)> di;  // cheaper than unsigned comparison
-  const VFromD<decltype(du)> vu = BitCast(du, v);
-  // 'Shift left' to clear the sign bit, then right so we can compare with the
-  // max exponent (cannot compare with MaxExponentTimes2 directly because it is
-  // negative and non-negative floats would be greater).
-  const VFromD<decltype(di)> exp =
-      BitCast(di, ShiftRight<hwy::MantissaBits<T>() + 1>(Add(vu, vu)));
-  return RebindMask(d, Lt(exp, Set(di, hwy::MaxExponentField<T>())));
 }
 
 // ================================================== SWIZZLE

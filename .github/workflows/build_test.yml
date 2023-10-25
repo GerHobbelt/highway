@@ -61,20 +61,23 @@ jobs:
             extra_deps: g++-8
             c_compiler: gcc-8
             cxx_compiler: g++-8
+            cxx_flags: -ftrapv
 
           - name: GCC-9
             extra_deps: g++-9
             c_compiler: gcc-9
             cxx_compiler: g++-9
+            cxx_flags: -ftrapv
 
           - name: GCC-10
             extra_deps: g++-10
             c_compiler: gcc-10
             cxx_compiler: g++-10
+            cxx_flags: -ftrapv
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -87,7 +90,7 @@ jobs:
         run: |
           export CMAKE_BUILD_PARALLEL_LEVEL=2
           export CTEST_PARALLEL_LEVEL=2
-          CXXFLAGS=-Werror CC=${{ matrix.c_compiler }} CXX=${{ matrix.cxx_compiler }} cmake -B out .
+          CXXFLAGS=${{ matrix.cxx_flags }} CC=${{ matrix.c_compiler }} CXX=${{ matrix.cxx_compiler }} cmake -DHWY_WARNINGS_ARE_ERRORS=ON -B out .
           cmake --build out
           ctest --test-dir out
 
@@ -95,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@8ca2b8b2ece13480cda6dacd3511b49857a23c09 # v2.5.1
+        uses: step-security/harden-runner@1b05615854632b887b69ae1be8cbefe72d3ae423 # v2.6.0
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
