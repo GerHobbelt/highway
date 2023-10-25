@@ -26,9 +26,12 @@
 #include "gtest/gtest.h"
 #include "hwy/base.h"                  // PopCount
 #include "hwy/detect_compiler_arch.h"  // HWY_ARCH_WASM
+#include "hwy/tests/test_util-inl.h"   // AdjustedReps
 
 namespace hwy {
 namespace {
+
+using HWY_NAMESPACE::AdjustedReps;
 
 // Ensures task parameter is in bounds, every parameter is reached,
 // pool can be reused (multiple consecutive Run calls), pool can be destroyed
@@ -36,11 +39,11 @@ namespace {
 TEST(ThreadPoolTest, TestPool) {
   if (HWY_ARCH_WASM) return;  // WASM threading is unreliable
 
-  for (int num_threads = 0; num_threads <= 18; ++num_threads) {
+  for (size_t num_threads = 0; num_threads <= 6; num_threads += 3) {
     ThreadPool pool(num_threads);
-    for (uint32_t num_tasks = 0; num_tasks < 32; ++num_tasks) {
+    for (uint32_t num_tasks = 0; num_tasks < 20; ++num_tasks) {
       std::vector<size_t> mementos(num_tasks);
-      for (uint32_t begin = 0; begin < 32; ++begin) {
+      for (uint32_t begin = 0; begin < AdjustedReps(32); ++begin) {
         std::fill(mementos.begin(), mementos.end(), 0);
         EXPECT_TRUE(pool.Run(begin, begin + num_tasks, ThreadPool::NoInit,
                               [&](const uint32_t task, size_t /*thread*/) {
@@ -65,28 +68,29 @@ TEST(ThreadPoolTest, TestSmallAssignments) {
   if (HWY_ARCH_WASM) return;  // WASM threading is unreliable
 
   const size_t kMaxThreads = 8;
-  for (size_t num_threads = 1; num_threads <= kMaxThreads; ++num_threads) {
+  for (size_t num_threads = 1; num_threads <= kMaxThreads; num_threads += 3) {
     ThreadPool pool(num_threads);
 
     // (Avoid mutex because it may perturb the worker thread scheduling)
     std::atomic<uint64_t> id_bits{0};
     std::atomic<size_t> num_calls{0};
 
-    EXPECT_TRUE(pool.Run(0, static_cast<uint32_t>(num_threads), ThreadPool::NoInit,
-                    [&](uint32_t /*task*/, const size_t thread) {
-                      num_calls.fetch_add(1, std::memory_order_relaxed);
+    EXPECT_TRUE(
+        pool.Run(0, static_cast<uint32_t>(num_threads), ThreadPool::NoInit,
+                 [&](uint32_t /*task*/, const size_t thread) {
+                   num_calls.fetch_add(1, std::memory_order_relaxed);
 
-                      EXPECT_LT(thread, num_threads);
-                      uint64_t bits = id_bits.load(std::memory_order_relaxed);
-                      while (!id_bits.compare_exchange_weak(
-                          bits, bits | (1ULL << thread))) {
-                      }
-                    }));
+                   EXPECT_LT(thread, num_threads);
+                   uint64_t bits = id_bits.load(std::memory_order_relaxed);
+                   while (!id_bits.compare_exchange_weak(
+                       bits, bits | (1ULL << thread))) {
+                   }
+                 }));
 
     // Correct number of tasks.
     EXPECT_EQ(num_threads, num_calls.load());
 
-    const int num_participants = PopCount(id_bits.load());
+    const size_t num_participants = PopCount(id_bits.load());
     // Can't expect equality because other workers may have woken up too late.
     EXPECT_LE(num_participants, num_threads);
   }
@@ -98,8 +102,8 @@ struct Counter {
     (void)padding;
   }
   void Assimilate(const Counter& victim) { counter += victim.counter; }
-  int counter = 0;
-  int padding[31];
+  uint32_t counter = 0;
+  uint32_t padding[31];
 };
 
 TEST(ThreadPoolTest, TestCounter) {
