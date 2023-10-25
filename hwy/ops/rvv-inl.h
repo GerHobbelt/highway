@@ -953,7 +953,6 @@ HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVS, MinS, fmin_vf, _ALL)
 
 }  // namespace detail
 
-
 HWY_RVV_FOREACH_U(HWY_RVV_RETV_ARGVV, Min, minu, _ALL)
 HWY_RVV_FOREACH_I(HWY_RVV_RETV_ARGVV, Min, min, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVV, Min, fmin, _ALL)
@@ -974,15 +973,20 @@ HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVV, Max, fmax, _ALL)
 
 // ------------------------------ Mul
 
-HWY_RVV_FOREACH_UI163264(HWY_RVV_RETV_ARGVV, Mul, mul, _ALL)
-HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVV, Mul, fmul, _ALL)
-
-// Per-target flag to prevent generic_ops-inl.h from defining i64 operator*.
-#ifdef HWY_NATIVE_I64MULLO
-#undef HWY_NATIVE_I64MULLO
+// Per-target flags to prevent generic_ops-inl.h defining 8/64-bit operator*.
+#ifdef HWY_NATIVE_MUL_8
+#undef HWY_NATIVE_MUL_8
 #else
-#define HWY_NATIVE_I64MULLO
+#define HWY_NATIVE_MUL_8
 #endif
+#ifdef HWY_NATIVE_MUL_64
+#undef HWY_NATIVE_MUL_64
+#else
+#define HWY_NATIVE_MUL_64
+#endif
+
+HWY_RVV_FOREACH_UI(HWY_RVV_RETV_ARGVV, Mul, mul, _ALL)
+HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGVV, Mul, fmul, _ALL)
 
 // ------------------------------ MulHigh
 
@@ -1013,6 +1017,14 @@ HWY_RVV_FOREACH_F(HWY_RVV_RETV_ARGV, Sqrt, fsqrt, _ALL)
 HWY_RVV_FOREACH_F32(HWY_RVV_RETV_ARGV, ApproximateReciprocalSqrt, frsqrt7, _ALL)
 
 // ------------------------------ MulAdd
+
+// Per-target flag to prevent generic_ops-inl.h from defining int MulAdd.
+#ifdef HWY_NATIVE_INT_FMA
+#undef HWY_NATIVE_INT_FMA
+#else
+#define HWY_NATIVE_INT_FMA
+#endif
+
 // Note: op is still named vv, not vvv.
 #define HWY_RVV_FMA(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, SHIFT, \
                     MLEN, NAME, OP)                                         \
@@ -1023,9 +1035,11 @@ HWY_RVV_FOREACH_F32(HWY_RVV_RETV_ARGV, ApproximateReciprocalSqrt, frsqrt7, _ALL)
                                                 HWY_RVV_AVL(SEW, SHIFT));   \
   }
 
+HWY_RVV_FOREACH_UI(HWY_RVV_FMA, MulAdd, macc, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_FMA, MulAdd, fmacc, _ALL)
 
 // ------------------------------ NegMulAdd
+HWY_RVV_FOREACH_UI(HWY_RVV_FMA, NegMulAdd, nmsac, _ALL)
 HWY_RVV_FOREACH_F(HWY_RVV_FMA, NegMulAdd, fnmsac, _ALL)
 
 // ------------------------------ MulSub
@@ -2124,12 +2138,12 @@ HWY_API vint32m4_t DemoteTo(Simd<int32_t, N, 2> d, const vfloat64m8_t v) {
 }
 
 // SEW is for the source so we can use _DEMOTE_VIRT.
-#define HWY_RVV_DEMOTE_TO_SHR_16(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD,     \
-                                 LMULH, SHIFT, MLEN, NAME, OP)                 \
-  template <size_t N>                                                          \
-  HWY_API HWY_RVV_V(BASE, SEWH, LMULH) NAME(                                   \
-      HWY_RVV_D(BASE, SEWH, N, SHIFT - 1) d, HWY_RVV_V(BASE, SEW, LMUL) v) {   \
-    return __riscv_v##OP##CHAR##SEWH##LMULH(v, 16, Lanes(d));                  \
+#define HWY_RVV_DEMOTE_TO_SHR_16(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD,   \
+                                 LMULH, SHIFT, MLEN, NAME, OP)               \
+  template <size_t N>                                                        \
+  HWY_API HWY_RVV_V(BASE, SEWH, LMULH) NAME(                                 \
+      HWY_RVV_D(BASE, SEWH, N, SHIFT - 1) d, HWY_RVV_V(BASE, SEW, LMUL) v) { \
+    return __riscv_v##OP##CHAR##SEWH##LMULH(v, 16, Lanes(d));                \
   }
 namespace detail {
 HWY_RVV_FOREACH_U32(HWY_RVV_DEMOTE_TO_SHR_16, DemoteToShr16, nclipu_wx_,
@@ -3330,8 +3344,7 @@ HWY_API VFromD<Simd<uint16_t, N, kPow2>> ReorderDemote2To(
 
 // If LMUL is not the max, Combine first to avoid another DemoteTo.
 template <class DN, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<DN>),
-          HWY_IF_POW2_LE_D(DN, 2),
-          class V, HWY_IF_SIGNED_V(V),
+          HWY_IF_POW2_LE_D(DN, 2), class V, HWY_IF_SIGNED_V(V),
           HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
@@ -3341,10 +3354,8 @@ HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
   return DemoteTo(dn, ab);
 }
 
-template <class DN, HWY_IF_UNSIGNED_D(DN),
-          HWY_IF_POW2_LE_D(DN, 2),
-          class V, HWY_IF_UNSIGNED_V(V),
-          HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
+template <class DN, HWY_IF_UNSIGNED_D(DN), HWY_IF_POW2_LE_D(DN, 2), class V,
+          HWY_IF_UNSIGNED_V(V), HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
 HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
@@ -3355,8 +3366,7 @@ HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
 
 // Max LMUL: must DemoteTo first, then Combine.
 template <class DN, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<DN>),
-          HWY_IF_POW2_GT_D(DN, 2),
-          class V, HWY_IF_SIGNED_V(V),
+          HWY_IF_POW2_GT_D(DN, 2), class V, HWY_IF_SIGNED_V(V),
           HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
@@ -3367,10 +3377,8 @@ HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
   return Combine(dn, demoted_b, demoted_a);
 }
 
-template <class DN, HWY_IF_UNSIGNED_D(DN),
-          HWY_IF_POW2_GT_D(DN, 2),
-          class V, HWY_IF_UNSIGNED_V(V),
-          HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
+template <class DN, HWY_IF_UNSIGNED_D(DN), HWY_IF_POW2_GT_D(DN, 2), class V,
+          HWY_IF_UNSIGNED_V(V), HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
 HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
@@ -3381,9 +3389,8 @@ HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
 }
 
 // If LMUL is not the max, Combine first to avoid another DemoteTo.
-template <class DN, HWY_IF_BF16_D(DN),
-          HWY_IF_POW2_LE_D(DN, 2),
-          class V, HWY_IF_F32_D(DFromV<V>),
+template <class DN, HWY_IF_BF16_D(DN), HWY_IF_POW2_LE_D(DN, 2), class V,
+          HWY_IF_F32_D(DFromV<V>),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
 HWY_API VFromD<DN> OrderedDemote2To(DN dn, V a, V b) {
@@ -3393,9 +3400,8 @@ HWY_API VFromD<DN> OrderedDemote2To(DN dn, V a, V b) {
 }
 
 // Max LMUL: must DemoteTo first, then Combine.
-template <class DN, HWY_IF_BF16_D(DN),
-          HWY_IF_POW2_GT_D(DN, 2),
-          class V, HWY_IF_F32_D(DFromV<V>),
+template <class DN, HWY_IF_BF16_D(DN), HWY_IF_POW2_GT_D(DN, 2), class V,
+          HWY_IF_F32_D(DFromV<V>),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>
 HWY_API VFromD<DN> OrderedDemote2To(DN dn, V a, V b) {
@@ -3407,8 +3413,8 @@ HWY_API VFromD<DN> OrderedDemote2To(DN dn, V a, V b) {
   return BitCast(dn, Combine(dn_u, demoted_b, demoted_a));
 }
 
-template <class DN, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<DN>),
-          class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+template <class DN, HWY_IF_NOT_FLOAT_NOR_SPECIAL(TFromD<DN>), class V,
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
           HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           class V2 = VFromD<Repartition<TFromV<V>, DN>>,
           hwy::EnableIf<DFromV<V>().Pow2() == DFromV<V2>().Pow2()>* = nullptr>

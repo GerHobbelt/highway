@@ -1323,6 +1323,13 @@ HWY_API Vec512<double> Max(const Vec512<double> a, const Vec512<double> b) {
 
 // ------------------------------ Integer multiplication
 
+// Per-target flag to prevent generic_ops-inl.h from defining 64-bit operator*.
+#ifdef HWY_NATIVE_MUL_64
+#undef HWY_NATIVE_MUL_64
+#else
+#define HWY_NATIVE_MUL_64
+#endif
+
 // Unsigned
 HWY_API Vec512<uint16_t> operator*(Vec512<uint16_t> a, Vec512<uint16_t> b) {
   return Vec512<uint16_t>{_mm512_mullo_epi16(a.raw, b.raw)};
@@ -1339,13 +1346,6 @@ HWY_API Vec256<uint64_t> operator*(Vec256<uint64_t> a, Vec256<uint64_t> b) {
 HWY_API Vec128<uint64_t> operator*(Vec128<uint64_t> a, Vec128<uint64_t> b) {
   return Vec128<uint64_t>{_mm_mullo_epi64(a.raw, b.raw)};
 }
-
-// Per-target flag to prevent generic_ops-inl.h from defining i64 operator*.
-#ifdef HWY_NATIVE_I64MULLO
-#undef HWY_NATIVE_I64MULLO
-#else
-#define HWY_NATIVE_I64MULLO
-#endif
 
 // Signed
 HWY_API Vec512<int16_t> operator*(Vec512<int16_t> a, Vec512<int16_t> b) {
@@ -4473,7 +4473,7 @@ HWY_API Vec512<T> Expand(Vec512<T> v, const Mask512<T> mask) {
   Store(v, d, lanes);
   using Bits = typename Mask256<T>::Raw;
   const Mask256<T> maskL{
-      static_cast<Bits>(mask.raw & Bits{(1ULL << (N / 2)) - 1})};
+      static_cast<Bits>(mask.raw& Bits{(1ULL << (N / 2)) - 1})};
   const Mask256<T> maskH{static_cast<Bits>(mask.raw >> (N / 2))};
   const size_t countL = CountTrue(dh, maskL);
   const Vec256<T> expandL = Expand(LowerHalf(v), maskL);
@@ -4496,7 +4496,7 @@ HWY_API Vec512<T> Expand(Vec512<T> v, const Mask512<T> mask) {
   constexpr size_t N = 64 / sizeof(T);
   using Bits = typename Mask256<T>::Raw;
   const Mask256<T> maskL{
-      static_cast<Bits>(mask.raw & Bits{(1ULL << (N / 2)) - 1})};
+      static_cast<Bits>(mask.raw& Bits{(1ULL << (N / 2)) - 1})};
   const Mask256<T> maskH{static_cast<Bits>(mask.raw >> (N / 2))};
   // In AVX3 we can permutevar, which avoids a potential store to load
   // forwarding stall vs. reloading the input.
@@ -5190,7 +5190,8 @@ HWY_API V HighestSetBitIndex(V v) {
   const DFromV<decltype(v)> d;
   const RebindToUnsigned<decltype(d)> du;
   using TU = TFromD<decltype(du)>;
-  return BitCast(d, Set(du, TU{31}) - detail::Lzcnt32ForU8OrU16(BitCast(du, v)));
+  return BitCast(d,
+                 Set(du, TU{31}) - detail::Lzcnt32ForU8OrU16(BitCast(du, v)));
 }
 
 template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
