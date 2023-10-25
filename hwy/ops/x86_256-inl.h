@@ -49,10 +49,6 @@ HWY_DIAGNOSTICS_OFF(disable : 4703 6001 26494, ignored "-Wmaybe-uninitialized")
 
 #include <string.h>  // memcpy
 
-#if HWY_IS_MSAN
-#include <sanitizer/msan_interface.h>
-#endif
-
 // For half-width vectors. Already includes base.h.
 #include "hwy/ops/shared-inl.h"
 // Already included by shared-inl, but do it again to avoid IDE warnings.
@@ -3388,15 +3384,18 @@ HWY_API Vec256<double> TwoTablesLookupLanes(Vec256<double> a, Vec256<double> b,
 
 template <typename T>
 HWY_API Vec256<T> SwapAdjacentBlocks(Vec256<T> v) {
-  return Vec256<T>{_mm256_permute2x128_si256(v.raw, v.raw, 0x01)};
-}
-
-HWY_API Vec256<float> SwapAdjacentBlocks(Vec256<float> v) {
-  return Vec256<float>{_mm256_permute2f128_ps(v.raw, v.raw, 0x01)};
+  return Vec256<T>{_mm256_permute4x64_epi64(v.raw, _MM_SHUFFLE(1, 0, 3, 2))};
 }
 
 HWY_API Vec256<double> SwapAdjacentBlocks(Vec256<double> v) {
-  return Vec256<double>{_mm256_permute2f128_pd(v.raw, v.raw, 0x01)};
+  return Vec256<double>{_mm256_permute4x64_pd(v.raw, _MM_SHUFFLE(1, 0, 3, 2))};
+}
+
+HWY_API Vec256<float> SwapAdjacentBlocks(Vec256<float> v) {
+  // Assume no domain-crossing penalty between float/double (true on SKX).
+  const DFromV<decltype(v)> d;
+  const RepartitionToWide<decltype(d)> dw;
+  return BitCast(d, SwapAdjacentBlocks(BitCast(dw, v)));
 }
 
 // ------------------------------ Reverse (RotateRight)
@@ -3430,6 +3429,14 @@ HWY_API Vec256<T> Reverse(D d, const Vec256<T> v) {
   return Vec256<T>{
       _mm256_permute4x64_epi64(rev128.raw, _MM_SHUFFLE(1, 0, 3, 2))};
 #endif
+}
+
+template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 1)>
+HWY_API Vec256<T> Reverse(D d, const Vec256<T> v) {
+  alignas(32) static constexpr uint8_t kReverse[32] = {
+      31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
+      15, 14, 13, 12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1,  0};
+  return TableLookupLanes(v, SetTableIndices(d, kReverse));
 }
 
 // ------------------------------ Reverse2 (in x86_128)
@@ -3973,11 +3980,11 @@ HWY_API Vec256<double> OddEvenBlocks(Vec256<double> odd, Vec256<double> even) {
   return Vec256<double>{_mm256_blend_pd(odd.raw, even.raw, 0x3u)};
 }
 
-// ------------------------------ ReverseBlocks (ConcatLowerUpper)
+// ------------------------------ ReverseBlocks (SwapAdjacentBlocks)
 
 template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> ReverseBlocks(D d, Vec256<T> v) {
-  return ConcatLowerUpper(d, v, v);
+HWY_API Vec256<T> ReverseBlocks(D /*d*/, Vec256<T> v) {
+  return SwapAdjacentBlocks(v);
 }
 
 // ------------------------------ TableLookupBytes (ZeroExtendVector)
@@ -6164,18 +6171,18 @@ HWY_API Vec256<int16_t> MaxOfLanes(hwy::SizeTag<2> /* tag */,
 
 // Supported for {uif}{32,64},{ui}16. Returns the broadcasted result.
 template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> SumOfLanes(D d, const Vec256<T> vHL) {
-  const Vec256<T> vLH = ConcatLowerUpper(d, vHL, vHL);
+HWY_API Vec256<T> SumOfLanes(D /*d*/, const Vec256<T> vHL) {
+  const Vec256<T> vLH = SwapAdjacentBlocks(vHL);
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(), vLH + vHL);
 }
 template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> MinOfLanes(D d, const Vec256<T> vHL) {
-  const Vec256<T> vLH = ConcatLowerUpper(d, vHL, vHL);
+HWY_API Vec256<T> MinOfLanes(D /*d*/, const Vec256<T> vHL) {
+  const Vec256<T> vLH = SwapAdjacentBlocks(vHL);
   return detail::MinOfLanes(hwy::SizeTag<sizeof(T)>(), Min(vLH, vHL));
 }
 template <class D, typename T = TFromD<D>>
-HWY_API Vec256<T> MaxOfLanes(D d, const Vec256<T> vHL) {
-  const Vec256<T> vLH = ConcatLowerUpper(d, vHL, vHL);
+HWY_API Vec256<T> MaxOfLanes(D /*d*/, const Vec256<T> vHL) {
+  const Vec256<T> vLH = SwapAdjacentBlocks(vHL);
   return detail::MaxOfLanes(hwy::SizeTag<sizeof(T)>(), Max(vLH, vHL));
 }
 

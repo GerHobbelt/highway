@@ -158,15 +158,15 @@ namespace detail {
 
 #if HWY_IDE
 template <class V>
-V ShuffleTwo1230(V a, V /* b */) {
+HWY_INLINE V ShuffleTwo1230(V a, V /* b */) {
   return a;
 }
 template <class V>
-V ShuffleTwo2301(V a, V /* b */) {
+HWY_INLINE V ShuffleTwo2301(V a, V /* b */) {
   return a;
 }
 template <class V>
-V ShuffleTwo3012(V a, V /* b */) {
+HWY_INLINE V ShuffleTwo3012(V a, V /* b */) {
   return a;
 }
 #endif  // HWY_IDE
@@ -698,9 +698,9 @@ HWY_API void StoreInterleaved3(VFromD<D> part0, VFromD<D> part1,
   const auto k5 = Set(du, uint8_t{5});
   const auto k6 = Set(du, uint8_t{6});
 
-  const Vec128<TFromD<D>> v0{part0.raw};
-  const Vec128<TFromD<D>> v1{part1.raw};
-  const Vec128<TFromD<D>> v2{part2.raw};
+  const VFromD<decltype(d_full)> v0{part0.raw};
+  const VFromD<decltype(d_full)> v1{part1.raw};
+  const VFromD<decltype(d_full)> v2{part2.raw};
 
   // Interleave (v0,v1,v2) to (MSB on left, lane 0 on right):
   // v1[2],v0[2], v2[1],v1[1],v0[1], v2[0],v1[0],v0[0]. 0x80 so lanes to be
@@ -2076,6 +2076,13 @@ HWY_API V CompressNot(V v, M mask) {
 
 namespace detail {
 
+#if HWY_IDE
+template <class M>
+HWY_INLINE uint64_t BitsFromMask(M /* mask */) {
+  return 0;
+}
+#endif  // HWY_IDE
+
 template <size_t N>
 HWY_INLINE Vec128<uint8_t, N> IndicesForExpandFromBits(uint64_t mask_bits) {
   static_assert(N <= 8, "Should only be called for half-vectors");
@@ -2360,6 +2367,7 @@ template <typename T, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec128<T> Expand(Vec128<T> v, Mask128<T> mask) {
   const Full128<T> d;
   const RebindToUnsigned<decltype(d)> du;
+  const Half<decltype(du)> duh;
   const Vec128<uint8_t> vu = BitCast(du, v);
 
   const uint64_t mask_bits = detail::BitsFromMask(mask);
@@ -2371,19 +2379,20 @@ HWY_API Vec128<T> Expand(Vec128<T> v, Mask128<T> mask) {
   // but would involve a store-load forwarding stall. We instead shuffle using
   // loaded indices. multishift_epi64_epi8 would also help, but if we have that,
   // we probably also have native 8-bit Expand.
-  alignas(16)
-      uint8_t iota[32] = {0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,
-                          11,  12,  13,  14,  15,  128, 128, 128, 128, 128, 128,
-                          128, 128, 128, 128, 128, 128, 128, 128, 128, 128};
-  const Vec128<uint8_t> shift = LoadU(du, iota + PopCount(maskL));
-  const Vec64<uint8_t> vL = LowerHalf(vu);
-  const Vec64<uint8_t> vH = LowerHalf(TableLookupBytesOr0(vu, shift));
+  alignas(16) static constexpr uint8_t iota[32] = {
+      0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,
+      11,  12,  13,  14,  15,  128, 128, 128, 128, 128, 128,
+      128, 128, 128, 128, 128, 128, 128, 128, 128, 128};
+  const VFromD<decltype(du)> shift = LoadU(du, iota + PopCount(maskL));
+  const VFromD<decltype(duh)> vL = LowerHalf(duh, vu);
+  const VFromD<decltype(duh)> vH =
+      LowerHalf(duh, TableLookupBytesOr0(vu, shift));
 
-  const Vec64<uint8_t> idxL = detail::IndicesForExpandFromBits<8>(maskL);
-  const Vec64<uint8_t> idxH = detail::IndicesForExpandFromBits<8>(maskH);
+  const VFromD<decltype(duh)> idxL = detail::IndicesForExpandFromBits<8>(maskL);
+  const VFromD<decltype(duh)> idxH = detail::IndicesForExpandFromBits<8>(maskH);
 
-  const Vec64<uint8_t> expandL = TableLookupBytesOr0(vL, idxL);
-  const Vec64<uint8_t> expandH = TableLookupBytesOr0(vH, idxH);
+  const VFromD<decltype(duh)> expandL = TableLookupBytesOr0(vL, idxL);
+  const VFromD<decltype(duh)> expandH = TableLookupBytesOr0(vH, idxH);
   return BitCast(d, Combine(du, expandH, expandL));
 }
 
@@ -2675,7 +2684,7 @@ HWY_API Vec128<T, N> Expand(Vec128<T, N> v, Mask128<T, N> mask) {
 
   const uint64_t mask_bits = detail::BitsFromMask(mask);
 
-  alignas(16) constexpr uint32_t packed_array[16] = {
+  alignas(16) static constexpr uint32_t packed_array[16] = {
       // PrintExpand64x4Nibble - same for 32x4.
       0x0000ffff, 0x0000fff0, 0x0000ff0f, 0x0000ff10, 0x0000f0ff, 0x0000f1f0,
       0x0000f10f, 0x0000f210, 0x00000fff, 0x00001ff0, 0x00001f0f, 0x00002f10,
@@ -2683,7 +2692,7 @@ HWY_API Vec128<T, N> Expand(Vec128<T, N> v, Mask128<T, N> mask) {
 
   // For lane i, shift the i-th 4-bit index down to bits [0, 2).
   const Vec128<uint32_t, N> packed = Set(du, packed_array[mask_bits]);
-  alignas(16) constexpr uint32_t shifts[4] = {0, 4, 8, 12};
+  alignas(16) static constexpr uint32_t shifts[4] = {0, 4, 8, 12};
   Vec128<uint32_t, N> indices = packed >> Load(du, shifts);
   // AVX2 _mm256_permutexvar_epi32 will ignore upper bits, but IndicesFromVec
   // checks bounds, so clear the upper bits.

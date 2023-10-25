@@ -18,11 +18,23 @@
 // IWYU pragma: begin_exports
 // Export does not seem to be recursive, so re-export these (also in base.h)
 #include <stddef.h>
-#include <stdint.h>  // IWYU pragma: keep
 
 #include "hwy/base.h"
+// "IWYU pragma: keep" does not work for this include, so hide it from the IDE.
+#if !HWY_IDE
+#include <stdint.h>
+#endif
+
 #include "hwy/detect_compiler_arch.h"
+
+// Separate header because foreach_target.h re-enables its include guard.
+#include "hwy/ops/set_macros-inl.h"
+
 // IWYU pragma: end_exports
+
+#if HWY_IS_MSAN
+#include <sanitizer/msan_interface.h>
+#endif
 
 // We are covered by the highway.h include guard, but generic_ops-inl.h
 // includes this again #if HWY_IDE.
@@ -33,9 +45,6 @@
 #else
 #define HIGHWAY_HWY_OPS_SHARED_TOGGLE
 #endif
-
-// Separate header because foreach_target.h re-enables its include guard.
-#include "hwy/ops/set_macros-inl.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
@@ -60,11 +69,23 @@ using VecArg = V;
 #endif
 
 namespace detail {
+
 // Returns N * 2^pow2. N is the number of lanes in a full vector and pow2 the
 // desired fraction or multiple of it, see Simd<>. `pow2` is most often in
 // [-3, 3] but can also be lower for user-specified fractions.
 constexpr size_t ScaleByPower(size_t N, int pow2) {
   return pow2 >= 0 ? (N << pow2) : (N >> (-pow2));
+}
+
+template <typename T>
+HWY_INLINE void MaybeUnpoison(T* HWY_RESTRICT unaligned, size_t count) {
+  // Workaround for MSAN not marking compressstore as initialized (b/233326619)
+#if HWY_IS_MSAN
+  __msan_unpoison(unaligned, count * sizeof(T));
+#else
+  (void)unaligned;
+  (void)count;
+#endif
 }
 
 }  // namespace detail
