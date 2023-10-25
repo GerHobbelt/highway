@@ -185,10 +185,13 @@ the smaller types must be obtained from those of the larger type (e.g. via
 
 ## Using unspecified vector types
 
-Vector types are unspecified and depend on the target. User code could define
-them as `auto`, but it is more readable (due to making the type visible) to use
-an alias such as `Vec<D>`, or `decltype(Zero(d))`. Similarly, the mask type can
-be obtained via `Mask<D>`.
+Vector types are unspecified and depend on the target. Your code could define
+vector variables using `auto`, but it is more readable (due to making the type
+visible) to use an alias such as `Vec<D>`, or `decltype(Zero(d))`. Similarly,
+the mask type can be obtained via `Mask<D>`. Often your code will first define a
+`d` lvalue using `ScalableTag<T>`. You may wish to define an alias for your
+vector types such as `using VecT = Vec<decltype(d)>`. Do not use undocumented
+types such as `Vec128`; these may work on most targets, but not all (e.g. SVE).
 
 Vectors are sizeless types on RVV/SVE. Therefore, vectors must not be used in
 arrays/STL containers (use the lane type `T` instead), class members,
@@ -206,8 +209,8 @@ lack the limit on `N` established by the original `D`. However, `Vec<DV>` is the
 same as `V`.
 
 Thus a template argument `V` suffices for generic functions that do not load
-from/store to memory: `template<class V> V Mul4(V v) { return v *
-Set(DFromV<V>(), 4); }`.
+from/store to memory: `template<class V> V Mul4(V v) { return Mul(v,
+Set(DFromV<V>(), 4)); }`.
 
 Example of mixing partial vectors with generic functions:
 
@@ -454,7 +457,12 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
     either `sum1[j]` or lane `j` of the return value, where `j = P(i)` and `P`
     is a permutation. The only guarantee is that `SumOfLanes(d,
     Add(return_value, sum1))` is the sum of all `a[i] * b[i]`. This is useful
-    for computing dot products and the L2 norm.
+    for computing dot products and the L2 norm. The initial value of `sum1`
+    before any call to `ReorderWidenMulAccumulate` must be zero (because it is
+    unused on some platforms). It is safe to set the initial value of `sum0` to
+    any vector `v`; this has the effect of increasing the total sum by
+    `GetLane(SumOfLanes(d, v))` and may be slightly more efficient than later
+    adding `v` to `sum0`.
 
 *   `VW`: `{f,i}32` \
     <code>VW **RearrangeToOddPlusEven**(VW sum0, VW sum1)</code>: returns in
@@ -465,7 +473,9 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
     the sum of the widened products whose 16-bit inputs came from the top and
     bottom halves of the 32-bit lane. This is typically called after a series of
     calls to `ReorderWidenMulAccumulate`, as opposed to after each one.
-    Exception: if `HWY_TARGET == HWY_SCALAR`, returns `a[0]*b[0]`.
+    Exception: if `HWY_TARGET == HWY_SCALAR`, returns `a[0]*b[0]`. Note that the
+    initial value of `sum1` must be zero, see `ReorderWidenMulAccumulate`.
+
 
 #### Fused multiply-add
 
@@ -1295,6 +1305,8 @@ broadcasted to all lanes. To obtain a scalar, you can call `GetLane`.
 
 Being a horizontal operation (across lanes of the same vector), these are slower
 than normal SIMD operations and are typically used outside critical loops.
+
+There are additional `{u,i}{8}` implementations on SSE4.1+ and NEON.
 
 *   `V`: `{u,i,f}{32,64},{u,i}{16}` \
     <code>V **SumOfLanes**(D, V v)</code>: returns the sum of all lanes in each
