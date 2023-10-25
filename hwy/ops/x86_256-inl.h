@@ -234,7 +234,8 @@ template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm256_set1_epi8(static_cast<char>(t))};  // NOLINT
 }
-template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 2)>
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 2),
+          HWY_IF_NOT_SPECIAL_FLOAT_D(D)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm256_set1_epi16(static_cast<short>(t))};  // NOLINT
 }
@@ -498,48 +499,6 @@ HWY_API Vec256<T> PopulationCount(Vec256<T> v) {
 }
 
 #endif  // HWY_TARGET <= HWY_AVX3_DL
-
-// ================================================== SIGN
-
-// ------------------------------ CopySign
-
-template <typename T>
-HWY_API Vec256<T> CopySign(const Vec256<T> magn, const Vec256<T> sign) {
-  static_assert(IsFloat<T>(), "Only makes sense for floating-point");
-
-  const DFromV<decltype(magn)> d;
-  const auto msb = SignBit(d);
-
-#if HWY_TARGET <= HWY_AVX3
-  const Rebind<MakeUnsigned<T>, decltype(d)> du;
-  // Truth table for msb, magn, sign | bitwise msb ? sign : mag
-  //                  0    0     0   |  0
-  //                  0    0     1   |  0
-  //                  0    1     0   |  1
-  //                  0    1     1   |  1
-  //                  1    0     0   |  0
-  //                  1    0     1   |  1
-  //                  1    1     0   |  0
-  //                  1    1     1   |  1
-  // The lane size does not matter because we are not using predication.
-  const __m256i out = _mm256_ternarylogic_epi32(
-      BitCast(du, msb).raw, BitCast(du, magn).raw, BitCast(du, sign).raw, 0xAC);
-  return BitCast(d, decltype(Zero(du)){out});
-#else
-  return Or(AndNot(msb, magn), And(msb, sign));
-#endif
-}
-
-template <typename T>
-HWY_API Vec256<T> CopySignToAbs(const Vec256<T> abs, const Vec256<T> sign) {
-#if HWY_TARGET <= HWY_AVX3
-  // AVX3 can also handle abs < 0, so no extra action needed.
-  return CopySign(abs, sign);
-#else
-  const DFromV<decltype(abs)> d;
-  return Or(abs, And(SignBit(d), sign));
-#endif
-}
 
 // ================================================== MASK
 
@@ -4430,7 +4389,7 @@ HWY_INLINE Vec256<uint64_t> MulOdd(const Vec256<uint64_t> a,
 // ------------------------------ WidenMulPairwiseAdd
 template <class D, HWY_IF_SIGNED_D(D)>
 HWY_API Vec256<int32_t> WidenMulPairwiseAdd(D /*d32*/, Vec256<int16_t> a,
-                                                  Vec256<int16_t> b) {
+                                            Vec256<int16_t> b) {
   return Vec256<int32_t>{_mm256_madd_epi16(a.raw, b.raw)};
 }
 

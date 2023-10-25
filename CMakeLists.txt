@@ -140,8 +140,12 @@ set(HWY_SOURCES
     hwy/print-inl.h
     hwy/print.cc
     hwy/print.h
+    hwy/robust_statistics.h
     hwy/targets.cc
     hwy/targets.h
+    hwy/timer.cc
+    hwy/timer.h
+    hwy/timer-inl.h
 )
 
 set(HWY_TEST_SOURCES

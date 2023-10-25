@@ -253,7 +253,8 @@ template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm_set1_epi8(static_cast<char>(t))};  // NOLINT
 }
-template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_T_SIZE_D(D, 2)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_T_SIZE_D(D, 2),
+          HWY_IF_NOT_SPECIAL_FLOAT_D(D)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm_set1_epi16(static_cast<short>(t))};  // NOLINT
 }
@@ -272,6 +273,16 @@ HWY_API VFromD<D> Set(D /* tag */, float t) {
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16), HWY_IF_F64_D(D)>
 HWY_API VFromD<D> Set(D /* tag */, double t) {
   return VFromD<D>{_mm_set1_pd(t)};
+}
+
+// Generic for all vector lengths.
+template <class D, HWY_IF_SPECIAL_FLOAT_D(D)>
+HWY_API VFromD<D> Set(D df, TFromD<D> t) {
+  const RebindToUnsigned<decltype(df)> du;
+  static_assert(sizeof(TFromD<D>) == 2, "Expecting [b]f16");
+  uint16_t bits;
+  CopyBytes<2>(&t, &bits);
+  return BitCast(df, Set(du, bits));
 }
 
 // ------------------------------ Undefined
@@ -603,17 +614,14 @@ HWY_API Vec128<double, N> Abs(const Vec128<double, N> v) {
 }
 
 // ------------------------------ CopySign
-
-template <typename T, size_t N>
-HWY_API Vec128<T, N> CopySign(const Vec128<T, N> magn,
-                              const Vec128<T, N> sign) {
-  static_assert(IsFloat<T>(), "Only makes sense for floating-point");
+// Generic for all vector lengths.
+template <class V>
+HWY_API V CopySign(const V magn, const V sign) {
+  static_assert(IsFloat<TFromV<V>>(), "Only makes sense for floating-point");
 
   const DFromV<decltype(magn)> d;
   const auto msb = SignBit(d);
 
-#if HWY_TARGET <= HWY_AVX3
-  const RebindToUnsigned<decltype(d)> du;
   // Truth table for msb, magn, sign | bitwise msb ? sign : mag
   //                  0    0     0   |  0
   //                  0    0     1   |  0
@@ -623,24 +631,15 @@ HWY_API Vec128<T, N> CopySign(const Vec128<T, N> magn,
   //                  1    0     1   |  1
   //                  1    1     0   |  0
   //                  1    1     1   |  1
-  // The lane size does not matter because we are not using predication.
-  const __m128i out = _mm_ternarylogic_epi32(
-      BitCast(du, msb).raw, BitCast(du, magn).raw, BitCast(du, sign).raw, 0xAC);
-  return BitCast(d, VFromD<decltype(du)>{out});
-#else
-  return Or(AndNot(msb, magn), And(msb, sign));
-#endif
+  return BitwiseIfThenElse(msb, sign, magn);
 }
 
-template <typename T, size_t N>
-HWY_API Vec128<T, N> CopySignToAbs(const Vec128<T, N> abs,
-                                   const Vec128<T, N> sign) {
-#if HWY_TARGET <= HWY_AVX3
-  // AVX3 can also handle abs < 0, so no extra action needed.
-  return CopySign(abs, sign);
-#else
-  return Or(abs, And(SignBit(DFromV<decltype(abs)>()), sign));
-#endif
+// ------------------------------ CopySignToAbs
+// Generic for all vector lengths.
+template <class V>
+HWY_API V CopySignToAbs(const V abs, const V sign) {
+  const DFromV<decltype(abs)> d;
+  return OrAnd(abs, SignBit(d), sign);
 }
 
 // ================================================== MASK
@@ -2312,7 +2311,8 @@ static HWY_INLINE V MaskOutVec128Iota(V v) {
 
 template <class D, typename T2, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API VFromD<D> Iota(D d, const T2 first) {
-  const auto result_iota = detail::Iota0(d) + Set(d, static_cast<TFromD<D>>(first));
+  const auto result_iota =
+      detail::Iota0(d) + Set(d, static_cast<TFromD<D>>(first));
 #if HWY_COMPILER_MSVC
   return detail::MaskOutVec128Iota(result_iota);
 #else
@@ -3095,13 +3095,14 @@ HWY_API Vec128<int64_t, N> Abs(const Vec128<int64_t, N> v) {
 #endif
 }
 
-// GCC and older Clang do not follow the Intel documentation for AVX-512VL
+// GCC <14 and Clang <11 do not follow the Intel documentation for AVX-512VL
 // srli_epi64: the count should be unsigned int. Note that this is not the same
 // as the Shift3264Count in x86_512-inl.h (GCC also requires int).
-#if (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1100) || HWY_COMPILER_GCC_ACTUAL
+#if (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1100) || \
+    (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1400)
 using Shift64Count = int;
 #else
-// Assume documented behavior. Clang 12 and MSVC 14.28.29910 match this.
+// Assume documented behavior. Clang 12, GCC 14 and MSVC 14.28.29910 match this.
 using Shift64Count = unsigned int;
 #endif
 
@@ -6042,7 +6043,7 @@ HWY_API VFromD<D32> WidenMulPairwiseAdd(D32 df32, V16 a, V16 b) {
   const VU32 be = ShiftLeft<16>(BitCast(du32, b));
   const VU32 bo = And(BitCast(du32, b), odd);
   return MulAdd(BitCast(df32, ae), BitCast(df32, be),
-            Mul(BitCast(df32, ao), BitCast(df32, bo)));
+                Mul(BitCast(df32, ao), BitCast(df32, bo)));
 }
 
 // Even if N=1, the input is always at least 2 lanes, hence madd_epi16 is safe.

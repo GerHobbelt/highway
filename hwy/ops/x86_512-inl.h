@@ -210,7 +210,8 @@ template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm512_set1_epi8(static_cast<char>(t))};  // NOLINT
 }
-template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_T_SIZE_D(D, 2)>
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_T_SIZE_D(D, 2),
+          HWY_IF_NOT_SPECIAL_FLOAT_D(D)>
 HWY_API VFromD<D> Set(D /* tag */, TFromD<D> t) {
   return VFromD<D>{_mm512_set1_epi16(static_cast<short>(t))};  // NOLINT
 }
@@ -574,39 +575,6 @@ HWY_API Vec512<T> PopulationCount(Vec512<T> v) {
 }
 
 #endif  // HWY_TARGET <= HWY_AVX3_DL
-
-// ================================================== SIGN
-
-// ------------------------------ CopySign
-
-template <typename T>
-HWY_API Vec512<T> CopySign(const Vec512<T> magn, const Vec512<T> sign) {
-  static_assert(IsFloat<T>(), "Only makes sense for floating-point");
-
-  const DFromV<decltype(magn)> d;
-  const auto msb = SignBit(d);
-
-  const RebindToUnsigned<decltype(d)> du;
-  // Truth table for msb, magn, sign | bitwise msb ? sign : mag
-  //                  0    0     0   |  0
-  //                  0    0     1   |  0
-  //                  0    1     0   |  1
-  //                  0    1     1   |  1
-  //                  1    0     0   |  0
-  //                  1    0     1   |  1
-  //                  1    1     0   |  0
-  //                  1    1     1   |  1
-  // The lane size does not matter because we are not using predication.
-  const __m512i out = _mm512_ternarylogic_epi32(
-      BitCast(du, msb).raw, BitCast(du, magn).raw, BitCast(du, sign).raw, 0xAC);
-  return BitCast(d, decltype(Zero(du)){out});
-}
-
-template <typename T>
-HWY_API Vec512<T> CopySignToAbs(const Vec512<T> abs, const Vec512<T> sign) {
-  // AVX3 can also handle abs < 0, so no extra action needed.
-  return CopySign(abs, sign);
-}
 
 // ================================================== MASK
 
@@ -1166,17 +1134,17 @@ HWY_API Vec512<uint64_t> RotateRight(const Vec512<uint64_t> v) {
 
 // ------------------------------ ShiftLeftSame
 
-// GCC and older Clang do not follow the Intel documentation for AVX-512
+// GCC <14 and Clang <11 do not follow the Intel documentation for AVX-512
 // shift-with-immediate: the counts should all be unsigned int.
 #if HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1100
 using Shift16Count = int;
 using Shift3264Count = int;
-#elif HWY_COMPILER_GCC_ACTUAL
+#elif HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1400
 // GCC 11.0 requires these, prior versions used a macro+cast and don't care.
 using Shift16Count = int;
 using Shift3264Count = unsigned int;
 #else
-// Assume documented behavior. Clang 11 and MSVC 14.28.29910 match this.
+// Assume documented behavior. Clang 11, GCC 14 and MSVC 14.28.29910 match this.
 using Shift16Count = unsigned int;
 using Shift3264Count = unsigned int;
 #endif
@@ -5446,7 +5414,7 @@ HWY_INLINE Vec512<uint64_t> MulOdd(const Vec512<uint64_t> a,
 // ------------------------------ WidenMulPairwiseAdd
 template <class D, HWY_IF_I32_D(D)>
 HWY_API Vec512<int32_t> WidenMulPairwiseAdd(D /*d32*/, Vec512<int16_t> a,
-                                                  Vec512<int16_t> b) {
+                                            Vec512<int16_t> b) {
   return Vec512<int32_t>{_mm512_madd_epi16(a.raw, b.raw)};
 }
 

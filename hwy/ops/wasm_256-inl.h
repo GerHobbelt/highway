@@ -562,18 +562,19 @@ HWY_API Vec256<T> operator^(const Vec256<T> a, const Vec256<T> b) {
 }
 
 // ------------------------------ CopySign
-
 template <typename T>
 HWY_API Vec256<T> CopySign(const Vec256<T> magn, const Vec256<T> sign) {
   static_assert(IsFloat<T>(), "Only makes sense for floating-point");
-  const auto msb = SignBit(DFromV<decltype(magn)>());
-  return Or(AndNot(msb, magn), And(msb, sign));
+  const DFromV<decltype(magn)> d;
+  return BitwiseIfThenElse(SignBit(d), sign, magn);
 }
 
+// ------------------------------ CopySignToAbs
 template <typename T>
 HWY_API Vec256<T> CopySignToAbs(const Vec256<T> abs, const Vec256<T> sign) {
   static_assert(IsFloat<T>(), "Only makes sense for floating-point");
-  return Or(abs, And(SignBit(DFromV<decltype(sign)>()), sign));
+  const DFromV<decltype(sign)> d;
+  return OrAnd(abs, SignBit(d), sign);
 }
 
 // ------------------------------ Mask
@@ -1876,12 +1877,12 @@ HWY_API void StoreTransposedBlocks4(Vec256<T> i, Vec256<T> j, Vec256<T> k,
 
 // ------------------------------ WidenMulPairwiseAdd
 template <class D32, typename T16, typename T32 = TFromD<D32>>
-HWY_API Vec256<T32> WidenMulPairwiseAdd(D32 d32, Vec256<T16> a,
-                                             Vec256<T16> b) {
+HWY_API Vec256<T32> WidenMulPairwiseAdd(D32 d32, Vec256<T16> a, Vec256<T16> b) {
   const Half<decltype(d32)> d32h;
-  sum0.v0 = WidenMulPairwiseAdd(d32h, a.v0, b.v0);
-  sum0.v1 = WidenMulPairwiseAdd(d32h, a.v1, b.v1);
-  return sum0;
+  Vec256<T32> result;
+  result.v0 = WidenMulPairwiseAdd(d32h, a.v0, b.v0);
+  result.v1 = WidenMulPairwiseAdd(d32h, a.v1, b.v1);
+  return result;
 }
 
 // ------------------------------ ReorderWidenMulAccumulate
