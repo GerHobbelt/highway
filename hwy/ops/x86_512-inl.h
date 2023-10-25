@@ -2108,6 +2108,48 @@ HWY_API Vec512<double> MaskedLoad(Mask512<double> m, D /* tag */,
   return Vec512<double>{_mm512_maskz_loadu_pd(m.raw, p)};
 }
 
+// ------------------------------ MaskedLoadOr
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), typename T = TFromD<D>,
+          HWY_IF_T_SIZE(T, 1)>
+HWY_API Vec512<T> MaskedLoadOr(VFromD<D> v, Mask512<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec512<T>{_mm512_mask_loadu_epi8(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), typename T = TFromD<D>,
+          HWY_IF_T_SIZE(T, 2)>
+HWY_API Vec512<T> MaskedLoadOr(VFromD<D> v, Mask512<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec512<T>{_mm512_mask_loadu_epi16(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), typename T = TFromD<D>,
+          HWY_IF_UI32(T)>
+HWY_API Vec512<T> MaskedLoadOr(VFromD<D> v, Mask512<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec512<T>{_mm512_mask_loadu_epi32(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), typename T = TFromD<D>,
+          HWY_IF_UI64(T)>
+HWY_API Vec512<T> MaskedLoadOr(VFromD<D> v, Mask512<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec512<T>{_mm512_mask_loadu_epi64(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64)>
+HWY_API Vec512<float> MaskedLoadOr(VFromD<D> v, Mask512<float> m, D /* tag */,
+                                   const float* HWY_RESTRICT p) {
+  return Vec512<float>{_mm512_mask_loadu_ps(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 64)>
+HWY_API Vec512<double> MaskedLoadOr(VFromD<D> v, Mask512<double> m, D /* tag */,
+                                    const double* HWY_RESTRICT p) {
+  return Vec512<double>{_mm512_mask_loadu_pd(v.raw, m.raw, p)};
+}
+
 // ------------------------------ LoadDup128
 
 // Loads 128 bit and duplicates into both 128-bit halves. This avoids the
@@ -3915,6 +3957,25 @@ HWY_API Vec512<uint8_t> AESLastRoundInv(Vec512<uint8_t> state,
   return Combine(
       d, AESLastRoundInv(UpperHalf(d2, state), UpperHalf(d2, round_key)),
       AESLastRoundInv(LowerHalf(state), LowerHalf(round_key)));
+#endif
+}
+
+template <uint8_t kRcon>
+HWY_API Vec512<uint8_t> AESKeyGenAssist(Vec512<uint8_t> v) {
+  const Full512<uint8_t> d;
+#if HWY_TARGET <= HWY_AVX3_DL
+  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
+      0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0};
+  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
+      0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12};
+  const Repartition<uint32_t, decltype(d)> du32;
+  const auto w13 = BitCast(d, DupOdd(BitCast(du32, v)));
+  const auto sub_word_result = AESLastRound(w13, Load(d, kRconXorMask));
+  return TableLookupBytes(sub_word_result, Load(d, kRotWordShuffle));
+#else
+  const Half<decltype(d)> d2;
+  return Combine(d, AESKeyGenAssist<kRcon>(UpperHalf(d2, v)),
+                 AESKeyGenAssist<kRcon>(LowerHalf(v)));
 #endif
 }
 

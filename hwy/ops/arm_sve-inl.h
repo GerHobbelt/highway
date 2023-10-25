@@ -1129,6 +1129,15 @@ HWY_API void StoreU(const V v, D d, TFromD<D>* HWY_RESTRICT p) {
   Store(v, d, p);
 }
 
+// ------------------------------ MaskedLoadOr
+
+// SVE MaskedLoad hard-codes zero, so this requires an extra blend.
+template <class D>
+HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
+                               const TFromD<D>* HWY_RESTRICT p) {
+  return IfThenElse(m, MaskedLoad(m, d, p), v);
+}
+
 // ------------------------------ ScatterOffset/Index
 
 #define HWY_SVE_SCATTER_OFFSET(BASE, CHAR, BITS, HALF, NAME, OP)             \
@@ -4204,6 +4213,19 @@ HWY_API svuint8_t AESRoundInv(svuint8_t state, svuint8_t round_key) {
 
 HWY_API svuint8_t AESLastRoundInv(svuint8_t state, svuint8_t round_key) {
   return Xor(svaesd_u8(state, svdup_n_u8(0)), round_key);
+}
+
+template <uint8_t kRcon>
+HWY_API svuint8_t AESKeyGenAssist(svuint8_t v) {
+  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
+      0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0};
+  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
+      0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12};
+  const DFromV<decltype(v)> d;
+  const Repartition<uint32_t, decltype(d)> du32;
+  const auto w13 = BitCast(d, DupOdd(BitCast(du32, v)));
+  const auto sub_word_result = AESLastRound(w13, LoadDup128(d, kRconXorMask));
+  return TableLookupBytes(sub_word_result, LoadDup128(d, kRotWordShuffle));
 }
 
 HWY_API svuint64_t CLMulLower(const svuint64_t a, const svuint64_t b) {

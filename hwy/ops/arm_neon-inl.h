@@ -2874,6 +2874,12 @@ HWY_API VFromD<D> MaskedLoad(MFromD<D> m, D d,
   return IfThenElseZero(m, Load(d, aligned));
 }
 
+template <class D>
+HWY_API VFromD<D> MaskedLoadOr(VFromD<D> v, MFromD<D> m, D d,
+                               const TFromD<D>* HWY_RESTRICT aligned) {
+  return IfThenElse(m, Load(d, aligned), v);
+}
+
 // 128-bit SIMD => nothing to duplicate, same as an unaligned load.
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API VFromD<D> LoadDup128(D d, const TFromD<D>* HWY_RESTRICT p) {
@@ -4340,63 +4346,7 @@ HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
 #endif
 }
 
-// ------------------------------ Reverse (Shuffle0123, Shuffle2301, Shuffle01)
-
-// Single lane: no change
-template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 1)>
-HWY_API Vec128<T, 1> Reverse(D /* tag */, Vec128<T, 1> v) {
-  return v;
-}
-
-// 32-bit x2: shuffle
-template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec64<T> Reverse(D /* tag */, Vec64<T> v) {
-  return Shuffle2301(v);
-}
-
-// 64-bit x2: shuffle
-template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 8)>
-HWY_API Vec128<T> Reverse(D /* tag */, Vec128<T> v) {
-  return Shuffle01(v);
-}
-
-// 32-bit x4: shuffle
-template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 4)>
-HWY_API Vec128<T> Reverse(D /* tag */, Vec128<T> v) {
-  return Shuffle0123(v);
-}
-
-// 16-bit
-template <class D, HWY_IF_T_SIZE_D(D, 2)>
-HWY_API VFromD<D> Reverse(D d, VFromD<D> v) {
-  const RepartitionToWide<RebindToUnsigned<decltype(d)>> du32;
-  return BitCast(d, RotateRight<16>(Reverse(du32, BitCast(du32, v))));
-}
-
-// 8-bit
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_LE_D(D, 8)>
-HWY_API VFromD<D> Reverse(D d, VFromD<D> v) {
-  switch (Lanes(d)) {
-    case 8:
-      return Reverse8(d, v);
-    case 4:
-      return Reverse4(d, v);
-    case 2:
-      return Reverse2(d, v);
-  }
-  return v;
-}
-
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_D(D, 16)>
-HWY_API VFromD<D> Reverse(D d, VFromD<D> v) {
-  RebindToUnsigned<decltype(d)> du;
-  // Reverse bytes in each 64-bit half then swap halves.
-  uint16x8_t result = vrev64q_u8(BitCast(du, v).raw);
-  result = vcombine_u8(vget_high_u8(result), vget_low_u8(result));
-  return BitCast(d, VFromD<decltype(du)>(result));
-}
-
-// ------------------------------ Reverse2
+// ------------------------------ Reverse2 (CombineShiftRightBytes)
 
 // Per-target flag to prevent generic_ops-inl.h defining 8-bit Reverse2/4/8.
 #ifdef HWY_NATIVE_REVERSE2_8
@@ -4405,7 +4355,7 @@ HWY_API VFromD<D> Reverse(D d, VFromD<D> v) {
 #define HWY_NATIVE_REVERSE2_8
 #endif
 
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev16_u8(BitCast(du, v).raw)));
@@ -4416,7 +4366,7 @@ HWY_API Vec128<T> Reverse2(D d, Vec128<T> v) {
   return BitCast(d, Vec128<uint8_t>(vrev16q_u8(BitCast(du, v).raw)));
 }
 
-template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev32_u16(BitCast(du, v).raw)));
@@ -4427,7 +4377,7 @@ HWY_API Vec128<T> Reverse2(D d, Vec128<T> v) {
   return BitCast(d, Vec128<uint16_t>(vrev32q_u16(BitCast(du, v).raw)));
 }
 
-template <class D, HWY_IF_T_SIZE_D(D, 4), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 4)>
 HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev64_u32(BitCast(du, v).raw)));
@@ -4439,13 +4389,13 @@ HWY_API Vec128<T> Reverse2(D d, Vec128<T> v) {
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 8)>
-HWY_API VFromD<D> Reverse2(D /* tag */, VFromD<D> v) {
-  return Shuffle01(v);
+HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
+  return CombineShiftRightBytes<8>(d, v, v);
 }
 
-// ------------------------------ Reverse4
+// ------------------------------ Reverse4 (Reverse2)
 
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse4(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev32_u8(BitCast(du, v).raw)));
@@ -4456,7 +4406,7 @@ HWY_API Vec128<T> Reverse4(D d, Vec128<T> v) {
   return BitCast(d, Vec128<uint8_t>(vrev32q_u8(BitCast(du, v).raw)));
 }
 
-template <class D, HWY_IF_T_SIZE_D(D, 2), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse4(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev64_u16(BitCast(du, v).raw)));
@@ -4468,8 +4418,9 @@ HWY_API Vec128<T> Reverse4(D d, Vec128<T> v) {
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 4)>
-HWY_API VFromD<D> Reverse4(D /* tag */, VFromD<D> v) {
-  return Shuffle0123(v);
+HWY_API VFromD<D> Reverse4(D d, VFromD<D> v) {
+  const RepartitionToWide<RebindToUnsigned<decltype(d)>> duw;
+  return BitCast(d, Reverse2(duw, BitCast(duw, Reverse2(d, v))));
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 8)>
@@ -4477,9 +4428,9 @@ HWY_API VFromD<D> Reverse4(D /* tag */, VFromD<D>) {
   HWY_ASSERT(0);  // don't have 8 u64 lanes
 }
 
-// ------------------------------ Reverse8
+// ------------------------------ Reverse8 (Reverse2, Reverse4)
 
-template <class D, HWY_IF_T_SIZE_D(D, 1), HWY_IF_V_SIZE_LE_D(D, 8)>
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8), HWY_IF_T_SIZE_D(D, 1)>
 HWY_API VFromD<D> Reverse8(D d, VFromD<D> v) {
   const RebindToUnsigned<decltype(d)> du;
   return BitCast(d, VFromD<decltype(du)>(vrev64_u8(BitCast(du, v).raw)));
@@ -4492,12 +4443,41 @@ HWY_API Vec128<T> Reverse8(D d, Vec128<T> v) {
 
 template <class D, HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse8(D d, VFromD<D> v) {
-  return Reverse(d, v);
+  const Repartition<uint64_t, decltype(d)> du64;
+  return BitCast(d, Reverse2(du64, BitCast(du64, Reverse4(d, v))));
 }
 
 template <class D, HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 4) | (1 << 8))>
 HWY_API VFromD<D> Reverse8(D, VFromD<D>) {
   HWY_ASSERT(0);  // don't have 8 lanes if larger than 16-bit
+}
+
+// ------------------------------ Reverse (Reverse2, Reverse4, Reverse8)
+
+template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 1)>
+HWY_API Vec128<T, 1> Reverse(D /* tag */, Vec128<T, 1> v) {
+  return v;
+}
+
+template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 2)>
+HWY_API Vec128<T, 2> Reverse(D d, Vec128<T, 2> v) {
+  return Reverse2(d, v);
+}
+
+template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 4)>
+HWY_API Vec128<T, 4> Reverse(D d, Vec128<T, 4> v) {
+  return Reverse4(d, v);
+}
+
+template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 8)>
+HWY_API Vec128<T, 8> Reverse(D d, Vec128<T, 8> v) {
+  return Reverse8(d, v);
+}
+
+template <class D, typename T = TFromD<D>, HWY_IF_LANES_D(D, 16)>
+HWY_API Vec128<T> Reverse(D d, Vec128<T> v) {
+  const Repartition<uint64_t, decltype(d)> du64;
+  return BitCast(d, Reverse2(du64, BitCast(du64, Reverse8(d, v))));
 }
 
 // ------------------------------ ReverseBits
@@ -4547,7 +4527,7 @@ HWY_API Vec128<T> Shuffle2103(Vec128<T> v) {
 // Reverse
 template <typename T>
 HWY_API Vec128<T> Shuffle0123(Vec128<T> v) {
-  return Shuffle2301(Shuffle1032(v));
+  return Reverse4(DFromV<decltype(v)>(), v);
 }
 
 // ------------------------------ InterleaveLower
@@ -5556,6 +5536,23 @@ template <class V, class VI>
 HWY_API VI TableLookupBytesOr0(V bytes, VI from) {
   return TableLookupBytes(bytes, from);
 }
+
+// ---------------------------- AESKeyGenAssist (AESLastRound, TableLookupBytes)
+
+#if HWY_TARGET == HWY_NEON
+template <uint8_t kRcon>
+HWY_API Vec128<uint8_t> AESKeyGenAssist(Vec128<uint8_t> v) {
+  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
+      0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0};
+  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
+      0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12};
+  const DFromV<decltype(v)> d;
+  const Repartition<uint32_t, decltype(d)> du32;
+  const auto w13 = BitCast(d, DupOdd(BitCast(du32, v)));
+  const auto sub_word_result = AESLastRound(w13, Load(d, kRconXorMask));
+  return TableLookupBytes(sub_word_result, Load(d, kRotWordShuffle));
+}
+#endif  // HWY_TARGET == HWY_NEON
 
 // ------------------------------ Scatter (Store)
 

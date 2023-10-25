@@ -25,6 +25,7 @@
 
 // After foreach_target
 #include "hwy/contrib/sort/algo-inl.h"
+#include "hwy/contrib/sort/vqsort.h"
 #include "hwy/contrib/sort/result-inl.h"
 #include "hwy/contrib/sort/sorting_networks-inl.h"  // SharedTraits
 #include "hwy/contrib/sort/traits-inl.h"
@@ -67,16 +68,15 @@ HWY_NOINLINE void BenchPartition() {
   const Dist dist = Dist::kUniform8;
   double sum = 0.0;
 
-  detail::Generator rng(&sum, 123);  // for ChoosePivot
+  HWY_ALIGN LaneType
+      buf[SortConstants::BufBytes<LaneType>(HWY_MAX_BYTES) / sizeof(LaneType)];
+  uint64_t* HWY_RESTRICT state = GetGeneratorState();
 
   const size_t max_log2 = AdjustedLog2Reps(20);
   for (size_t log2 = max_log2; log2 < max_log2 + 1; ++log2) {
     const size_t num_lanes = 1ull << log2;
     const size_t num_keys = num_lanes / st.LanesPerKey();
     auto aligned = hwy::AllocateAligned<LaneType>(num_lanes);
-    auto buf = hwy::AllocateAligned<LaneType>(
-        HWY_MAX(hwy::SortConstants::PartitionBufNum(Lanes(d)),
-                hwy::SortConstants::PivotBufNum(sizeof(LaneType), Lanes(d))));
 
     std::vector<double> seconds;
     const size_t num_reps = (1ull << (14 - log2 / 2)) * 30;
@@ -86,12 +86,12 @@ HWY_NOINLINE void BenchPartition() {
       // The pivot value can influence performance. Do exactly what vqsort will
       // do so that the performance (influenced by prefetching and branch
       // prediction) is likely to predict the actual performance inside vqsort.
-      detail::DrawSamples(d, st, aligned.get(), num_lanes, buf.get(), rng);
-      detail::SortSamples(d, st, buf.get());
-      auto pivot = detail::ChoosePivotByRank(d, st, buf.get());
+      detail::DrawSamples(d, st, aligned.get(), num_lanes, buf, state);
+      detail::SortSamples(d, st, buf);
+      auto pivot = detail::ChoosePivotByRank(d, st, buf);
 
       const Timestamp t0;
-      detail::Partition(d, st, aligned.get(), num_lanes - 1, pivot, buf.get());
+      detail::Partition(d, st, aligned.get(), num_lanes - 1, pivot, buf);
       seconds.push_back(SecondsSince(t0));
       // 'Use' the result to prevent optimizing out the partition.
       sum += static_cast<double>(aligned.get()[num_lanes / 2]);
@@ -200,6 +200,10 @@ std::vector<Algo> AlgoForBench() {
                     (!VXSORT_AVX3 && HWY_TARGET == HWY_AVX2))
         Algo::kVXSort,
 #endif
+// Only include if we're compiling for the target it supports.
+#if HAVE_INTEL && HWY_TARGET <= HWY_AVX3
+        Algo::kIntel,
+#endif
 
 #if !HAVE_PARALLEL_IPS4O
 #if !SORT_100M
@@ -259,6 +263,14 @@ HWY_NOINLINE void BenchSort(size_t num_keys) {
   }    // algo
 }
 
+#if HAVE_INTEL  // only supports ascending order
+template <typename T>
+using OtherOrder = OrderAscending<T>;
+#else
+template <typename T>
+using OtherOrder = OrderDescending<T>;
+#endif
+
 HWY_NOINLINE void BenchAllSort() {
   // Not interested in benchmark results for these targets. Note that SSE4 is
   // numerically less than SSE2, hence it is the lower bound.
@@ -274,19 +286,19 @@ HWY_NOINLINE void BenchAllSort() {
 #if HAVE_PARALLEL_IPS4O || SORT_100M
          100 * M,
 #else
-        100 * K,
+        size_t{100}, 100 * K
 #endif
        }) {
     BenchSort<TraitsLane<OrderAscending<float>>>(num_keys);
-    // BenchSort<TraitsLane<OrderDescending<double>>>(num_keys);
+    // BenchSort<TraitsLane<OtherOrder<double>>>(num_keys);
     // BenchSort<TraitsLane<OrderAscending<int16_t>>>(num_keys);
-    BenchSort<TraitsLane<OrderDescending<int32_t>>>(num_keys);
+    BenchSort<TraitsLane<OtherOrder<int32_t>>>(num_keys);
     BenchSort<TraitsLane<OrderAscending<int64_t>>>(num_keys);
-    // BenchSort<TraitsLane<OrderDescending<uint16_t>>>(num_keys);
-    // BenchSort<TraitsLane<OrderDescending<uint32_t>>>(num_keys);
+    // BenchSort<TraitsLane<OtherOrder<uint16_t>>>(num_keys);
+    // BenchSort<TraitsLane<OtherOrder<uint32_t>>>(num_keys);
     // BenchSort<TraitsLane<OrderAscending<uint64_t>>>(num_keys);
 
-#if !HAVE_VXSORT && VQSORT_ENABLED
+#if !HAVE_VXSORT && !HAVE_INTEL && VQSORT_ENABLED
     BenchSort<Traits128<OrderAscending128>>(num_keys);
     BenchSort<Traits128<OrderAscendingKV128>>(num_keys);
 #endif

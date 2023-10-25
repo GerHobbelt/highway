@@ -2381,6 +2381,46 @@ HWY_API Vec256<double> MaskedLoad(Mask256<double> m, D /* tag */,
   return Vec256<double>{_mm256_maskz_loadu_pd(m.raw, p)};
 }
 
+template <class D, HWY_IF_V_SIZE_D(D, 32), typename T = TFromD<D>,
+          HWY_IF_T_SIZE(T, 1)>
+HWY_API Vec256<T> MaskedLoadOr(VFromD<D> v, Mask256<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec256<T>{_mm256_mask_loadu_epi8(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32), typename T = TFromD<D>,
+          HWY_IF_T_SIZE(T, 2)>
+HWY_API Vec256<T> MaskedLoadOr(VFromD<D> v, Mask256<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec256<T>{_mm256_mask_loadu_epi16(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32), typename T = TFromD<D>,
+          HWY_IF_UI32(T)>
+HWY_API Vec256<T> MaskedLoadOr(VFromD<D> v, Mask256<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec256<T>{_mm256_mask_loadu_epi32(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32), typename T = TFromD<D>,
+          HWY_IF_UI64(T)>
+HWY_API Vec256<T> MaskedLoadOr(VFromD<D> v, Mask256<T> m, D /* tag */,
+                               const T* HWY_RESTRICT p) {
+  return Vec256<T>{_mm256_mask_loadu_epi64(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API Vec256<float> MaskedLoadOr(VFromD<D> v, Mask256<float> m, D /* tag */,
+                                   const float* HWY_RESTRICT p) {
+  return Vec256<float>{_mm256_mask_loadu_ps(v.raw, m.raw, p)};
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API Vec256<double> MaskedLoadOr(VFromD<D> v, Mask256<double> m, D /* tag */,
+                                    const double* HWY_RESTRICT p) {
+  return Vec256<double>{_mm256_mask_loadu_pd(v.raw, m.raw, p)};
+}
+
 #else  //  AVX2
 
 // There is no maskload_epi8/16, so blend instead.
@@ -3433,10 +3473,18 @@ HWY_API Vec256<T> Reverse(D d, const Vec256<T> v) {
 
 template <class D, typename T = TFromD<D>, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec256<T> Reverse(D d, const Vec256<T> v) {
-  alignas(32) static constexpr uint8_t kReverse[32] = {
+#if HWY_TARGET <= HWY_AVX3_DL
+  alignas(32) static constexpr T kReverse[32] = {
       31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
       15, 14, 13, 12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1,  0};
   return TableLookupLanes(v, SetTableIndices(d, kReverse));
+#else
+  // First reverse bytes within blocks via PSHUFB, then swap blocks.
+  alignas(32) static constexpr T kReverse[32] = {
+      15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,
+      15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+  return SwapAdjacentBlocks(TableLookupBytes(v, Load(d, kReverse)));
+#endif
 }
 
 // ------------------------------ Reverse2 (in x86_128)
@@ -4891,6 +4939,25 @@ HWY_API V AESInvMixColumns(V state) {
   const Half<decltype(d)> dh;
   return Combine(d, AESInvMixColumns(UpperHalf(dh, state)),
                  AESInvMixColumns(LowerHalf(dh, state)));
+#endif
+}
+
+template <uint8_t kRcon>
+HWY_API Vec256<uint8_t> AESKeyGenAssist(Vec256<uint8_t> v) {
+  const Full256<uint8_t> d;
+#if HWY_TARGET <= HWY_AVX3_DL
+  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
+      0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0};
+  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
+      0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12};
+  const Repartition<uint32_t, decltype(d)> du32;
+  const auto w13 = BitCast(d, DupOdd(BitCast(du32, v)));
+  const auto sub_word_result = AESLastRound(w13, Load(d, kRconXorMask));
+  return TableLookupBytes(sub_word_result, Load(d, kRotWordShuffle));
+#else
+  const Half<decltype(d)> d2;
+  return Combine(d, AESKeyGenAssist<kRcon>(UpperHalf(d2, v)),
+                 AESKeyGenAssist<kRcon>(LowerHalf(v)));
 #endif
 }
 
