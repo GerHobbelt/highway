@@ -4302,8 +4302,12 @@ template <int kBits, size_t N>
 HWY_API Vec128<uint16_t, N> RotateRight(const Vec128<uint16_t, N> v) {
   static_assert(0 <= kBits && kBits < 16, "Invalid shift count");
   if (kBits == 0) return v;
+#if HWY_TARGET <= HWY_AVX3_DL
+  return Vec128<uint16_t, N>{_mm_shrdi_epi16(v.raw, v.raw, kBits)};
+#else
   // AVX3 does not support 16-bit.
   return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(15, 16 - kBits)>(v));
+#endif
 }
 
 template <int kBits, size_t N>
@@ -4337,6 +4341,28 @@ HWY_API V RotateRight(V v) {
 }
 
 // ------------------------------ Rol/Ror
+#if HWY_TARGET <= HWY_AVX3_DL
+#ifdef HWY_NATIVE_ROL_ROR_16
+#undef HWY_NATIVE_ROL_ROR_16
+#else
+#define HWY_NATIVE_ROL_ROR_16
+#endif
+
+template <class T, size_t N, HWY_IF_UI16(T)>
+HWY_API Vec128<T, N> Ror(Vec128<T, N> a, Vec128<T, N> b) {
+  return Vec128<T, N>{_mm_shrdv_epi16(a.raw, a.raw, b.raw)};
+}
+
+// U16/I16 Rol is generic for all vector lengths on AVX3_DL
+template <class V, HWY_IF_UI16(TFromV<V>)>
+HWY_API V Rol(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RebindToSigned<decltype(d)> di;
+  return Ror(a, BitCast(d, Neg(BitCast(di, b))));
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3_DL
+
 #if HWY_TARGET <= HWY_AVX3
 
 #ifdef HWY_NATIVE_ROL_ROR_32_64
@@ -4368,6 +4394,29 @@ HWY_API Vec128<T, N> Ror(Vec128<T, N> a, Vec128<T, N> b) {
 #endif
 
 // ------------------------------ RotateLeftSame/RotateRightSame
+
+#if HWY_TARGET <= HWY_AVX3_DL
+
+#ifdef HWY_NATIVE_ROL_ROR_SAME_16
+#undef HWY_NATIVE_ROL_ROR_SAME_16
+#else
+#define HWY_NATIVE_ROL_ROR_SAME_16
+#endif
+
+// Generic for all vector lengths
+template <class V, HWY_IF_UI16(TFromV<V>)>
+HWY_API V RotateLeftSame(V v, int bits) {
+  const DFromV<decltype(v)> d;
+  return Ror(v,
+             Set(d, static_cast<TFromV<V>>(0u - static_cast<unsigned>(bits))));
+}
+
+template <class V, HWY_IF_UI16(TFromV<V>)>
+HWY_API V RotateRightSame(V v, int bits) {
+  const DFromV<decltype(v)> d;
+  return Ror(v, Set(d, static_cast<TFromV<V>>(bits)));
+}
+#endif  // HWY_TARGET <= HWY_AVX3_DL
 
 #if HWY_TARGET <= HWY_AVX3
 
@@ -5941,20 +5990,14 @@ HWY_INLINE Vec128<double, N> NativeMaskedGatherOr128(
 }  // namespace detail
 
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16)>
-HWY_API VFromD<D> GatherOffset(D d, const TFromD<D>* HWY_RESTRICT base,
+HWY_API VFromD<D> GatherOffset(D /*d*/, const TFromD<D>* HWY_RESTRICT base,
                                VFromD<RebindToSigned<D>> offsets) {
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(offsets, Zero(di))));
   return detail::NativeGather128<1>(base, offsets);
 }
 
 template <class D, HWY_IF_V_SIZE_LE_D(D, 16), typename T = TFromD<D>>
-HWY_API VFromD<D> GatherIndex(D d, const T* HWY_RESTRICT base,
+HWY_API VFromD<D> GatherIndex(D /*d*/, const T* HWY_RESTRICT base,
                               VFromD<RebindToSigned<D>> indices) {
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));
   return detail::NativeGather128<sizeof(T)>(base, indices);
 }
 
@@ -5965,9 +6008,6 @@ HWY_API VFromD<D> MaskedGatherIndexOr(VFromD<D> no, MFromD<D> m, D d,
   // For partial vectors, ensure upper mask lanes are zero to prevent faults.
   if (!detail::IsFull(d)) m = And(m, FirstN(d, Lanes(d)));
 
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));
   return detail::NativeMaskedGatherOr128<sizeof(T)>(no, m, base, indices);
 }
 
@@ -9487,18 +9527,24 @@ HWY_API VFromD<DI32> SatWidenMulPairwiseAccumulate(
 
 // ------------------------------ ReorderWidenMulAccumulate (PromoteEvenTo)
 
-// Generic for all vector lengths.
-template <class DF, HWY_IF_F32_D(DF),
+#if HWY_NATIVE_DOT_BF16
+
+#ifdef HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#undef HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#else
+#define HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#endif
+
+template <class DF, HWY_IF_F32_D(DF), HWY_IF_V_SIZE_LE_D(DF, 16),
           class VBF = VFromD<Repartition<bfloat16_t, DF>>>
-HWY_API VFromD<DF> ReorderWidenMulAccumulate(DF df, VBF a, VBF b,
+HWY_API VFromD<DF> ReorderWidenMulAccumulate(DF /*df*/, VBF a, VBF b,
                                              const VFromD<DF> sum0,
-                                             VFromD<DF>& sum1) {
-  // TODO(janwas): _mm_dpbf16_ps when available
-  // Lane order within sum0/1 is undefined, hence we can avoid the
-  // longer-latency lane-crossing PromoteTo by using PromoteEvenTo.
-  sum1 = MulAdd(PromoteOddTo(df, a), PromoteOddTo(df, b), sum1);
-  return MulAdd(PromoteEvenTo(df, a), PromoteEvenTo(df, b), sum0);
+                                             VFromD<DF>& /*sum1*/) {
+  return VFromD<DF>{_mm_dpbf16_ps(sum0.raw, reinterpret_cast<__m128bh>(a.raw),
+                                  reinterpret_cast<__m128bh>(b.raw))};
 }
+
+#endif  // HWY_NATIVE_DOT_BF16
 
 // Even if N=1, the input is always at least 2 lanes, hence madd_epi16 is safe.
 template <class D32, HWY_IF_I32_D(D32), HWY_IF_V_SIZE_LE_D(D32, 16),
@@ -11121,7 +11167,7 @@ HWY_API Vec128<T, N> Trunc(const Vec128<T, N> v) {
   const DFromV<decltype(v)> df;
   const RebindToSigned<decltype(df)> di;
 
-  const auto integer = ConvertTo(di, v);  // round toward 0
+  const auto integer = ConvertInRangeTo(di, v);  // round toward 0
   const auto int_f = ConvertTo(df, integer);
 
   return IfThenElse(detail::UseInt(v), CopySign(int_f, v), v);
@@ -11134,7 +11180,7 @@ HWY_API Vec128<T, N> Ceil(const Vec128<T, N> v) {
   const DFromV<decltype(v)> df;
   const RebindToSigned<decltype(df)> di;
 
-  const auto integer = ConvertTo(di, v);  // round toward 0
+  const auto integer = ConvertInRangeTo(di, v);  // round toward 0
   const auto int_f = ConvertTo(df, integer);
 
   // Truncating a positive non-integer ends up smaller; if so, add 1.
@@ -11150,7 +11196,7 @@ HWY_API Vec128<T, N> Floor(const Vec128<T, N> v) {
   const DFromV<decltype(v)> df;
   const RebindToSigned<decltype(df)> di;
 
-  const auto integer = ConvertTo(di, v);  // round toward 0
+  const auto integer = ConvertInRangeTo(di, v);  // round toward 0
   const auto int_f = ConvertTo(df, integer);
 
   // Truncating a negative non-integer ends up larger; if so, subtract 1.

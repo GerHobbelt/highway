@@ -240,7 +240,30 @@
 #define HWY_ARCH_RISCV 0
 #endif
 // DEPRECATED names; please use HWY_ARCH_RISCV instead.
-#define HWY_ARCH_RVV HWY_ARCH_RISCV 
+#define HWY_ARCH_RVV HWY_ARCH_RISCV
+
+#if HWY_ARCH_RISCV && defined(__riscv_xlen)
+
+#if __riscv_xlen == 32
+#define HWY_ARCH_RISCV_32 1
+#else
+#define HWY_ARCH_RISCV_32 0
+#endif
+
+#if __riscv_xlen == 64
+#define HWY_ARCH_RISCV_64 1
+#else
+#define HWY_ARCH_RISCV_64 0
+#endif
+
+#else  // !HWY_ARCH_RISCV || !defined(__riscv_xlen)
+#define HWY_ARCH_RISCV_32 0
+#define HWY_ARCH_RISCV_64 0
+#endif  // HWY_ARCH_RISCV && defined(__riscv_xlen)
+
+#if HWY_ARCH_RISCV_32 && HWY_ARCH_RISCV_64
+#error "Cannot have both RISCV_32 and RISCV_64"
+#endif
 
 #if defined(__s390x__)
 #define HWY_ARCH_S390X 1
@@ -272,6 +295,18 @@
 #define HWY_OS_APPLE 1
 #else
 #define HWY_OS_APPLE 0
+#endif
+
+#if defined(__FreeBSD__)
+#define HWY_OS_FREEBSD 1
+#else
+#define HWY_OS_FREEBSD 0
+#endif
+
+// It is an error to detect multiple OSes at the same time, but OK to
+// detect none of the above.
+#if (HWY_OS_WIN + HWY_OS_LINUX + HWY_OS_APPLE + HWY_OS_FREEBSD) > 1
+#error "Must not detect more than one OS"
 #endif
 
 //------------------------------------------------------------------------------

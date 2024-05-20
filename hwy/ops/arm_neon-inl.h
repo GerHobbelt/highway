@@ -147,8 +147,9 @@ namespace detail {  // for code folding and Raw128
 #define HWY_NEON_HAVE_BFLOAT16 0
 #endif
 
-// HWY_NEON_HAVE_F32_TO_BF16C is defined if the NEON vcvt_bf16_f32 intrinsic
-// is available, even if the __bf16 type is disabled due to GCC/Clang bugs
+// HWY_NEON_HAVE_F32_TO_BF16C is defined if NEON vcvt_bf16_f32 and
+// vbfdot_f32 are available, even if the __bf16 type is disabled due to
+// GCC/Clang bugs.
 #if HWY_NEON_HAVE_BFLOAT16 ||                         \
     (defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) && \
      (HWY_COMPILER_GCC_ACTUAL >= 1000 || HWY_COMPILER_CLANG >= 1100))
@@ -6687,7 +6688,7 @@ HWY_API VFromD<D> WidenHighMulAdd(D d, VFromD<DN> mul,
 #endif
 #endif
 
-}
+}  // namespace detail
 
 // ------------------------------- WidenMulAdd
 
@@ -6706,9 +6707,10 @@ HWY_API VFromD<D> WidenMulAdd(D /* tag */, VFromD<DN> mul,
   return Vec128<uint16_t>(vmlal_u8(add.raw, mul.raw, x.raw));
 }
 
-template<class D, HWY_IF_U16_D(D), HWY_IF_LANES_LE_D(D, 4),
-         class DN = Rebind<MakeNarrow<TFromD<D>>, D>>
-HWY_API VFromD<D> WidenMulAdd(D d, VFromD<DN> mul, VFromD<DN> x, VFromD<D> add) {
+template <class D, HWY_IF_U16_D(D), HWY_IF_LANES_LE_D(D, 4),
+          class DN = Rebind<MakeNarrow<TFromD<D>>, D>>
+HWY_API VFromD<D> WidenMulAdd(D d, VFromD<DN> mul, VFromD<DN> x,
+                              VFromD<D> add) {
   return MulAdd(add, PromoteTo(d, mul), PromoteTo(d, x));
 }
 
@@ -6719,9 +6721,10 @@ HWY_API VFromD<D> WidenMulAdd(D /* tag */, VFromD<DN> mul,
   return VFromD<D>(vmlal_s8(add.raw, mul.raw, x.raw));
 }
 
-template<class D, HWY_IF_I16_D(D), HWY_IF_LANES_LE_D(D, 4),
-         class DN = Rebind<MakeNarrow<TFromD<D>>, D>>
-HWY_API VFromD<D> WidenMulAdd(D d, VFromD<DN> mul, VFromD<DN> x, VFromD<D> add) {
+template <class D, HWY_IF_I16_D(D), HWY_IF_LANES_LE_D(D, 4),
+          class DN = Rebind<MakeNarrow<TFromD<D>>, D>>
+HWY_API VFromD<D> WidenMulAdd(D d, VFromD<DN> mul, VFromD<DN> x,
+                              VFromD<D> add) {
   return MulAdd(add, PromoteTo(d, mul), PromoteTo(d, x));
 }
 
@@ -6773,7 +6776,8 @@ template<class D, HWY_IF_U32_D(D), HWY_IF_LANES_D(D, 1),
          class DN = Rebind<MakeNarrow<TFromD<D>>, D>>
 HWY_API VFromD<D> WidenMulAdd(D /* tag */, VFromD<DN> mul,
                               VFromD<DN> x, VFromD<D> add) {
-  Vec64<uint32_t> mulRs = LowerHalf(Vec128<uint32_t>(vmull_u16(mul.raw, x.raw)));
+  Vec64<uint32_t> mulRs =
+      LowerHalf(Vec128<uint32_t>(vmull_u16(mul.raw, x.raw)));
   const Vec32<uint32_t> mul10(LowerHalf(mulRs));
   return add + mul10;
 }
@@ -6835,7 +6839,7 @@ HWY_API VFromD<D> WidenLowMulAdd(D d, VFromD<DN> mul,
 #endif
 #endif
 
-}
+}  // namespace detail
 
 // ------------------------------ WidenMulAccumulate
 
@@ -6904,6 +6908,18 @@ HWY_API VFromD<DI32> SatWidenMulAccumFixedPoint(DI32 di32,
 
 #if HWY_NEON_HAVE_F32_TO_BF16C
 
+#ifdef HWY_NATIVE_MUL_EVEN_BF16
+#undef HWY_NATIVE_MUL_EVEN_BF16
+#else
+#define HWY_NATIVE_MUL_EVEN_BF16
+#endif
+
+#ifdef HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#undef HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#else
+#define HWY_NATIVE_REORDER_WIDEN_MUL_ACC_BF16
+#endif
+
 namespace detail {
 #if HWY_NEON_HAVE_BFLOAT16
 // If HWY_NEON_HAVE_BFLOAT16 is true, detail::Vec128<bfloat16_t, N>::type is
@@ -6933,6 +6949,20 @@ static HWY_INLINE bfloat16x8_t BitCastToRawNeonBF16(uint16x8_t raw) {
 }  // namespace detail
 
 template <class D, HWY_IF_V_SIZE_D(D, 16)>
+HWY_API Vec128<float> MulEvenAdd(D /*d32*/, Vec128<bfloat16_t> a,
+                                 Vec128<bfloat16_t> b, const Vec128<float> c) {
+  return Vec128<float>(vbfmlalbq_f32(c.raw, detail::BitCastToRawNeonBF16(a.raw),
+                                   detail::BitCastToRawNeonBF16(b.raw)));
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 16)>
+HWY_API Vec128<float> MulOddAdd(D /*d32*/, Vec128<bfloat16_t> a,
+                                 Vec128<bfloat16_t> b, const Vec128<float> c) {
+  return Vec128<float>(vbfmlaltq_f32(c.raw, detail::BitCastToRawNeonBF16(a.raw),
+                                   detail::BitCastToRawNeonBF16(b.raw)));
+}
+
+template <class D, HWY_IF_V_SIZE_D(D, 16)>
 HWY_API Vec128<float> ReorderWidenMulAccumulate(D /*d32*/, Vec128<bfloat16_t> a,
                                                 Vec128<bfloat16_t> b,
                                                 const Vec128<float> sum0,
@@ -6943,25 +6973,28 @@ HWY_API Vec128<float> ReorderWidenMulAccumulate(D /*d32*/, Vec128<bfloat16_t> a,
 }
 
 template <class D, HWY_IF_V_SIZE_LE_D(D, 8)>
+HWY_API VFromD<D> MulEvenAdd(
+    D /*d32*/, VFromD<Repartition<bfloat16_t, D>> a,
+    VFromD<Repartition<bfloat16_t, D>> b, const VFromD<D> c) {
+  return VFromD<D>(vbfmlalb_f32(c.raw, detail::BitCastToRawNeonBF16(a.raw),
+                              detail::BitCastToRawNeonBF16(b.raw)));
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8)>
+HWY_API VFromD<D> MulOddAdd(
+    D /*d32*/, VFromD<Repartition<bfloat16_t, D>> a,
+    VFromD<Repartition<bfloat16_t, D>> b, const VFromD<D> c) {
+  return VFromD<D>(vbfmlalt_f32(c.raw, detail::BitCastToRawNeonBF16(a.raw),
+                              detail::BitCastToRawNeonBF16(b.raw)));
+}
+
+template <class D, HWY_IF_V_SIZE_LE_D(D, 8)>
 HWY_API VFromD<D> ReorderWidenMulAccumulate(
     D /*d32*/, VFromD<Repartition<bfloat16_t, D>> a,
     VFromD<Repartition<bfloat16_t, D>> b, const VFromD<D> sum0,
     VFromD<D>& /*sum1*/) {
   return VFromD<D>(vbfdot_f32(sum0.raw, detail::BitCastToRawNeonBF16(a.raw),
                               detail::BitCastToRawNeonBF16(b.raw)));
-}
-
-#else
-
-template <class DF, HWY_IF_F32_D(DF),
-          class VBF = VFromD<Repartition<bfloat16_t, DF>>>
-HWY_API VFromD<DF> ReorderWidenMulAccumulate(DF df, VBF a, VBF b,
-                                             const VFromD<DF> sum0,
-                                             VFromD<DF>& sum1) {
-  // Lane order within sum0/1 is undefined, hence we can avoid the
-  // longer-latency lane-crossing PromoteTo by using PromoteEvenTo.
-  sum1 = MulAdd(PromoteOddTo(df, a), PromoteOddTo(df, b), sum1);
-  return MulAdd(PromoteEvenTo(df, a), PromoteEvenTo(df, b), sum0);
 }
 
 #endif  // HWY_NEON_HAVE_F32_TO_BF16C

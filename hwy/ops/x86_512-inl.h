@@ -1479,8 +1479,12 @@ template <int kBits>
 HWY_API Vec512<uint16_t> RotateRight(const Vec512<uint16_t> v) {
   static_assert(0 <= kBits && kBits < 16, "Invalid shift count");
   if (kBits == 0) return v;
+#if HWY_TARGET <= HWY_AVX3_DL
+  return Vec512<uint16_t>{_mm512_shrdi_epi16(v.raw, v.raw, kBits)};
+#else
   // AVX3 does not support 16-bit.
   return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(15, 16 - kBits)>(v));
+#endif
 }
 
 template <int kBits>
@@ -1498,8 +1502,12 @@ HWY_API Vec512<uint64_t> RotateRight(const Vec512<uint64_t> v) {
 }
 
 // ------------------------------ Rol/Ror
-
-#if HWY_TARGET <= HWY_AVX3
+#if HWY_TARGET <= HWY_AVX3_DL
+template <class T, HWY_IF_UI16(T)>
+HWY_API Vec512<T> Ror(Vec512<T> a, Vec512<T> b) {
+  return Vec512<T>{_mm512_shrdv_epi16(a.raw, a.raw, b.raw)};
+}
+#endif  // HWY_TARGET <= HWY_AVX3_DL
 
 template <class T, HWY_IF_UI32(T)>
 HWY_API Vec512<T> Rol(Vec512<T> a, Vec512<T> b) {
@@ -1520,8 +1528,6 @@ template <class T, HWY_IF_UI64(T)>
 HWY_API Vec512<T> Ror(Vec512<T> a, Vec512<T> b) {
   return Vec512<T>{_mm512_rorv_epi64(a.raw, b.raw)};
 }
-
-#endif
 
 // ------------------------------ ShiftLeftSame
 
@@ -3478,30 +3484,21 @@ HWY_INLINE Vec512<double> NativeMaskedGatherOr512(
 }  // namespace detail
 
 template <class D, HWY_IF_V_SIZE_D(D, 64)>
-HWY_API VFromD<D> GatherOffset(D d, const TFromD<D>* HWY_RESTRICT base,
+HWY_API VFromD<D> GatherOffset(D  /*d*/, const TFromD<D>* HWY_RESTRICT base,
                                VFromD<RebindToSigned<D>> offsets) {
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(offsets, Zero(di))));
   return detail::NativeGather512<1>(base, offsets);
 }
 
 template <class D, HWY_IF_V_SIZE_D(D, 64)>
-HWY_API VFromD<D> GatherIndex(D d, const TFromD<D>* HWY_RESTRICT base,
+HWY_API VFromD<D> GatherIndex(D  /*d*/, const TFromD<D>* HWY_RESTRICT base,
                               VFromD<RebindToSigned<D>> indices) {
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));
   return detail::NativeGather512<sizeof(TFromD<D>)>(base, indices);
 }
 
 template <class D, HWY_IF_V_SIZE_D(D, 64)>
-HWY_API VFromD<D> MaskedGatherIndexOr(VFromD<D> no, MFromD<D> m, D d,
+HWY_API VFromD<D> MaskedGatherIndexOr(VFromD<D> no, MFromD<D> m, D  /*d*/,
                                       const TFromD<D>* HWY_RESTRICT base,
                                       VFromD<RebindToSigned<D>> indices) {
-  const RebindToSigned<decltype(d)> di;
-  (void)di;  // for HWY_DASSERT
-  HWY_DASSERT(AllFalse(di, Lt(indices, Zero(di))));
   return detail::NativeMaskedGatherOr512<sizeof(TFromD<D>)>(no, m, base,
                                                             indices);
 }
@@ -7399,6 +7396,19 @@ HWY_API VFromD<DI32> SatWidenMulPairwiseAccumulate(
 #endif  // HWY_TARGET <= HWY_AVX3_DL
 
 // ------------------------------ ReorderWidenMulAccumulate
+
+#if HWY_NATIVE_DOT_BF16
+template <class DF, HWY_IF_F32_D(DF), HWY_IF_V_SIZE_D(DF, 64),
+          class VBF = VFromD<Repartition<bfloat16_t, DF>>>
+HWY_API VFromD<DF> ReorderWidenMulAccumulate(DF /*df*/, VBF a, VBF b,
+                                             const VFromD<DF> sum0,
+                                             VFromD<DF>& /*sum1*/) {
+  return VFromD<DF>{_mm512_dpbf16_ps(sum0.raw,
+                                     reinterpret_cast<__m512bh>(a.raw),
+                                     reinterpret_cast<__m512bh>(b.raw))};
+}
+#endif  // HWY_NATIVE_DOT_BF16
+
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_I32_D(D)>
 HWY_API VFromD<D> ReorderWidenMulAccumulate(D d, Vec512<int16_t> a,
                                             Vec512<int16_t> b,

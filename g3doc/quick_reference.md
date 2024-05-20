@@ -413,7 +413,7 @@ example `Lt` instead of `operator<`.
     index `i` has the given value of type `T2` (the op converts it to T) + `i`.
     The least significant lane has index 0. This is useful in tests for
     detecting lane-crossing bugs.
-*   <code>V **SignBit**(D, T)</code>: returns N-lane vector with all lanes set
+*   <code>V **SignBit**(D)</code>: returns N-lane vector with all lanes set
     to a value whose representation has only the most-significant bit set.
 *   <code>V **Dup128VecFromValues**(D d, T t0, .., T tK)</code>: Creates a
     vector from `K+1` values, broadcasted to each 128-bit block if `Lanes(d) >=
@@ -808,13 +808,22 @@ variants are somewhat slower on Arm, and unavailable for integer inputs; if the
 
 *   <code>V **NegMulSub**(V a, V b, V c)</code>: returns `-a[i] * b[i] - c[i]`.
 
-*   <code>V **MulAddSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]`
-    in the even lanes and `a[i] * b[i] + c[i]` in the odd lanes.
+*   <code>V **MulAddSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]` in
+    the even lanes and `a[i] * b[i] + c[i]` in the odd lanes.
 
-    `MulAddSub(a, b, c)` is equivalent to
-    `OddEven(MulAdd(a, b, c), MulSub(a, b, c))` or
-    `MulAddSub(a, b, OddEven(c, Neg(c))`, but `MulSub(a, b, c)` is more
+    `MulAddSub(a, b, c)` is equivalent to `OddEven(MulAdd(a, b, c), MulSub(a, b,
+    c))` or `MulAddSub(a, b, OddEven(c, Neg(c))`, but `MulSub(a, b, c)` is more
     efficient on some targets (including AVX2/AVX3).
+
+*   `V`: `bf16`, `D`: `RepartitionToWide<DFromV<V>>`, `VW`: `Vec<D>` \
+    <code>VW **MulEvenAdd**(D d, V a, V b, VW c)</code>: equivalent to and
+    potentially more efficient than `MulAdd(PromoteEvenTo(d, a),
+    PromoteEvenTo(d, b), c)`.
+
+*   `V`: `bf16`, `D`: `RepartitionToWide<DFromV<V>>`, `VW`: `Vec<D>` \
+    <code>VW **MulOddAdd**(D d, V a, V b, VW c)</code>: equivalent to and
+    potentially more efficient than `MulAdd(PromoteOddTo(d, a), PromoteOddTo(d,
+    b), c)`.
 
 #### Masked arithmetic
 
