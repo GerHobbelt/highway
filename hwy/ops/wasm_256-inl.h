@@ -245,12 +245,17 @@ HWY_API Vec256<T> ShiftRight(Vec256<T> v) {
 }
 
 // ------------------------------ RotateRight (ShiftRight, Or)
-template <int kBits, typename T>
+template <int kBits, typename T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
 HWY_API Vec256<T> RotateRight(const Vec256<T> v) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+
   constexpr size_t kSizeInBits = sizeof(T) * 8;
   static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
   if (kBits == 0) return v;
-  return Or(ShiftRight<kBits>(v), ShiftLeft<kSizeInBits - kBits>(v));
+
+  return Or(BitCast(d, ShiftRight<kBits>(BitCast(du, v))),
+            ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
 }
 
 // ------------------------------ Shift lanes by same variable #bits
@@ -316,8 +321,9 @@ HWY_API Vec256<MakeWide<T>> MulEven(Vec256<T> a, const Vec256<T> b) {
   ret.v1 = MulEven(a.v1, b.v1);
   return ret;
 }
-HWY_API Vec256<uint64_t> MulEven(Vec256<uint64_t> a, const Vec256<uint64_t> b) {
-  Vec256<uint64_t> ret;
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec256<T> MulEven(Vec256<T> a, const Vec256<T> b) {
+  Vec256<T> ret;
   ret.v0 = MulEven(a.v0, b.v0);
   ret.v1 = MulEven(a.v1, b.v1);
   return ret;
@@ -331,8 +337,9 @@ HWY_API Vec256<MakeWide<T>> MulOdd(Vec256<T> a, const Vec256<T> b) {
   ret.v1 = MulOdd(a.v1, b.v1);
   return ret;
 }
-HWY_API Vec256<uint64_t> MulOdd(Vec256<uint64_t> a, const Vec256<uint64_t> b) {
-  Vec256<uint64_t> ret;
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec256<T> MulOdd(Vec256<T> a, const Vec256<T> b) {
+  Vec256<T> ret;
   ret.v0 = MulOdd(a.v0, b.v0);
   ret.v1 = MulOdd(a.v1, b.v1);
   return ret;
@@ -683,11 +690,6 @@ HWY_API Vec256<T> IfNegativeThenElse(Vec256<T> v, Vec256<T> yes, Vec256<T> no) {
   v.v0 = IfNegativeThenElse(v.v0, yes.v0, no.v0);
   v.v1 = IfNegativeThenElse(v.v1, yes.v1, no.v1);
   return v;
-}
-
-template <typename T, HWY_IF_FLOAT(T)>
-HWY_API Vec256<T> ZeroIfNegative(Vec256<T> v) {
-  return IfThenZeroElse(v < Zero(DFromV<decltype(v)>()), v);
 }
 
 // ------------------------------ Mask logical
@@ -1365,6 +1367,24 @@ template <typename T>
 HWY_API Vec256<T> OddEven(Vec256<T> a, const Vec256<T> b) {
   a.v0 = OddEven(a.v0, b.v0);
   a.v1 = OddEven(a.v1, b.v1);
+  return a;
+}
+
+// ------------------------------ InterleaveEven
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> InterleaveEven(D d, VFromD<D> a, VFromD<D> b) {
+  const Half<decltype(d)> dh;
+  a.v0 = InterleaveEven(dh, a.v0, b.v0);
+  a.v1 = InterleaveEven(dh, a.v1, b.v1);
+  return a;
+}
+
+// ------------------------------ InterleaveOdd
+template <class D, HWY_IF_V_SIZE_D(D, 32)>
+HWY_API VFromD<D> InterleaveOdd(D d, VFromD<D> a, VFromD<D> b) {
+  const Half<decltype(d)> dh;
+  a.v0 = InterleaveOdd(dh, a.v0, b.v0);
+  a.v1 = InterleaveOdd(dh, a.v1, b.v1);
   return a;
 }
 

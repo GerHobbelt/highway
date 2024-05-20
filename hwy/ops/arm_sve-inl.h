@@ -1012,14 +1012,15 @@ HWY_SVE_FOREACH(HWY_SVE_RETV_ARGPVV, AbsDiff, abd)
 
 // ------------------------------ ShiftLeft[Same]
 
-#define HWY_SVE_SHIFT_N(BASE, CHAR, BITS, HALF, NAME, OP)               \
-  template <int kBits>                                                  \
-  HWY_API HWY_SVE_V(BASE, BITS) NAME(HWY_SVE_V(BASE, BITS) v) {         \
-    return sv##OP##_##CHAR##BITS##_x(HWY_SVE_PTRUE(BITS), v, kBits);    \
-  }                                                                     \
-  HWY_API HWY_SVE_V(BASE, BITS)                                         \
-      NAME##Same(HWY_SVE_V(BASE, BITS) v, HWY_SVE_T(uint, BITS) bits) { \
-    return sv##OP##_##CHAR##BITS##_x(HWY_SVE_PTRUE(BITS), v, bits);     \
+#define HWY_SVE_SHIFT_N(BASE, CHAR, BITS, HALF, NAME, OP)                  \
+  template <int kBits>                                                     \
+  HWY_API HWY_SVE_V(BASE, BITS) NAME(HWY_SVE_V(BASE, BITS) v) {            \
+    return sv##OP##_##CHAR##BITS##_x(HWY_SVE_PTRUE(BITS), v, kBits);       \
+  }                                                                        \
+  HWY_API HWY_SVE_V(BASE, BITS)                                            \
+      NAME##Same(HWY_SVE_V(BASE, BITS) v, int bits) {                      \
+    return sv##OP##_##CHAR##BITS##_x(                                      \
+        HWY_SVE_PTRUE(BITS), v, static_cast<HWY_SVE_T(uint, BITS)>(bits)); \
   }
 
 HWY_SVE_FOREACH_UI(HWY_SVE_SHIFT_N, ShiftLeft, lsl_n)
@@ -1033,15 +1034,35 @@ HWY_SVE_FOREACH_I(HWY_SVE_SHIFT_N, ShiftRight, asr_n)
 
 // ------------------------------ RotateRight
 
-// TODO(janwas): svxar on SVE2
-template <int kBits, class V>
+#if HWY_SVE_HAVE_2
+
+#define HWY_SVE_ROTATE_RIGHT_N(BASE, CHAR, BITS, HALF, NAME, OP) \
+  template <int kBits>                                           \
+  HWY_API HWY_SVE_V(BASE, BITS) NAME(HWY_SVE_V(BASE, BITS) v) {  \
+    if (kBits == 0) return v;                                    \
+    return sv##OP##_##CHAR##BITS(v, Zero(DFromV<decltype(v)>()), \
+                                 HWY_MAX(kBits, 1));             \
+  }
+
+HWY_SVE_FOREACH_U(HWY_SVE_ROTATE_RIGHT_N, RotateRight, xar_n)
+HWY_SVE_FOREACH_I(HWY_SVE_ROTATE_RIGHT_N, RotateRight, xar_n)
+
+#undef HWY_SVE_ROTATE_RIGHT_N
+
+#else  // !HWY_SVE_HAVE_2
+template <int kBits, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
 HWY_API V RotateRight(const V v) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+
   constexpr size_t kSizeInBits = sizeof(TFromV<V>) * 8;
   static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
   if (kBits == 0) return v;
-  return Or(ShiftRight<kBits>(v),
+
+  return Or(BitCast(d, ShiftRight<kBits>(BitCast(du, v))),
             ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
 }
+#endif
 
 // ------------------------------ Shl/r
 
@@ -1089,11 +1110,7 @@ HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGPVN, MaxN, max_n)
 HWY_SVE_FOREACH(HWY_SVE_RETV_ARGPVV, Mul, mul)
 
 // ------------------------------ MulHigh
-HWY_SVE_FOREACH_UI16(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
-// Not part of API, used internally:
-HWY_SVE_FOREACH_UI08(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
-HWY_SVE_FOREACH_UI32(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
-HWY_SVE_FOREACH_U64(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
+HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGPVV, MulHigh, mulh)
 
 // ------------------------------ MulFixedPoint15
 HWY_API svint16_t MulFixedPoint15(svint16_t a, svint16_t b) {
@@ -1560,6 +1577,22 @@ HWY_API VFromD<D> VecFromMask(const D d, svbool_t mask) {
   // This generates MOV imm, whereas svdup_n_s8_z generates MOV scalar, which
   // requires an extra instruction plus M0 pipeline.
   return BitCast(d, IfThenElseZero(mask, Set(di, -1)));
+}
+
+// ------------------------------ IsNegative (Lt)
+#ifdef HWY_NATIVE_IS_NEGATIVE
+#undef HWY_NATIVE_IS_NEGATIVE
+#else
+#define HWY_NATIVE_IS_NEGATIVE
+#endif
+
+template <class V, HWY_IF_NOT_UNSIGNED_V(V)>
+HWY_API svbool_t IsNegative(V v) {
+  const DFromV<decltype(v)> d;
+  const RebindToSigned<decltype(d)> di;
+  using TI = TFromD<decltype(di)>;
+
+  return detail::LtN(BitCast(di, v), static_cast<TI>(0));
 }
 
 // ------------------------------ IfVecThenElse (MaskFromVec, IfThenElse)
@@ -3185,6 +3218,18 @@ HWY_API V OddEven(const V odd, const V even) {
 
 #endif  // HWY_TARGET
 
+// ------------------------------ InterleaveEven
+template <class D>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return detail::InterleaveEven(a, b);
+}
+
+// ------------------------------ InterleaveOdd
+template <class D>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return detail::InterleaveOdd(a, b);
+}
+
 // ------------------------------ OddEvenBlocks
 template <class V>
 HWY_API V OddEvenBlocks(const V odd, const V even) {
@@ -4401,12 +4446,6 @@ HWY_API V MaskedModOr(V no, M m, V a, V b) {
   return IfThenElse(m, Mod(a, b), no);
 }
 
-// ------------------------------ ZeroIfNegative (Lt, IfThenElse)
-template <class V>
-HWY_API V ZeroIfNegative(const V v) {
-  return IfThenZeroElse(detail::LtN(v, 0), v);
-}
-
 // ------------------------------ BroadcastSignBit (ShiftRight)
 template <class V>
 HWY_API V BroadcastSignBit(const V v) {
@@ -4417,11 +4456,7 @@ HWY_API V BroadcastSignBit(const V v) {
 template <class V>
 HWY_API V IfNegativeThenElse(V v, V yes, V no) {
   static_assert(IsSigned<TFromV<V>>(), "Only works for signed/float");
-  const DFromV<V> d;
-  const RebindToSigned<decltype(d)> di;
-
-  const svbool_t m = detail::LtN(BitCast(di, v), 0);
-  return IfThenElse(m, yes, no);
+  return IfThenElse(IsNegative(v), yes, no);
 }
 
 // ------------------------------ AverageRound (ShiftRight)
@@ -5445,10 +5480,22 @@ HWY_API VFromD<DW> MulOdd(const V a, const V b) {
 #endif
 }
 
+HWY_API svint64_t MulEven(const svint64_t a, const svint64_t b) {
+  const auto lo = Mul(a, b);
+  const auto hi = MulHigh(a, b);
+  return detail::InterleaveEven(lo, hi);
+}
+
 HWY_API svuint64_t MulEven(const svuint64_t a, const svuint64_t b) {
   const auto lo = Mul(a, b);
   const auto hi = MulHigh(a, b);
   return detail::InterleaveEven(lo, hi);
+}
+
+HWY_API svint64_t MulOdd(const svint64_t a, const svint64_t b) {
+  const auto lo = Mul(a, b);
+  const auto hi = MulHigh(a, b);
+  return detail::InterleaveOdd(lo, hi);
 }
 
 HWY_API svuint64_t MulOdd(const svuint64_t a, const svuint64_t b) {

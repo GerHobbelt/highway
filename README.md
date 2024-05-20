@@ -66,7 +66,7 @@ Online demos using Compiler Explorer:
     flags)
 
 We observe that Highway is referenced in the following open source projects,
-found via sourcegraph.com. Most are Github repositories. If you would like to
+found via sourcegraph.com. Most are GitHub repositories. If you would like to
 add your project or link to it directly, feel free to raise an issue or contact
 us via the below email.
 
@@ -90,7 +90,7 @@ Other
 *   [zimt](https://github.com/kfjahnke/zimt): C++11 template library to process n-dimensional arrays with multi-threaded SIMD code
 *   [vectorized Quicksort](https://github.com/google/highway/tree/master/hwy/contrib/sort) ([paper](https://arxiv.org/abs/2205.05982))
 
-If you'd like to get Highway, in addition to cloning from this Github repository
+If you'd like to get Highway, in addition to cloning from this GitHub repository
 or using it as a Git submodule, you can also find it in the following package
 managers or repositories: alpinelinux, conan-io, conda-forge, DragonFlyBSD,
 freebsd, ghostbsd, microsoft/vcpkg, MidnightBSD, MSYS2, NetBSD, openSUSE,
@@ -182,12 +182,15 @@ sudo apt install cmake
 
 Highway's unit tests use [googletest](https://github.com/google/googletest).
 By default, Highway's CMake downloads this dependency at configuration time.
-You can disable this by setting the `HWY_SYSTEM_GTEST` CMake variable to ON and
+You can avoid this by setting the `HWY_SYSTEM_GTEST` CMake variable to ON and
 installing gtest separately:
 
 ```bash
 sudo apt install libgtest-dev
 ```
+
+Alternatively, you can define `HWY_TEST_STANDALONE=1` and remove all occurrences
+of `gtest_main` in each BUILD file, then tests avoid the dependency on GUnit.
 
 Running cross-compiled tests requires support from the OS, which on Debian is
 provided by the `qemu-user-binfmt` package.
@@ -318,9 +321,12 @@ generally sufficient.
 For MSVC, we recommend compiling with `/Gv` to allow non-inlined functions to
 pass vector arguments in registers. If intending to use the AVX2 target together
 with half-width vectors (e.g. for `PromoteTo`), it is also important to compile
-with `/arch:AVX2`. This seems to be the only way to generate VEX-encoded SSE4
-instructions on MSVC. Otherwise, mixing VEX-encoded AVX2 instructions and
-non-VEX SSE4 may cause severe performance degradation. Unfortunately, the
+with `/arch:AVX2`. This seems to be the only way to reliably generate VEX-encoded
+SSE instructions on MSVC. Sometimes MSVC generates VEX-encoded SSE instructions,
+if they are mixed with AVX, but not always, see 
+[DevCom-10618264](https://developercommunity.visualstudio.com/t/10618264).
+Otherwise, mixing VEX-encoded AVX2 instructions and non-VEX SSE may cause severe 
+performance degradation. Unfortunately, with `/arch:AVX2` option, the
 resulting binary will then require AVX2. Note that no such flag is needed for
 clang and GCC because they support target-specific attributes, which we use to
 ensure proper VEX code generation for AVX2 targets.

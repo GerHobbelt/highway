@@ -335,8 +335,7 @@ HWY_API Vec1<T> CopySignToAbs(const Vec1<T> abs, const Vec1<T> sign) {
 // ------------------------------ BroadcastSignBit
 template <typename T>
 HWY_API Vec1<T> BroadcastSignBit(const Vec1<T> v) {
-  // This is used inside ShiftRight, so we cannot implement in terms of it.
-  return v.raw < 0 ? Vec1<T>(T(-1)) : Vec1<T>(0);
+  return Vec1<T>(ScalarShr(v.raw, sizeof(T) * 8 - 1));
 }
 
 // ------------------------------ PopulationCount
@@ -378,15 +377,6 @@ HWY_API Vec1<T> IfNegativeThenElse(Vec1<T> v, Vec1<T> yes, Vec1<T> no) {
   const auto vi = BitCast(di, v);
 
   return vi.raw < 0 ? yes : no;
-}
-
-template <typename T>
-HWY_API Vec1<T> ZeroIfNegative(const Vec1<T> v) {
-  const DFromV<decltype(v)> d;
-  const RebindToSigned<decltype(d)> di;
-  const auto vi = BitCast(di, v);
-
-  return vi.raw < 0 ? Vec1<T>(ConvertScalarTo<T>(0)) : v;
 }
 
 // ------------------------------ Mask logical
@@ -473,35 +463,20 @@ HWY_API Vec1<T> ShiftLeft(const Vec1<T> v) {
 template <int kBits, typename T>
 HWY_API Vec1<T> ShiftRight(const Vec1<T> v) {
   static_assert(0 <= kBits && kBits < sizeof(T) * 8, "Invalid shift");
-#if __cplusplus >= 202002L
-  // Signed right shift is now guaranteed to be arithmetic (rounding toward
-  // negative infinity, i.e. shifting in the sign bit).
-  return Vec1<T>(static_cast<T>(v.raw >> kBits));
-#else
-  if (IsSigned<T>()) {
-    // Emulate arithmetic shift using only logical (unsigned) shifts, because
-    // signed shifts are still implementation-defined.
-    using TU = hwy::MakeUnsigned<T>;
-    const Sisd<TU> du;
-    const TU shifted = static_cast<TU>(BitCast(du, v).raw >> kBits);
-    const TU sign = BitCast(du, BroadcastSignBit(v)).raw;
-    const size_t sign_shift =
-        static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - kBits);
-    const TU upper = static_cast<TU>(sign << sign_shift);
-    return BitCast(Sisd<T>(), Vec1<TU>(shifted | upper));
-  } else {  // T is unsigned
-    return Vec1<T>(static_cast<T>(v.raw >> kBits));
-  }
-#endif
+  return Vec1<T>(ScalarShr(v.raw, kBits));
 }
 
 // ------------------------------ RotateRight (ShiftRight)
-template <int kBits, typename T>
+template <int kBits, typename T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
 HWY_API Vec1<T> RotateRight(const Vec1<T> v) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+
   constexpr size_t kSizeInBits = sizeof(T) * 8;
-  static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift");
+  static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
   if (kBits == 0) return v;
-  return Or(ShiftRight<kBits>(v),
+
+  return Or(BitCast(d, ShiftRight<kBits>(BitCast(du, v))),
             ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
 }
 
@@ -515,26 +490,7 @@ HWY_API Vec1<T> ShiftLeftSame(const Vec1<T> v, int bits) {
 
 template <typename T>
 HWY_API Vec1<T> ShiftRightSame(const Vec1<T> v, int bits) {
-#if __cplusplus >= 202002L
-  // Signed right shift is now guaranteed to be arithmetic (rounding toward
-  // negative infinity, i.e. shifting in the sign bit).
-  return Vec1<T>(static_cast<T>(v.raw >> bits));
-#else
-  if (IsSigned<T>()) {
-    // Emulate arithmetic shift using only logical (unsigned) shifts, because
-    // signed shifts are still implementation-defined.
-    using TU = hwy::MakeUnsigned<T>;
-    const Sisd<TU> du;
-    const TU shifted = static_cast<TU>(BitCast(du, v).raw >> bits);
-    const TU sign = BitCast(du, BroadcastSignBit(v)).raw;
-    const size_t sign_shift =
-        static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - bits);
-    const TU upper = static_cast<TU>(sign << sign_shift);
-    return BitCast(Sisd<T>(), Vec1<TU>(shifted | upper));
-  } else {  // T is unsigned
-    return Vec1<T>(static_cast<T>(v.raw >> bits));
-  }
-#endif
+  return Vec1<T>(ScalarShr(v.raw, bits));
 }
 
 // ------------------------------ Shl
@@ -681,8 +637,8 @@ HWY_API Vec1<T> Min(const Vec1<T> a, const Vec1<T> b) {
 
 template <typename T, HWY_IF_FLOAT(T)>
 HWY_API Vec1<T> Min(const Vec1<T> a, const Vec1<T> b) {
-  if (isnan(a.raw)) return b;
-  if (isnan(b.raw)) return a;
+  if (ScalarIsNaN(a.raw)) return b;
+  if (ScalarIsNaN(b.raw)) return a;
   return Vec1<T>(HWY_MIN(a.raw, b.raw));
 }
 
@@ -693,8 +649,8 @@ HWY_API Vec1<T> Max(const Vec1<T> a, const Vec1<T> b) {
 
 template <typename T, HWY_IF_FLOAT(T)>
 HWY_API Vec1<T> Max(const Vec1<T> a, const Vec1<T> b) {
-  if (isnan(a.raw)) return b;
-  if (isnan(b.raw)) return a;
+  if (ScalarIsNaN(a.raw)) return b;
+  if (ScalarIsNaN(b.raw)) return a;
   return Vec1<T>(HWY_MAX(a.raw, b.raw));
 }
 
@@ -740,16 +696,19 @@ HWY_API Vec1<T> operator/(const Vec1<T> a, const Vec1<T> b) {
   return Vec1<T>(a.raw / b.raw);
 }
 
-// Returns the upper 16 bits of a * b in each lane.
-HWY_API Vec1<int16_t> MulHigh(const Vec1<int16_t> a, const Vec1<int16_t> b) {
-  return Vec1<int16_t>(static_cast<int16_t>((a.raw * b.raw) >> 16));
+// Returns the upper sizeof(T)*8 bits of a * b in each lane.
+template <class T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4)),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec1<T> MulHigh(const Vec1<T> a, const Vec1<T> b) {
+  using TW = MakeWide<T>;
+  return Vec1<T>(static_cast<T>(
+      (static_cast<TW>(a.raw) * static_cast<TW>(b.raw)) >> (sizeof(T) * 8)));
 }
-HWY_API Vec1<uint16_t> MulHigh(const Vec1<uint16_t> a, const Vec1<uint16_t> b) {
-  // Cast to uint32_t first to prevent overflow. Otherwise the result of
-  // uint16_t * uint16_t is in "int" which may overflow. In practice the result
-  // is the same but this way it is also defined.
-  return Vec1<uint16_t>(static_cast<uint16_t>(
-      (static_cast<uint32_t>(a.raw) * static_cast<uint32_t>(b.raw)) >> 16));
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec1<T> MulHigh(const Vec1<T> a, const Vec1<T> b) {
+  T hi;
+  Mul128(a.raw, b.raw, &hi);
+  return Vec1<T>(hi);
 }
 
 HWY_API Vec1<int16_t> MulFixedPoint15(Vec1<int16_t> a, Vec1<int16_t> b) {
@@ -1034,12 +993,7 @@ HWY_API Mask1<T> operator>=(const Vec1<T> a, const Vec1<T> b) {
 template <typename T>
 HWY_API Mask1<T> IsNaN(const Vec1<T> v) {
   // std::isnan returns false for 0x7F..FF in clang AVX3 builds, so DIY.
-  MakeUnsigned<T> bits;
-  CopySameSize(&v, &bits);
-  bits += bits;
-  bits >>= 1;  // clear sign bit
-  // NaN if all exponent bits are set and the mantissa is not zero.
-  return Mask1<T>::FromBool(bits > ExponentMask<T>());
+  return Mask1<T>::FromBool(ScalarIsNaN(v.raw));
 }
 
 // Per-target flag to prevent generic_ops-inl.h from defining IsInf / IsFinite.

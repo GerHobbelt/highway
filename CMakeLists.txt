@@ -107,11 +107,13 @@ if (HWY_ENABLE_CONTRIB)
 # additional special cases.
 file(GLOB HWY_CONTRIB_SOURCES "hwy/contrib/sort/vqsort_*.cc")
 list(APPEND HWY_CONTRIB_SOURCES
+    hwy/contrib/bit_pack/bit_pack-inl.h
     hwy/contrib/dot/dot-inl.h
     hwy/contrib/image/image.cc
     hwy/contrib/image/image.h
     hwy/contrib/math/math-inl.h
     hwy/contrib/matvec/matvec-inl.h
+    hwy/contrib/random/random-inl.h
     hwy/contrib/sort/order.h
     hwy/contrib/sort/shared-inl.h
     hwy/contrib/sort/sorting_networks-inl.h
@@ -180,7 +182,52 @@ if (MSVC)
   set(HWY_FLAGS
     # fix build error C1128 in blockwise*_test & arithmetic_test
     /bigobj
+
+    # Warnings
+    /W4
+    # Disable some W4 warnings.  Enable them individually after they are cleaned up.
+    /wd4100
+    /wd4127
+    /wd4324
+    /wd4456
+    /wd4701
+    /wd4702
+    /wd4723
+
+    # CMake automatically adds exception handling flags.  Remove them.
+    /GR-
+    /EHs-c-
+    # Disable exceptions in STL code.
+    -D_HAS_EXCEPTIONS=0
   )
+
+  # This adds extra warnings for the clang-cl compiler on Windows.
+  # This is the same as the sections in the else part.
+  # These could be refactored.
+  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    list(APPEND HWY_FLAGS
+      # These are not included in Wall nor Wextra:
+      -Wconversion
+      -Wsign-conversion
+      -Wvla
+      -Wnon-virtual-dtor
+
+      -Wfloat-overflow-conversion
+      -Wfloat-zero-conversion
+      -Wfor-loop-analysis
+      -Wgnu-redeclared-enum
+      -Winfinite-recursion
+      -Wself-assign
+      -Wstring-conversion
+      -Wtautological-overlap-compare
+      -Wthread-safety-analysis
+      -Wundefined-func-template
+    )
+  endif()
+
+  if (HWY_WARNINGS_ARE_ERRORS)
+    list(APPEND HWY_FLAGS /WX)
+  endif()
 else()
   set(HWY_FLAGS
     # Avoid changing binaries based on the current time and date.
@@ -614,12 +661,14 @@ if (HWY_ENABLE_CONTRIB)
 list(APPEND HWY_TEST_LIBS hwy_contrib)
 
 list(APPEND HWY_TEST_FILES
+  hwy/contrib/bit_pack/bit_pack_test.cc
   hwy/contrib/dot/dot_test.cc
   hwy/contrib/matvec/matvec_test.cc
   hwy/contrib/image/image_test.cc
   # Disabled due to SIGILL in clang7 debug build during gtest discovery phase,
   # not reproducible locally. Still tested via bazel build.
   hwy/contrib/math/math_test.cc
+  hwy/contrib/random/random_test.cc
   hwy/contrib/sort/sort_test.cc
   hwy/contrib/sort/bench_sort.cc
   hwy/contrib/thread_pool/thread_pool_test.cc

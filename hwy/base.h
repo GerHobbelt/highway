@@ -292,11 +292,21 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
   do {                         \
   } while (0)
 #endif
-
+#if __cpp_constexpr >= 201603L
+#define HWY_CXX17_CONSTEXPR constexpr
+#else
+#define HWY_CXX17_CONSTEXPR
+#endif
 #if __cpp_constexpr >= 201304L
 #define HWY_CXX14_CONSTEXPR constexpr
 #else
 #define HWY_CXX14_CONSTEXPR
+#endif
+
+#if HWY_CXX_LANG >= 201703L
+#define HWY_IF_CONSTEXPR if constexpr
+#else
+#define HWY_IF_CONSTEXPR if
 #endif
 
 #ifndef HWY_HAVE_CXX20_THREE_WAY_COMPARE
@@ -583,6 +593,7 @@ using RemoveCvRef = RemoveConst<RemoveVolatile<RemoveRef<T>>>;
 #define HWY_IF_LANES_GT(kN, lanes) hwy::EnableIf<(kN > lanes)>* = nullptr
 
 #define HWY_IF_UNSIGNED(T) hwy::EnableIf<!hwy::IsSigned<T>()>* = nullptr
+#define HWY_IF_NOT_UNSIGNED(T) hwy::EnableIf<hwy::IsSigned<T>()>* = nullptr
 #define HWY_IF_SIGNED(T)                                    \
   hwy::EnableIf<hwy::IsSigned<T>() && !hwy::IsFloat<T>() && \
                 !hwy::IsSpecialFloat<T>()>* = nullptr
@@ -2430,6 +2441,46 @@ constexpr inline size_t RoundDownTo(size_t what, size_t align) {
   return what - (what % align);
 }
 
+namespace detail {
+
+// T is unsigned or T is signed and (val >> shift_amt) is an arithmetic right
+// shift
+template <class T>
+static HWY_INLINE constexpr T ScalarShr(hwy::UnsignedTag /*type_tag*/, T val,
+                                        int shift_amt) {
+  return static_cast<T>(val >> shift_amt);
+}
+
+// T is signed and (val >> shift_amt) is a non-arithmetic right shift
+template <class T>
+static HWY_INLINE constexpr T ScalarShr(hwy::SignedTag /*type_tag*/, T val,
+                                        int shift_amt) {
+  using TU = MakeUnsigned<MakeLaneTypeIfInteger<T>>;
+  return static_cast<T>(
+      (val < 0) ? static_cast<TU>(
+                      ~(static_cast<TU>(~static_cast<TU>(val)) >> shift_amt))
+                : static_cast<TU>(static_cast<TU>(val) >> shift_amt));
+}
+
+}  // namespace detail
+
+// If T is an signed integer type, ScalarShr is guaranteed to perform an
+// arithmetic right shift
+
+// Otherwise, if T is an unsigned integer type, ScalarShr is guaranteed to
+// perform a logical right shift
+template <class T, HWY_IF_INTEGER(RemoveCvRef<T>)>
+HWY_API constexpr RemoveCvRef<T> ScalarShr(T val, int shift_amt) {
+  using NonCvRefT = RemoveCvRef<T>;
+  return detail::ScalarShr(
+      hwy::SizeTag<((IsSigned<NonCvRefT>() &&
+                     (LimitsMin<NonCvRefT>() >> (sizeof(T) * 8 - 1)) !=
+                         static_cast<NonCvRefT>(-1))
+                        ? 0x100
+                        : 0)>(),
+      static_cast<NonCvRefT>(val), shift_amt);
+}
+
 // Undefined results for x == 0.
 HWY_API size_t Num0BitsBelowLS1Bit_Nonzero32(const uint32_t x) {
   HWY_DASSERT(x != 0);
@@ -2591,6 +2642,7 @@ HWY_INLINE constexpr T AddWithWraparound(T t, T2 n) {
 }
 
 #if HWY_COMPILER_MSVC && HWY_ARCH_X86_64
+#pragma intrinsic(_mul128)
 #pragma intrinsic(_umul128)
 #endif
 
@@ -2611,6 +2663,25 @@ HWY_API uint64_t Mul128(uint64_t a, uint64_t b, uint64_t* HWY_RESTRICT upper) {
   const uint64_t t = (lo_lo >> 32) + (hi_lo & kLo32) + lo_hi;
   *upper = (hi_lo >> 32) + (t >> 32) + hi_hi;
   return (t << 32) | (lo_lo & kLo32);
+#endif
+}
+
+HWY_API int64_t Mul128(int64_t a, int64_t b, int64_t* HWY_RESTRICT upper) {
+#if defined(__SIZEOF_INT128__)
+  __int128_t product = (__int128_t)a * (__int128_t)b;
+  *upper = (int64_t)(product >> 64);
+  return (int64_t)(product & 0xFFFFFFFFFFFFFFFFULL);
+#elif HWY_COMPILER_MSVC && HWY_ARCH_X86_64
+  return _mul128(a, b, upper);
+#else
+  uint64_t unsigned_upper;
+  const int64_t lower = static_cast<int64_t>(Mul128(
+      static_cast<uint64_t>(a), static_cast<uint64_t>(b), &unsigned_upper));
+  *upper = static_cast<int64_t>(
+      unsigned_upper -
+      (static_cast<uint64_t>(ScalarShr(a, 63)) & static_cast<uint64_t>(b)) -
+      (static_cast<uint64_t>(ScalarShr(b, 63)) & static_cast<uint64_t>(a)));
+  return lower;
 #endif
 }
 

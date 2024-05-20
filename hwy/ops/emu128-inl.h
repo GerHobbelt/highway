@@ -355,9 +355,8 @@ HWY_API Vec128<T, N> CopySignToAbs(Vec128<T, N> abs, Vec128<T, N> sign) {
 // ------------------------------ BroadcastSignBit
 template <typename T, size_t N>
 HWY_API Vec128<T, N> BroadcastSignBit(Vec128<T, N> v) {
-  // This is used inside ShiftRight, so we cannot implement in terms of it.
   for (size_t i = 0; i < N; ++i) {
-    v.raw[i] = static_cast<T>(v.raw[i] < 0 ? -1 : 0);
+    v.raw[i] = ScalarShr(v.raw[i], sizeof(T) * 8 - 1);
   }
   return v;
 }
@@ -431,12 +430,6 @@ HWY_API Vec128<T, N> IfNegativeThenElse(Vec128<T, N> v, Vec128<T, N> yes,
   return v;
 }
 
-template <typename T, size_t N>
-HWY_API Vec128<T, N> ZeroIfNegative(Vec128<T, N> v) {
-  const DFromV<decltype(v)> d;
-  return IfNegativeThenElse(v, Zero(d), v);
-}
-
 // ------------------------------ Mask logical
 
 template <typename T, size_t N>
@@ -494,41 +487,26 @@ HWY_API Vec128<T, N> ShiftLeft(Vec128<T, N> v) {
 template <int kBits, typename T, size_t N>
 HWY_API Vec128<T, N> ShiftRight(Vec128<T, N> v) {
   static_assert(0 <= kBits && kBits < sizeof(T) * 8, "Invalid shift");
-#if __cplusplus >= 202002L
   // Signed right shift is now guaranteed to be arithmetic (rounding toward
   // negative infinity, i.e. shifting in the sign bit).
   for (size_t i = 0; i < N; ++i) {
-    v.raw[i] = static_cast<T>(v.raw[i] >> kBits);
+    v.raw[i] = ScalarShr(v.raw[i], kBits);
   }
-#else
-  if (IsSigned<T>()) {
-    // Emulate arithmetic shift using only logical (unsigned) shifts, because
-    // signed shifts are still implementation-defined.
-    using TU = hwy::MakeUnsigned<T>;
-    for (size_t i = 0; i < N; ++i) {
-      const TU shifted = static_cast<TU>(static_cast<TU>(v.raw[i]) >> kBits);
-      const TU sign = v.raw[i] < 0 ? static_cast<TU>(~TU{0}) : 0;
-      const size_t sign_shift =
-          static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - kBits);
-      const TU upper = static_cast<TU>(sign << sign_shift);
-      v.raw[i] = static_cast<T>(shifted | upper);
-    }
-  } else {  // T is unsigned
-    for (size_t i = 0; i < N; ++i) {
-      v.raw[i] = static_cast<T>(v.raw[i] >> kBits);
-    }
-  }
-#endif
+
   return v;
 }
 
 // ------------------------------ RotateRight (ShiftRight)
-template <int kBits, typename T, size_t N>
+template <int kBits, typename T, size_t N, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
 HWY_API Vec128<T, N> RotateRight(const Vec128<T, N> v) {
+  const DFromV<decltype(v)> d;
+  const RebindToUnsigned<decltype(d)> du;
+
   constexpr size_t kSizeInBits = sizeof(T) * 8;
   static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
   if (kBits == 0) return v;
-  return Or(ShiftRight<kBits>(v),
+
+  return Or(BitCast(d, ShiftRight<kBits>(BitCast(du, v))),
             ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
 }
 
@@ -545,31 +523,10 @@ HWY_API Vec128<T, N> ShiftLeftSame(Vec128<T, N> v, int bits) {
 
 template <typename T, size_t N>
 HWY_API Vec128<T, N> ShiftRightSame(Vec128<T, N> v, int bits) {
-#if __cplusplus >= 202002L
-  // Signed right shift is now guaranteed to be arithmetic (rounding toward
-  // negative infinity, i.e. shifting in the sign bit).
   for (size_t i = 0; i < N; ++i) {
-    v.raw[i] = static_cast<T>(v.raw[i] >> bits);
+    v.raw[i] = ScalarShr(v.raw[i], bits);
   }
-#else
-  if (IsSigned<T>()) {
-    // Emulate arithmetic shift using only logical (unsigned) shifts, because
-    // signed shifts are still implementation-defined.
-    using TU = hwy::MakeUnsigned<T>;
-    for (size_t i = 0; i < N; ++i) {
-      const TU shifted = static_cast<TU>(static_cast<TU>(v.raw[i]) >> bits);
-      const TU sign = v.raw[i] < 0 ? static_cast<TU>(~TU{0}) : 0;
-      const size_t sign_shift =
-          static_cast<size_t>(static_cast<int>(sizeof(TU)) * 8 - 1 - bits);
-      const TU upper = static_cast<TU>(sign << sign_shift);
-      v.raw[i] = static_cast<T>(shifted | upper);
-    }
-  } else {
-    for (size_t i = 0; i < N; ++i) {
-      v.raw[i] = static_cast<T>(v.raw[i] >> bits);  // unsigned, logical shift
-    }
-  }
-#endif
+
   return v;
 }
 
@@ -587,32 +544,10 @@ HWY_API Vec128<T, N> operator<<(Vec128<T, N> v, Vec128<T, N> bits) {
 
 template <typename T, size_t N>
 HWY_API Vec128<T, N> operator>>(Vec128<T, N> v, Vec128<T, N> bits) {
-#if __cplusplus >= 202002L
-  // Signed right shift is now guaranteed to be arithmetic (rounding toward
-  // negative infinity, i.e. shifting in the sign bit).
   for (size_t i = 0; i < N; ++i) {
-    v.raw[i] = static_cast<T>(v.raw[i] >> bits.raw[i]);
+    v.raw[i] = ScalarShr(v.raw[i], static_cast<int>(bits.raw[i]));
   }
-#else
-  if (IsSigned<T>()) {
-    // Emulate arithmetic shift using only logical (unsigned) shifts, because
-    // signed shifts are still implementation-defined.
-    using TU = hwy::MakeUnsigned<T>;
-    for (size_t i = 0; i < N; ++i) {
-      const TU shifted =
-          static_cast<TU>(static_cast<TU>(v.raw[i]) >> bits.raw[i]);
-      const TU sign = v.raw[i] < 0 ? static_cast<TU>(~TU{0}) : 0;
-      const size_t sign_shift = static_cast<size_t>(
-          static_cast<int>(sizeof(TU)) * 8 - 1 - bits.raw[i]);
-      const TU upper = static_cast<TU>(sign << sign_shift);
-      v.raw[i] = static_cast<T>(shifted | upper);
-    }
-  } else {  // T is unsigned
-    for (size_t i = 0; i < N; ++i) {
-      v.raw[i] = static_cast<T>(v.raw[i] >> bits.raw[i]);
-    }
-  }
-#endif
+
   return v;
 }
 
@@ -890,26 +825,36 @@ HWY_API Vec128<T, N> operator/(Vec128<T, N> a, Vec128<T, N> b) {
   return a;
 }
 
-// Returns the upper 16 bits of a * b in each lane.
-template <size_t N>
-HWY_API Vec128<int16_t, N> MulHigh(Vec128<int16_t, N> a, Vec128<int16_t, N> b) {
+// Returns the upper sizeof(T)*8 bits of a * b in each lane.
+template <class T, size_t N,
+          HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2) | (1 << 4)),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec128<T, N> MulHigh(Vec128<T, N> a, Vec128<T, N> b) {
+  using TW = MakeWide<T>;
   for (size_t i = 0; i < N; ++i) {
-    a.raw[i] = static_cast<int16_t>((int32_t{a.raw[i]} * b.raw[i]) >> 16);
+    a.raw[i] = static_cast<T>(
+        (static_cast<TW>(a.raw[i]) * static_cast<TW>(b.raw[i])) >>
+        (sizeof(T) * 8));
   }
   return a;
 }
-template <size_t N>
-HWY_API Vec128<uint16_t, N> MulHigh(Vec128<uint16_t, N> a,
-                                    Vec128<uint16_t, N> b) {
-  for (size_t i = 0; i < N; ++i) {
-    // Cast to uint32_t first to prevent overflow. Otherwise the result of
-    // uint16_t * uint16_t is in "int" which may overflow. In practice the
-    // result is the same but this way it is also defined.
-    a.raw[i] = static_cast<uint16_t>(
-        (static_cast<uint32_t>(a.raw[i]) * static_cast<uint32_t>(b.raw[i])) >>
-        16);
-  }
-  return a;
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec128<T, 1> MulHigh(Vec128<T, 1> a, Vec128<T, 1> b) {
+  T hi;
+  Mul128(GetLane(a), GetLane(b), &hi);
+  return Set(Full64<T>(), hi);
+}
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec128<T> MulHigh(Vec128<T> a, Vec128<T> b) {
+  T hi_0;
+  T hi_1;
+
+  Mul128(GetLane(a), GetLane(b), &hi_0);
+  Mul128(ExtractLane(a, 1), ExtractLane(b, 1), &hi_1);
+
+  return Dup128VecFromValues(Full128<T>(), hi_0, hi_1);
 }
 
 template <size_t N>
@@ -2154,6 +2099,24 @@ HWY_API Vec128<T, N> OddEven(Vec128<T, N> odd, Vec128<T, N> even) {
   return odd;
 }
 
+template <class D>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  constexpr size_t N = HWY_MAX_LANES_D(D);
+  for (size_t i = 1; i < N; i += 2) {
+    a.raw[i] = b.raw[i - 1];
+  }
+  return a;
+}
+
+template <class D>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  constexpr size_t N = HWY_MAX_LANES_D(D);
+  for (size_t i = 1; i < N; i += 2) {
+    b.raw[i - 1] = a.raw[i];
+  }
+  return b;
+}
+
 template <typename T, size_t N>
 HWY_API Vec128<T, N> OddEvenBlocks(Vec128<T, N> /* odd */, Vec128<T, N> even) {
   return even;
@@ -2866,18 +2829,20 @@ HWY_API VFromD<D> MaxOfLanes(D d, VFromD<D> v) {
 
 // ------------------------------ MulEven/Odd 64x64 (UpperHalf)
 
-HWY_INLINE Vec128<uint64_t> MulEven(Vec128<uint64_t> a, Vec128<uint64_t> b) {
-  alignas(16) uint64_t mul[2];
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec128<T> MulEven(Vec128<T> a, Vec128<T> b) {
+  alignas(16) T mul[2];
   mul[0] = Mul128(GetLane(a), GetLane(b), &mul[1]);
-  return Load(Full128<uint64_t>(), mul);
+  return Load(Full128<T>(), mul);
 }
 
-HWY_INLINE Vec128<uint64_t> MulOdd(Vec128<uint64_t> a, Vec128<uint64_t> b) {
-  alignas(16) uint64_t mul[2];
-  const Half<Full128<uint64_t>> d2;
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec128<T> MulOdd(Vec128<T> a, Vec128<T> b) {
+  alignas(16) T mul[2];
+  const Half<Full128<T>> d2;
   mul[0] =
       Mul128(GetLane(UpperHalf(d2, a)), GetLane(UpperHalf(d2, b)), &mul[1]);
-  return Load(Full128<uint64_t>(), mul);
+  return Load(Full128<T>(), mul);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

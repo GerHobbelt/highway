@@ -768,13 +768,6 @@ HWY_API Vec256<double> IfThenZeroElse(Mask256<double> mask, Vec256<double> no) {
   return Vec256<double>{_mm256_mask_xor_pd(no.raw, mask.raw, no.raw, no.raw)};
 }
 
-template <typename T>
-HWY_API Vec256<T> ZeroIfNegative(const Vec256<T> v) {
-  static_assert(IsSigned<T>(), "Only for float");
-  // AVX3 MaskFromVec only looks at the MSB
-  return IfThenZeroElse(MaskFromVec(v), v);
-}
-
 // ------------------------------ Mask logical
 
 namespace detail {
@@ -2271,14 +2264,25 @@ HWY_API Vec256<int8_t> ShiftRight(Vec256<int8_t> v) {
 
 // ------------------------------ RotateRight
 
-template <int kBits, typename T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2))>
-HWY_API Vec256<T> RotateRight(const Vec256<T> v) {
-  constexpr size_t kSizeInBits = sizeof(T) * 8;
-  static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
+// U8 RotateRight implementation on AVX3_DL is now in x86_512-inl.h as U8
+// RotateRight uses detail::GaloisAffine on AVX3_DL
+
+#if HWY_TARGET > HWY_AVX3_DL
+template <int kBits>
+HWY_API Vec256<uint8_t> RotateRight(const Vec256<uint8_t> v) {
+  static_assert(0 <= kBits && kBits < 8, "Invalid shift count");
   if (kBits == 0) return v;
-  // AVX3 does not support 8/16-bit.
-  return Or(ShiftRight<kBits>(v),
-            ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
+  // AVX3 does not support 8-bit.
+  return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(7, 8 - kBits)>(v));
+}
+#endif
+
+template <int kBits>
+HWY_API Vec256<uint16_t> RotateRight(const Vec256<uint16_t> v) {
+  static_assert(0 <= kBits && kBits < 16, "Invalid shift count");
+  if (kBits == 0) return v;
+  // AVX3 does not support 16-bit.
+  return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(15, 16 - kBits)>(v));
 }
 
 template <int kBits>
@@ -2302,6 +2306,31 @@ HWY_API Vec256<uint64_t> RotateRight(const Vec256<uint64_t> v) {
   return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(63, 64 - kBits)>(v));
 #endif
 }
+
+// ------------------------------ Rol/Ror
+#if HWY_TARGET <= HWY_AVX3
+
+template <class T, HWY_IF_UI32(T)>
+HWY_API Vec256<T> Rol(Vec256<T> a, Vec256<T> b) {
+  return Vec256<T>{_mm256_rolv_epi32(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI32(T)>
+HWY_API Vec256<T> Ror(Vec256<T> a, Vec256<T> b) {
+  return Vec256<T>{_mm256_rorv_epi32(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec256<T> Rol(Vec256<T> a, Vec256<T> b) {
+  return Vec256<T>{_mm256_rolv_epi64(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec256<T> Ror(Vec256<T> a, Vec256<T> b) {
+  return Vec256<T>{_mm256_rorv_epi64(a.raw, b.raw)};
+}
+
+#endif
 
 // ------------------------------ BroadcastSignBit (ShiftRight, compare, mask)
 
@@ -3172,6 +3201,15 @@ HWY_API Mask256<float16_t> IsNaN(Vec256<float16_t> v) {
       v.raw, HWY_X86_FPCLASS_SNAN | HWY_X86_FPCLASS_QNAN)};
 }
 
+HWY_API Mask256<float16_t> IsEitherNaN(Vec256<float16_t> a,
+                                       Vec256<float16_t> b) {
+  // Work around warnings in the intrinsic definitions (passing -1 as a mask).
+  HWY_DIAGNOSTICS(push)
+  HWY_DIAGNOSTICS_OFF(disable : 4245 4365, ignored "-Wsign-conversion")
+  return Mask256<float16_t>{_mm256_cmp_ph_mask(a.raw, b.raw, _CMP_UNORD_Q)};
+  HWY_DIAGNOSTICS(pop)
+}
+
 HWY_API Mask256<float16_t> IsInf(Vec256<float16_t> v) {
   return Mask256<float16_t>{_mm256_fpclass_ph_mask(
       v.raw, HWY_X86_FPCLASS_NEG_INF | HWY_X86_FPCLASS_POS_INF)};
@@ -3201,6 +3239,22 @@ HWY_API Mask256<double> IsNaN(Vec256<double> v) {
       v.raw, HWY_X86_FPCLASS_SNAN | HWY_X86_FPCLASS_QNAN)};
 #else
   return Mask256<double>{_mm256_cmp_pd(v.raw, v.raw, _CMP_UNORD_Q)};
+#endif
+}
+
+HWY_API Mask256<float> IsEitherNaN(Vec256<float> a, Vec256<float> b) {
+#if HWY_TARGET <= HWY_AVX3
+  return Mask256<float>{_mm256_cmp_ps_mask(a.raw, b.raw, _CMP_UNORD_Q)};
+#else
+  return Mask256<float>{_mm256_cmp_ps(a.raw, b.raw, _CMP_UNORD_Q)};
+#endif
+}
+
+HWY_API Mask256<double> IsEitherNaN(Vec256<double> a, Vec256<double> b) {
+#if HWY_TARGET <= HWY_AVX3
+  return Mask256<double>{_mm256_cmp_pd_mask(a.raw, b.raw, _CMP_UNORD_Q)};
+#else
+  return Mask256<double>{_mm256_cmp_pd(a.raw, b.raw, _CMP_UNORD_Q)};
 #endif
 }
 
@@ -5240,6 +5294,72 @@ HWY_API Vec256<double> OddEven(Vec256<double> a, Vec256<double> b) {
   return Vec256<double>{_mm256_blend_pd(a.raw, b.raw, 5)};
 }
 
+// -------------------------- InterleaveEven
+
+#if HWY_TARGET <= HWY_AVX3
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_UI32_D(D)>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm256_mask_shuffle_epi32(
+      a.raw, static_cast<__mmask8>(0xAA), b.raw,
+      static_cast<_MM_PERM_ENUM>(_MM_SHUFFLE(2, 2, 0, 0)))};
+}
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm256_mask_shuffle_ps(a.raw, static_cast<__mmask8>(0xAA),
+                                          b.raw, b.raw,
+                                          _MM_SHUFFLE(2, 2, 0, 0))};
+}
+#else
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_T_SIZE_D(D, 4)>
+HWY_API VFromD<D> InterleaveEven(D d, VFromD<D> a, VFromD<D> b) {
+  const RebindToFloat<decltype(d)> df;
+  const VFromD<decltype(df)> b2_b0_a2_a0{_mm256_shuffle_ps(
+      BitCast(df, a).raw, BitCast(df, b).raw, _MM_SHUFFLE(2, 0, 2, 0))};
+  return BitCast(
+      d, VFromD<decltype(df)>{_mm256_shuffle_ps(
+             b2_b0_a2_a0.raw, b2_b0_a2_a0.raw, _MM_SHUFFLE(3, 1, 2, 0))});
+}
+#endif
+
+// I64/U64/F64 InterleaveEven is generic for vector lengths >= 32 bytes
+template <class D, HWY_IF_LANES_GT_D(D, 2), HWY_IF_T_SIZE_D(D, 8)>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return InterleaveLower(a, b);
+}
+
+// -------------------------- InterleaveOdd
+
+#if HWY_TARGET <= HWY_AVX3
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_UI32_D(D)>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm256_mask_shuffle_epi32(
+      b.raw, static_cast<__mmask8>(0x55), a.raw,
+      static_cast<_MM_PERM_ENUM>(_MM_SHUFFLE(3, 3, 1, 1)))};
+}
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm256_mask_shuffle_ps(b.raw, static_cast<__mmask8>(0x55),
+                                          a.raw, a.raw,
+                                          _MM_SHUFFLE(3, 3, 1, 1))};
+}
+#else
+template <class D, HWY_IF_LANES_D(D, 8), HWY_IF_T_SIZE_D(D, 4)>
+HWY_API VFromD<D> InterleaveOdd(D d, VFromD<D> a, VFromD<D> b) {
+  const RebindToFloat<decltype(d)> df;
+  const VFromD<decltype(df)> b3_b1_a3_a3{_mm256_shuffle_ps(
+      BitCast(df, a).raw, BitCast(df, b).raw, _MM_SHUFFLE(3, 1, 3, 1))};
+  return BitCast(
+      d, VFromD<decltype(df)>{_mm256_shuffle_ps(
+             b3_b1_a3_a3.raw, b3_b1_a3_a3.raw, _MM_SHUFFLE(3, 1, 2, 0))});
+}
+#endif
+
+// I64/U64/F64 InterleaveOdd is generic for vector lengths >= 32 bytes
+template <class D, HWY_IF_LANES_GT_D(D, 2), HWY_IF_T_SIZE_D(D, 8)>
+HWY_API VFromD<D> InterleaveOdd(D d, VFromD<D> a, VFromD<D> b) {
+  return InterleaveUpper(d, a, b);
+}
+
 // ------------------------------ OddEvenBlocks
 
 template <typename T, HWY_IF_NOT_FLOAT3264(T)>
@@ -5989,62 +6109,6 @@ HWY_API Vec256<int64_t> operator>>(Vec256<int64_t> v, Vec256<int64_t> bits) {
   const DFromV<decltype(v)> d;
   return detail::SignedShr(d, v, bits);
 #endif
-}
-
-HWY_INLINE Vec256<uint64_t> MulEven(const Vec256<uint64_t> a,
-                                    const Vec256<uint64_t> b) {
-  const Full256<uint64_t> du64;
-  const RepartitionToNarrow<decltype(du64)> du32;
-  const auto maskL = Set(du64, 0xFFFFFFFFULL);
-  const auto a32 = BitCast(du32, a);
-  const auto b32 = BitCast(du32, b);
-  // Inputs for MulEven: we only need the lower 32 bits
-  const auto aH = Shuffle2301(a32);
-  const auto bH = Shuffle2301(b32);
-
-  // Knuth double-word multiplication. We use 32x32 = 64 MulEven and only need
-  // the even (lower 64 bits of every 128-bit block) results. See
-  // https://github.com/hcs0/Hackers-Delight/blob/master/muldwu.c.tat
-  const auto aLbL = MulEven(a32, b32);
-  const auto w3 = aLbL & maskL;
-
-  const auto t2 = MulEven(aH, b32) + ShiftRight<32>(aLbL);
-  const auto w2 = t2 & maskL;
-  const auto w1 = ShiftRight<32>(t2);
-
-  const auto t = MulEven(a32, bH) + w2;
-  const auto k = ShiftRight<32>(t);
-
-  const auto mulH = MulEven(aH, bH) + w1 + k;
-  const auto mulL = ShiftLeft<32>(t) + w3;
-  return InterleaveLower(mulL, mulH);
-}
-
-HWY_INLINE Vec256<uint64_t> MulOdd(const Vec256<uint64_t> a,
-                                   const Vec256<uint64_t> b) {
-  const Full256<uint64_t> du64;
-  const RepartitionToNarrow<decltype(du64)> du32;
-  const auto maskL = Set(du64, 0xFFFFFFFFULL);
-  const auto a32 = BitCast(du32, a);
-  const auto b32 = BitCast(du32, b);
-  // Inputs for MulEven: we only need bits [95:64] (= upper half of input)
-  const auto aH = Shuffle2301(a32);
-  const auto bH = Shuffle2301(b32);
-
-  // Same as above, but we're using the odd results (upper 64 bits per block).
-  const auto aLbL = MulEven(a32, b32);
-  const auto w3 = aLbL & maskL;
-
-  const auto t2 = MulEven(aH, b32) + ShiftRight<32>(aLbL);
-  const auto w2 = t2 & maskL;
-  const auto w1 = ShiftRight<32>(t2);
-
-  const auto t = MulEven(a32, bH) + w2;
-  const auto k = ShiftRight<32>(t);
-
-  const auto mulH = MulEven(aH, bH) + w1 + k;
-  const auto mulL = ShiftLeft<32>(t) + w3;
-  return InterleaveUpper(du64, mulL, mulH);
 }
 
 // ------------------------------ WidenMulPairwiseAdd

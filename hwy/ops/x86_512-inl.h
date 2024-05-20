@@ -1036,12 +1036,6 @@ HWY_API Vec512<T> IfNegativeThenNegOrUndefIfZero(Vec512<T> mask, Vec512<T> v) {
   return MaskedSubOr(v, MaskFromVec(mask), Zero(d), v);
 }
 
-template <typename T, HWY_IF_FLOAT(T)>
-HWY_API Vec512<T> ZeroIfNegative(const Vec512<T> v) {
-  // AVX3 MaskFromVec only looks at the MSB
-  return IfThenZeroElse(MaskFromVec(v), v);
-}
-
 // ================================================== ARITHMETIC
 
 // ------------------------------ Addition
@@ -1417,14 +1411,41 @@ HWY_API Vec512<int8_t> ShiftRight(const Vec512<int8_t> v) {
 
 // ------------------------------ RotateRight
 
-template <int kBits, typename T, HWY_IF_T_SIZE_ONE_OF(T, (1 << 1) | (1 << 2))>
-HWY_API Vec512<T> RotateRight(const Vec512<T> v) {
-  constexpr size_t kSizeInBits = sizeof(T) * 8;
-  static_assert(0 <= kBits && kBits < kSizeInBits, "Invalid shift count");
+#if HWY_TARGET <= HWY_AVX3_DL
+// U8 RotateRight is generic for all vector lengths on AVX3_DL
+template <int kBits, class V, HWY_IF_U8(TFromV<V>)>
+HWY_API V RotateRight(V v) {
+  static_assert(0 <= kBits && kBits < 8, "Invalid shift count");
+
+  const Repartition<uint64_t, DFromV<V>> du64;
   if (kBits == 0) return v;
-  // AVX3 does not support 8/16-bit.
-  return Or(ShiftRight<kBits>(v),
-            ShiftLeft<HWY_MIN(kSizeInBits - 1, kSizeInBits - kBits)>(v));
+
+  constexpr uint64_t kShrMatrix =
+      (0x0102040810204080ULL << kBits) &
+      (0x0101010101010101ULL * ((0xFF << kBits) & 0xFF));
+  constexpr int kShlBits = (-kBits) & 7;
+  constexpr uint64_t kShlMatrix = (0x0102040810204080ULL >> kShlBits) &
+                                  (0x0101010101010101ULL * (0xFF >> kShlBits));
+  constexpr uint64_t kMatrix = kShrMatrix | kShlMatrix;
+
+  return detail::GaloisAffine(v, Set(du64, kMatrix));
+}
+#else   // HWY_TARGET > HWY_AVX3_DL
+template <int kBits>
+HWY_API Vec512<uint8_t> RotateRight(const Vec512<uint8_t> v) {
+  static_assert(0 <= kBits && kBits < 8, "Invalid shift count");
+  if (kBits == 0) return v;
+  // AVX3 does not support 8-bit.
+  return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(7, 8 - kBits)>(v));
+}
+#endif  // HWY_TARGET <= HWY_AVX3_DL
+
+template <int kBits>
+HWY_API Vec512<uint16_t> RotateRight(const Vec512<uint16_t> v) {
+  static_assert(0 <= kBits && kBits < 16, "Invalid shift count");
+  if (kBits == 0) return v;
+  // AVX3 does not support 16-bit.
+  return Or(ShiftRight<kBits>(v), ShiftLeft<HWY_MIN(15, 16 - kBits)>(v));
 }
 
 template <int kBits>
@@ -1440,6 +1461,32 @@ HWY_API Vec512<uint64_t> RotateRight(const Vec512<uint64_t> v) {
   if (kBits == 0) return v;
   return Vec512<uint64_t>{_mm512_ror_epi64(v.raw, kBits)};
 }
+
+// ------------------------------ Rol/Ror
+
+#if HWY_TARGET <= HWY_AVX3
+
+template <class T, HWY_IF_UI32(T)>
+HWY_API Vec512<T> Rol(Vec512<T> a, Vec512<T> b) {
+  return Vec512<T>{_mm512_rolv_epi32(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI32(T)>
+HWY_API Vec512<T> Ror(Vec512<T> a, Vec512<T> b) {
+  return Vec512<T>{_mm512_rorv_epi32(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec512<T> Rol(Vec512<T> a, Vec512<T> b) {
+  return Vec512<T>{_mm512_rolv_epi64(a.raw, b.raw)};
+}
+
+template <class T, HWY_IF_UI64(T)>
+HWY_API Vec512<T> Ror(Vec512<T> a, Vec512<T> b) {
+  return Vec512<T>{_mm512_rorv_epi64(a.raw, b.raw)};
+}
+
+#endif
 
 // ------------------------------ ShiftLeftSame
 
@@ -2929,6 +2976,15 @@ HWY_API Mask512<float16_t> IsNaN(Vec512<float16_t> v) {
       v.raw, HWY_X86_FPCLASS_SNAN | HWY_X86_FPCLASS_QNAN)};
 }
 
+HWY_API Mask512<float16_t> IsEitherNaN(Vec512<float16_t> a,
+                                       Vec512<float16_t> b) {
+  // Work around warnings in the intrinsic definitions (passing -1 as a mask).
+  HWY_DIAGNOSTICS(push)
+  HWY_DIAGNOSTICS_OFF(disable : 4245 4365, ignored "-Wsign-conversion")
+  return Mask512<float16_t>{_mm512_cmp_ph_mask(a.raw, b.raw, _CMP_UNORD_Q)};
+  HWY_DIAGNOSTICS(pop)
+}
+
 HWY_API Mask512<float16_t> IsInf(Vec512<float16_t> v) {
   return Mask512<float16_t>{_mm512_fpclass_ph_mask(v.raw, 0x18)};
 }
@@ -2950,6 +3006,14 @@ HWY_API Mask512<float> IsNaN(Vec512<float> v) {
 HWY_API Mask512<double> IsNaN(Vec512<double> v) {
   return Mask512<double>{_mm512_fpclass_pd_mask(
       v.raw, HWY_X86_FPCLASS_SNAN | HWY_X86_FPCLASS_QNAN)};
+}
+
+HWY_API Mask512<float> IsEitherNaN(Vec512<float> a, Vec512<float> b) {
+  return Mask512<float>{_mm512_cmp_ps_mask(a.raw, b.raw, _CMP_UNORD_Q)};
+}
+
+HWY_API Mask512<double> IsEitherNaN(Vec512<double> a, Vec512<double> b) {
+  return Mask512<double>{_mm512_cmp_pd_mask(a.raw, b.raw, _CMP_UNORD_Q)};
 }
 
 HWY_API Mask512<float> IsInf(Vec512<float> v) {
@@ -4645,6 +4709,35 @@ HWY_API Vec512<T> OddEven(const Vec512<T> a, const Vec512<T> b) {
   constexpr size_t s = sizeof(T);
   constexpr int shift = s == 1 ? 0 : s == 2 ? 32 : s == 4 ? 48 : 56;
   return IfThenElse(Mask512<T>{0x5555555555555555ull >> shift}, b, a);
+}
+
+// -------------------------- InterleaveEven
+
+template <class D, HWY_IF_LANES_D(D, 16), HWY_IF_UI32_D(D)>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm512_mask_shuffle_epi32(
+      a.raw, static_cast<__mmask16>(0xAAAA), b.raw,
+      static_cast<_MM_PERM_ENUM>(_MM_SHUFFLE(2, 2, 0, 0)))};
+}
+template <class D, HWY_IF_LANES_D(D, 16), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> InterleaveEven(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm512_mask_shuffle_ps(a.raw, static_cast<__mmask16>(0xAAAA),
+                                          b.raw, b.raw,
+                                          _MM_SHUFFLE(2, 2, 0, 0))};
+}
+// -------------------------- InterleaveOdd
+
+template <class D, HWY_IF_LANES_D(D, 16), HWY_IF_UI32_D(D)>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm512_mask_shuffle_epi32(
+      b.raw, static_cast<__mmask16>(0x5555), a.raw,
+      static_cast<_MM_PERM_ENUM>(_MM_SHUFFLE(3, 3, 1, 1)))};
+}
+template <class D, HWY_IF_LANES_D(D, 16), HWY_IF_F32_D(D)>
+HWY_API VFromD<D> InterleaveOdd(D /*d*/, VFromD<D> a, VFromD<D> b) {
+  return VFromD<D>{_mm512_mask_shuffle_ps(b.raw, static_cast<__mmask16>(0x5555),
+                                          a.raw, a.raw,
+                                          _MM_SHUFFLE(3, 3, 1, 1))};
 }
 
 // ------------------------------ OddEvenBlocks
@@ -7217,64 +7310,6 @@ HWY_API Vec512<int32_t> operator>>(const Vec512<int32_t> v,
 HWY_API Vec512<int64_t> operator>>(const Vec512<int64_t> v,
                                    const Vec512<int64_t> bits) {
   return Vec512<int64_t>{_mm512_srav_epi64(v.raw, bits.raw)};
-}
-
-// ------------------------------ MulEven/Odd (Shuffle2301, InterleaveLower)
-
-HWY_INLINE Vec512<uint64_t> MulEven(const Vec512<uint64_t> a,
-                                    const Vec512<uint64_t> b) {
-  const DFromV<decltype(a)> du64;
-  const RepartitionToNarrow<decltype(du64)> du32;
-  const auto maskL = Set(du64, 0xFFFFFFFFULL);
-  const auto a32 = BitCast(du32, a);
-  const auto b32 = BitCast(du32, b);
-  // Inputs for MulEven: we only need the lower 32 bits
-  const auto aH = Shuffle2301(a32);
-  const auto bH = Shuffle2301(b32);
-
-  // Knuth double-word multiplication. We use 32x32 = 64 MulEven and only need
-  // the even (lower 64 bits of every 128-bit block) results. See
-  // https://github.com/hcs0/Hackers-Delight/blob/master/muldwu.c.tat
-  const auto aLbL = MulEven(a32, b32);
-  const auto w3 = aLbL & maskL;
-
-  const auto t2 = MulEven(aH, b32) + ShiftRight<32>(aLbL);
-  const auto w2 = t2 & maskL;
-  const auto w1 = ShiftRight<32>(t2);
-
-  const auto t = MulEven(a32, bH) + w2;
-  const auto k = ShiftRight<32>(t);
-
-  const auto mulH = MulEven(aH, bH) + w1 + k;
-  const auto mulL = ShiftLeft<32>(t) + w3;
-  return InterleaveLower(mulL, mulH);
-}
-
-HWY_INLINE Vec512<uint64_t> MulOdd(const Vec512<uint64_t> a,
-                                   const Vec512<uint64_t> b) {
-  const DFromV<decltype(a)> du64;
-  const RepartitionToNarrow<decltype(du64)> du32;
-  const auto maskL = Set(du64, 0xFFFFFFFFULL);
-  const auto a32 = BitCast(du32, a);
-  const auto b32 = BitCast(du32, b);
-  // Inputs for MulEven: we only need bits [95:64] (= upper half of input)
-  const auto aH = Shuffle2301(a32);
-  const auto bH = Shuffle2301(b32);
-
-  // Same as above, but we're using the odd results (upper 64 bits per block).
-  const auto aLbL = MulEven(a32, b32);
-  const auto w3 = aLbL & maskL;
-
-  const auto t2 = MulEven(aH, b32) + ShiftRight<32>(aLbL);
-  const auto w2 = t2 & maskL;
-  const auto w1 = ShiftRight<32>(t2);
-
-  const auto t = MulEven(a32, bH) + w2;
-  const auto k = ShiftRight<32>(t);
-
-  const auto mulH = MulEven(aH, bH) + w1 + k;
-  const auto mulL = ShiftLeft<32>(t) + w3;
-  return InterleaveUpper(du64, mulL, mulH);
 }
 
 // ------------------------------ WidenMulPairwiseAdd

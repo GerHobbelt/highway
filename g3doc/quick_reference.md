@@ -700,7 +700,7 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
     truncating it to the lower half for integer inputs. Currently unavailable on
     SVE/RVV; use the equivalent `Mul` instead.
 
-*   `V`: `i16` \
+*   `V`: `{u,i}` \
     <code>V **MulHigh**(V a, V b)</code>: returns the upper half of `a[i] *
     b[i]` in each lane.
 
@@ -710,13 +710,13 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
     multiplication result and storing the upper half. Results are
     implementation-defined iff both inputs are -32768.
 
-*   `V`: `{u,i}{8,16,32},u64` \
+*   `V`: `{u,i}` \
     <code>V2 **MulEven**(V a, V b)</code>: returns double-wide result of `a[i] *
     b[i]` for every even `i`, in lanes `i` (lower) and `i + 1` (upper). `V2` is
     a vector with double-width lanes, or the same as `V` for 64-bit inputs
     (which are only supported if `HWY_TARGET != HWY_SCALAR`).
 
-*   `V`: `{u,i}{8,16,32},u64` \
+*   `V`: `{u,i}` \
     <code>V **MulOdd**(V a, V b)</code>: returns double-wide result of `a[i] *
     b[i]` for every odd `i`, in lanes `i - 1` (lower) and `i` (upper). Only
     supported if `HWY_TARGET != HWY_SCALAR`.
@@ -842,9 +842,13 @@ lane sizes, and `RotateRight` is often emulated with shifts:
 *   `V`: `{u,i}` \
     <code>V **ShiftRight**&lt;int&gt;(V a)</code> returns `a[i] >> int`.
 
-*   `V`: `{u}` \
-    <code>V **RotateRight**&lt;int&gt;(V a)</code> returns `(a[i] >> int) |
-    (a[i] << (sizeof(T)*8 - int))`.
+*   `V`: `{u,i}` \
+    <code>V **RotateLeft**&lt;int&gt;(V a)</code> returns `(a[i] << int) |
+    (static_cast<TU>(a[i]) >> (sizeof(T)*8 - int))`.
+
+*   `V`: `{u,i}` \
+    <code>V **RotateRight**&lt;int&gt;(V a)</code> returns
+    `(static_cast<TU>(a[i]) >> int) | (a[i] << (sizeof(T)*8 - int))`.
 
 Shift all lanes by the same (not necessarily compile-time constant) amount:
 
@@ -853,6 +857,18 @@ Shift all lanes by the same (not necessarily compile-time constant) amount:
 
 *   `V`: `{u,i}` \
     <code>V **ShiftRightSame**(V a, int bits)</code> returns `a[i] >> bits`.
+
+*   `V`: `{u,i}` \
+    <code>V **RotateLeftSame**(V a, int bits)</code> returns
+    `(a[i] << shl_bits) | (static_cast<TU>(a[i]) >>
+    (sizeof(T)*8 - shl_bits))`, where `shl_bits` is equal to
+    `bits & (sizeof(T)*8 - 1)`.
+
+*   `V`: `{u,i}` \
+    <code>V **RotateRightSame**(V a, int bits)</code> returns
+    `(static_cast<TU>(a[i]) >> shr_bits) | (a[i] >>
+    (sizeof(T)*8 - shr_bits))`, where `shr_bits` is equal to
+    `bits & (sizeof(T)*8 - 1)`.
 
 Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
 
@@ -863,6 +879,18 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
 *   `V`: `{u,i}` \
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`. Currently
     unavailable on SVE/RVV; use the equivalent `Shr` instead.
+
+*   `V`: `{u,i}` \
+    <code>V **Rol**(V a, V b)</code> returns
+    `(a[i] << (b[i] & shift_amt_mask)) |
+    (static_cast<TU>(a[i]) >> ((sizeof(T)*8 - b[i]) & shift_amt_mask))`,
+    where `shift_amt_mask` is equal to `sizeof(T)*8 - 1`.
+
+*   `V`: `{u,i}` \
+    <code>V **Ror**(V a, V b)</code> returns
+    `(static_cast<TU>(a[i]) >> (b[i] & shift_amt_mask)) |
+    (a[i] << ((sizeof(T)*8 - b[i]) & shift_amt_mask))`, where `shift_amt_mask` is
+    equal to `sizeof(T)*8 - 1`.
 
 #### Floating-point rounding
 
@@ -887,6 +915,11 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
 *   `V`: `{f}` \
     <code>M **IsNaN**(V v)</code>: returns mask indicating whether `v[i]` is
     "not a number" (unordered).
+
+*   `V`: `{f}` \
+    <code>M **IsEitherNaN**(V a, V b)</code>: equivalent to
+    `Or(IsNaN(a), IsNaN(b))`, but `IsEitherNaN(a, b)` is more efficient than
+    `Or(IsNaN(a), IsNaN(b))` on x86.
 
 *   `V`: `{f}` \
     <code>M **IsInf**(V v)</code>: returns mask indicating whether `v[i]` is
@@ -968,15 +1001,27 @@ Special functions for signed types:
     <code>V **CopySignToAbs**(V a, V b)</code>: as above, but potentially
     slightly more efficient; requires the first argument to be non-negative.
 
-*   `V`: `i32/64` \
+*   `V`: `{i}` \
     <code>V **BroadcastSignBit**(V a)</code> returns `a[i] < 0 ? -1 : 0`.
 
-*   `V`: `{f}` \
+*   `V`: `{i,f}` \
     <code>V **ZeroIfNegative**(V v)</code>: returns `v[i] < 0 ? 0 : v[i]`.
 
 *   `V`: `{i,f}` \
     <code>V **IfNegativeThenElse**(V v, V yes, V no)</code>: returns `v[i] < 0 ?
     yes[i] : no[i]`. This may be more efficient than `IfThenElse(Lt..)`.
+
+*   `V`: `{i,f}` \
+    <code>V **IfNegativeThenElseZero**(V v, V yes)</code>: returns
+    `v[i] < 0 ? yes[i] : 0`. `IfNegativeThenElseZero(v, yes)` is equivalent to
+    but more efficient than `IfThenElseZero(IsNegative(v), yes)` or
+    `IfNegativeThenElse(v, yes, Zero(d))` on some targets.
+
+*   `V`: `{i,f}` \
+    <code>V **IfNegativeThenZeroElse**(V v, V no)</code>: returns
+    `v[i] < 0 ? 0 : no`. `IfNegativeThenZeroElse(v, no)` is equivalent to
+    but more efficient than `IfThenZeroElse(IsNegative(v), no)` or
+    `IfNegativeThenElse(v, Zero(d), no)` on some targets.
 
 *   `V`: `{i,f}` \
     <code>V **IfNegativeThenNegOrUndefIfZero**(V mask, V v)</code>: returns
@@ -1305,6 +1350,12 @@ These return a mask (see above) indicating whether the condition is true.
 
 *   <code>M **operator&gt;=**(V a, V b)</code>: returns `a[i] >= b[i]`.
     Currently unavailable on SVE/RVV; use the equivalent `Ge` instead.
+
+*   `V`: `{i,f}` \
+    <code>M **IsNegative**(V v)</code>: returns `v[i] < 0`.
+
+    `IsNegative(v)` is equivalent to `MaskFromVec(BroadcastSignBit(v))` or
+    `Lt(v, Zero(d))`, but `IsNegative(v)` is more efficient on some targets.
 
 *   `V`: `{u,i}` \
     <code>M **TestBit**(V v, V bit)</code>: returns `(v[i] & bit[i]) == bit[i]`.
@@ -1847,6 +1898,25 @@ Ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 *   <code>V **InterleaveUpper**(D, V a, V b)</code>: returns *blocks* with
     alternating lanes from the upper halves of `a` and `b` (`a[N/2]` in the
     least-significant lane). `D` is `DFromV<V>`.
+
+*   <code>V **InterleaveEven**([D, ] V a, V b)</code>: returns *blocks* with
+    alternating lanes from the even lanes of `a` and `b` (`a[0]` in the
+    least-significant lane, followed by `b[0]`, followed by `a[2]`, followed by
+    `b[2]`, and so on). The optional `D` (provided for consistency with
+    `InterleaveOdd`) is `DFromV<V>`.
+
+    `InterleaveEven(a, b)` and `InterleaveEven(d, a, b)` are both equivalent to
+    `OddEven(DupEven(b), a)`, but `InterleaveEven(a, b)` is usually more
+    efficient than `OddEven(DupEven(b), a)`.
+
+*   <code>V **InterleaveOdd**(D, V a, V b)</code>: returns *blocks* with
+    alternating lanes from the odd lanes of `a` and `b` (`a[1]` in the
+    least-significant lane, followed by `b[1]`, followed by `a[3]`, followed by
+    `b[3]`, and so on). `D` is `DFromV<V>`.
+
+    `InterleaveOdd(d, a, b)` is equivalent to `OddEven(b, DupOdd(a))`, but
+    `InterleaveOdd(d, a, b)` is usually more efficient than
+    `OddEven(b, DupOdd(a))`.
 
 #### Zip
 
