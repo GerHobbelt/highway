@@ -262,6 +262,18 @@ else()
     list(APPEND HWY_FLAGS -msse2 -mfpmath=sse)
   endif()
 
+  # Suppress STL iterator warnings. Supported by GCC 4.4.7 and newer, which
+  # predates the C++11 we require.
+  if (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
+    list(APPEND HWY_FLAGS -Wno-psabi)
+  endif()
+  # Clang supports this flag from 11.0.
+  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 11.0)
+      list(APPEND HWY_FLAGS -Wno-psabi)
+    endif()
+  endif()
+
   if (HWY_CMAKE_ARM7)
     list(APPEND HWY_FLAGS
       -march=armv7-a
@@ -574,6 +586,7 @@ set(HWY_TEST_FILES
   hwy/tests/mask_combine_test.cc
   hwy/tests/mask_convert_test.cc
   hwy/tests/mask_mem_test.cc
+  hwy/tests/mask_slide_test.cc
   hwy/tests/mask_test.cc
   hwy/tests/masked_arithmetic_test.cc
   hwy/tests/memory_test.cc
