@@ -867,6 +867,7 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
                               VFromD<D>& v0, VFromD<D>& v1, VFromD<D>& v2) {
   const RebindToUnsigned<decltype(d)> du;
   using V = VFromD<D>;
+  using VU = VFromD<decltype(du)>;
   // Compact notation so these fit on one line: 12 := v1[2].
   V A;  // 05 24 14 04 23 13 03 22 12 02 21 11 01 20 10 00
   V B;  // 1a 0a 29 19 09 28 18 08 27 17 07 26 16 06 25 15
@@ -874,33 +875,33 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
   detail::LoadTransposedBlocks3(d, unaligned, A, B, C);
   // Compress all lanes belonging to v0 into consecutive lanes.
   constexpr uint8_t Z = 0x80;
-  alignas(16) static constexpr uint8_t kIdx_v0A[16] = {
-      0, 3, 6, 9, 12, 15, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0B[16] = {
-      Z, Z, Z, Z, Z, Z, 2, 5, 8, 11, 14, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 1, 4, 7, 10, 13};
-  alignas(16) static constexpr uint8_t kIdx_v1A[16] = {
-      1, 4, 7, 10, 13, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1B[16] = {
-      Z, Z, Z, Z, Z, 0, 3, 6, 9, 12, 15, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 2, 5, 8, 11, 14};
-  alignas(16) static constexpr uint8_t kIdx_v2A[16] = {
-      2, 5, 8, 11, 14, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2B[16] = {
-      Z, Z, Z, Z, Z, 1, 4, 7, 10, 13, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 0, 3, 6, 9, 12, 15};
-  const V v0L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v0A)));
-  const V v0M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v0B)));
-  const V v0U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v0C)));
-  const V v1L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v1A)));
-  const V v1M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v1B)));
-  const V v1U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v1C)));
-  const V v2L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v2A)));
-  const V v2M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v2B)));
-  const V v2U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v2C)));
+  const VU idx_v0A =
+      Dup128VecFromValues(du, 0, 3, 6, 9, 12, 15, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU idx_v0B =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, Z, 2, 5, 8, 11, 14, Z, Z, Z, Z, Z);
+  const VU idx_v0C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 1, 4, 7, 10, 13);
+  const VU idx_v1A =
+      Dup128VecFromValues(du, 1, 4, 7, 10, 13, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU idx_v1B =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, 0, 3, 6, 9, 12, 15, Z, Z, Z, Z, Z);
+  const VU idx_v1C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 2, 5, 8, 11, 14);
+  const VU idx_v2A =
+      Dup128VecFromValues(du, 2, 5, 8, 11, 14, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU idx_v2B =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, 1, 4, 7, 10, 13, Z, Z, Z, Z, Z, Z);
+  const VU idx_v2C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 0, 3, 6, 9, 12, 15);
+  const V v0L = BitCast(d, TableLookupBytesOr0(A, idx_v0A));
+  const V v0M = BitCast(d, TableLookupBytesOr0(B, idx_v0B));
+  const V v0U = BitCast(d, TableLookupBytesOr0(C, idx_v0C));
+  const V v1L = BitCast(d, TableLookupBytesOr0(A, idx_v1A));
+  const V v1M = BitCast(d, TableLookupBytesOr0(B, idx_v1B));
+  const V v1U = BitCast(d, TableLookupBytesOr0(C, idx_v1C));
+  const V v2L = BitCast(d, TableLookupBytesOr0(A, idx_v2A));
+  const V v2M = BitCast(d, TableLookupBytesOr0(B, idx_v2B));
+  const V v2U = BitCast(d, TableLookupBytesOr0(C, idx_v2C));
   v0 = Xor3(v0L, v0M, v0U);
   v1 = Xor3(v1L, v1M, v1U);
   v2 = Xor3(v2L, v2M, v2U);
@@ -912,30 +913,40 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
                               VFromD<D>& v0, VFromD<D>& v1, VFromD<D>& v2) {
   const RebindToUnsigned<decltype(d)> du;
   using V = VFromD<D>;
+  using VU = VFromD<decltype(du)>;
   V A;  // v1[2] v0[2] v2[1] v1[1] v0[1] v2[0] v1[0] v0[0]
   V B;  // v0[5] v2[4] v1[4] v0[4] v2[3] v1[3] v0[3] v2[2]
   V C;  // v2[7] v1[7] v0[7] v2[6] v1[6] v0[6] v2[5] v1[5]
   detail::LoadTransposedBlocks3(d, unaligned, A, B, C);
   // Compress all lanes belonging to v0 into consecutive lanes.
   constexpr uint8_t Z = 0x80;
-  alignas(16) static constexpr uint8_t kIdx_v0A[16] = {0, 3, 6, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0B[16] = {Z, Z, Z, 1, 4, 7, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0C[16] = {Z, Z, Z, Z, Z, Z, 2, 5};
-  alignas(16) static constexpr uint8_t kIdx_v1A[16] = {1, 4, 7, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1B[16] = {Z, Z, Z, 2, 5, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1C[16] = {Z, Z, Z, Z, Z, 0, 3, 6};
-  alignas(16) static constexpr uint8_t kIdx_v2A[16] = {2, 5, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2B[16] = {Z, Z, 0, 3, 6, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2C[16] = {Z, Z, Z, Z, Z, 1, 4, 7};
-  const V v0L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v0A)));
-  const V v0M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v0B)));
-  const V v0U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v0C)));
-  const V v1L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v1A)));
-  const V v1M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v1B)));
-  const V v1U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v1C)));
-  const V v2L = BitCast(d, TableLookupBytesOr0(A, LoadDup128(du, kIdx_v2A)));
-  const V v2M = BitCast(d, TableLookupBytesOr0(B, LoadDup128(du, kIdx_v2B)));
-  const V v2U = BitCast(d, TableLookupBytesOr0(C, LoadDup128(du, kIdx_v2C)));
+  const VU idx_v0A =
+      Dup128VecFromValues(du, 0, 3, 6, Z, Z, Z, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v0B =
+      Dup128VecFromValues(du, Z, Z, Z, 1, 4, 7, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v0C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, Z, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v1A =
+      Dup128VecFromValues(du, 1, 4, 7, Z, Z, Z, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v1B =
+      Dup128VecFromValues(du, Z, Z, Z, 2, 5, Z, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v1C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, 0, 3, 6, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v2A =
+      Dup128VecFromValues(du, 2, 5, Z, Z, Z, Z, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v2B =
+      Dup128VecFromValues(du, Z, Z, 0, 3, 6, Z, Z, Z, 0, 0, 0, 0, 0, 0, 0, 0);
+  const VU idx_v2C =
+      Dup128VecFromValues(du, Z, Z, Z, Z, Z, 1, 4, 7, 0, 0, 0, 0, 0, 0, 0, 0);
+  const V v0L = BitCast(d, TableLookupBytesOr0(A, idx_v0A));
+  const V v0M = BitCast(d, TableLookupBytesOr0(B, idx_v0B));
+  const V v0U = BitCast(d, TableLookupBytesOr0(C, idx_v0C));
+  const V v1L = BitCast(d, TableLookupBytesOr0(A, idx_v1A));
+  const V v1M = BitCast(d, TableLookupBytesOr0(B, idx_v1B));
+  const V v1U = BitCast(d, TableLookupBytesOr0(C, idx_v1C));
+  const V v2L = BitCast(d, TableLookupBytesOr0(A, idx_v2A));
+  const V v2M = BitCast(d, TableLookupBytesOr0(B, idx_v2B));
+  const V v2U = BitCast(d, TableLookupBytesOr0(C, idx_v2C));
   v0 = Xor3(v0L, v0M, v0U);
   v1 = Xor3(v1L, v1M, v1U);
   v2 = Xor3(v2L, v2M, v2U);
@@ -948,6 +959,7 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
   const RebindToUnsigned<decltype(d)> du;
   const Repartition<uint8_t, decltype(du)> du8;
   using V = VFromD<D>;
+  using VU8 = VFromD<decltype(du8)>;
   V A;  // v1[2] v0[2] v2[1] v1[1] v0[1] v2[0] v1[0] v0[0]
   V B;  // v0[5] v2[4] v1[4] v0[4] v2[3] v1[3] v0[3] v2[2]
   V C;  // v2[7] v1[7] v0[7] v2[6] v1[6] v0[6] v2[5] v1[5]
@@ -955,33 +967,33 @@ HWY_API void LoadInterleaved3(D d, const TFromD<D>* HWY_RESTRICT unaligned,
   // Compress all lanes belonging to v0 into consecutive lanes. Same as above,
   // but each element of the array contains a byte index for a byte of a lane.
   constexpr uint8_t Z = 0x80;
-  alignas(16) static constexpr uint8_t kIdx_v0A[16] = {
-      0x00, 0x01, 0x06, 0x07, 0x0C, 0x0D, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0B[16] = {
-      Z, Z, Z, Z, Z, Z, 0x02, 0x03, 0x08, 0x09, 0x0E, 0x0F, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v0C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 0x04, 0x05, 0x0A, 0x0B};
-  alignas(16) static constexpr uint8_t kIdx_v1A[16] = {
-      0x02, 0x03, 0x08, 0x09, 0x0E, 0x0F, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1B[16] = {
-      Z, Z, Z, Z, Z, Z, 0x04, 0x05, 0x0A, 0x0B, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v1C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 0x00, 0x01, 0x06, 0x07, 0x0C, 0x0D};
-  alignas(16) static constexpr uint8_t kIdx_v2A[16] = {
-      0x04, 0x05, 0x0A, 0x0B, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2B[16] = {
-      Z, Z, Z, Z, 0x00, 0x01, 0x06, 0x07, 0x0C, 0x0D, Z, Z, Z, Z, Z, Z};
-  alignas(16) static constexpr uint8_t kIdx_v2C[16] = {
-      Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, 0x02, 0x03, 0x08, 0x09, 0x0E, 0x0F};
-  const V v0L = TableLookupBytesOr0(A, BitCast(d, LoadDup128(du8, kIdx_v0A)));
-  const V v0M = TableLookupBytesOr0(B, BitCast(d, LoadDup128(du8, kIdx_v0B)));
-  const V v0U = TableLookupBytesOr0(C, BitCast(d, LoadDup128(du8, kIdx_v0C)));
-  const V v1L = TableLookupBytesOr0(A, BitCast(d, LoadDup128(du8, kIdx_v1A)));
-  const V v1M = TableLookupBytesOr0(B, BitCast(d, LoadDup128(du8, kIdx_v1B)));
-  const V v1U = TableLookupBytesOr0(C, BitCast(d, LoadDup128(du8, kIdx_v1C)));
-  const V v2L = TableLookupBytesOr0(A, BitCast(d, LoadDup128(du8, kIdx_v2A)));
-  const V v2M = TableLookupBytesOr0(B, BitCast(d, LoadDup128(du8, kIdx_v2B)));
-  const V v2U = TableLookupBytesOr0(C, BitCast(d, LoadDup128(du8, kIdx_v2C)));
+  const VU8 idx_v0A = Dup128VecFromValues(du8, 0x00, 0x01, 0x06, 0x07, 0x0C,
+                                          0x0D, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU8 idx_v0B = Dup128VecFromValues(du8, Z, Z, Z, Z, Z, Z, 0x02, 0x03,
+                                          0x08, 0x09, 0x0E, 0x0F, Z, Z, Z, Z);
+  const VU8 idx_v0C = Dup128VecFromValues(du8, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z,
+                                          Z, 0x04, 0x05, 0x0A, 0x0B);
+  const VU8 idx_v1A = Dup128VecFromValues(du8, 0x02, 0x03, 0x08, 0x09, 0x0E,
+                                          0x0F, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU8 idx_v1B = Dup128VecFromValues(du8, Z, Z, Z, Z, Z, Z, 0x04, 0x05,
+                                          0x0A, 0x0B, Z, Z, Z, Z, Z, Z);
+  const VU8 idx_v1C = Dup128VecFromValues(du8, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z,
+                                          0x00, 0x01, 0x06, 0x07, 0x0C, 0x0D);
+  const VU8 idx_v2A = Dup128VecFromValues(du8, 0x04, 0x05, 0x0A, 0x0B, Z, Z, Z,
+                                          Z, Z, Z, Z, Z, Z, Z, Z, Z);
+  const VU8 idx_v2B = Dup128VecFromValues(du8, Z, Z, Z, Z, 0x00, 0x01, 0x06,
+                                          0x07, 0x0C, 0x0D, Z, Z, Z, Z, Z, Z);
+  const VU8 idx_v2C = Dup128VecFromValues(du8, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z,
+                                          0x02, 0x03, 0x08, 0x09, 0x0E, 0x0F);
+  const V v0L = TableLookupBytesOr0(A, BitCast(d, idx_v0A));
+  const V v0M = TableLookupBytesOr0(B, BitCast(d, idx_v0B));
+  const V v0U = TableLookupBytesOr0(C, BitCast(d, idx_v0C));
+  const V v1L = TableLookupBytesOr0(A, BitCast(d, idx_v1A));
+  const V v1M = TableLookupBytesOr0(B, BitCast(d, idx_v1B));
+  const V v1U = TableLookupBytesOr0(C, BitCast(d, idx_v1C));
+  const V v2L = TableLookupBytesOr0(A, BitCast(d, idx_v2A));
+  const V v2M = TableLookupBytesOr0(B, BitCast(d, idx_v2B));
+  const V v2U = TableLookupBytesOr0(C, BitCast(d, idx_v2C));
   v0 = Xor3(v0L, v0M, v0U);
   v1 = Xor3(v1L, v1M, v1U);
   v2 = Xor3(v2L, v2M, v2U);
@@ -1234,16 +1246,16 @@ HWY_API void StoreInterleaved3(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2, D d,
   // v0[5], v2[4],v1[4],v0[4] .. v2[0],v1[0],v0[0]. We're expanding v0 lanes
   // to their place, with 0x80 so lanes to be filled from other vectors are 0
   // to enable blending by ORing together.
-  alignas(16) static constexpr uint8_t tbl_v0[16] = {
-      0, 0x80, 0x80, 1, 0x80, 0x80, 2, 0x80, 0x80,  //
-      3, 0x80, 0x80, 4, 0x80, 0x80, 5};
-  alignas(16) static constexpr uint8_t tbl_v1[16] = {
-      0x80, 0, 0x80, 0x80, 1, 0x80,  //
-      0x80, 2, 0x80, 0x80, 3, 0x80, 0x80, 4, 0x80, 0x80};
+  const VFromD<decltype(du)> shuf_A0 =
+      Dup128VecFromValues(du, 0, 0x80, 0x80, 1, 0x80, 0x80, 2, 0x80, 0x80, 3,
+                          0x80, 0x80, 4, 0x80, 0x80, 5);
+  // Cannot reuse shuf_A0 because it contains 5.
+  const VFromD<decltype(du)> shuf_A1 =
+      Dup128VecFromValues(du, 0x80, 0, 0x80, 0x80, 1, 0x80, 0x80, 2, 0x80, 0x80,
+                          3, 0x80, 0x80, 4, 0x80, 0x80);
   // The interleaved vectors will be named A, B, C; temporaries with suffix
   // 0..2 indicate which input vector's lanes they hold.
-  const auto shuf_A0 = LoadDup128(du, tbl_v0);
-  const auto shuf_A1 = LoadDup128(du, tbl_v1);  // cannot reuse shuf_A0 (has 5)
+  // cannot reuse shuf_A0 (has 5)
   const auto shuf_A2 = CombineShiftRightBytes<15>(du, shuf_A1, shuf_A1);
   const auto A0 = TableLookupBytesOr0(v0, shuf_A0);  // 5..4..3..2..1..0
   const auto A1 = TableLookupBytesOr0(v1, shuf_A1);  // ..4..3..2..1..0.
@@ -1283,19 +1295,16 @@ HWY_API void StoreInterleaved3(VFromD<D> v0, VFromD<D> v1, VFromD<D> v2, D d,
   // v1[2],v0[2], v2[1],v1[1],v0[1], v2[0],v1[0],v0[0]. 0x80 so lanes to be
   // filled from other vectors are 0 for blending. Note that these are byte
   // indices for 16-bit lanes.
-  alignas(16) static constexpr uint8_t tbl_v1[16] = {
-      0x80, 0x80, 0,    1,    0x80, 0x80, 0x80, 0x80,
-      2,    3,    0x80, 0x80, 0x80, 0x80, 4,    5};
-  alignas(16) static constexpr uint8_t tbl_v2[16] = {
-      0x80, 0x80, 0x80, 0x80, 0,    1,    0x80, 0x80,
-      0x80, 0x80, 2,    3,    0x80, 0x80, 0x80, 0x80};
+  const VFromD<decltype(du8)> shuf_A1 =
+      Dup128VecFromValues(du8, 0x80, 0x80, 0, 1, 0x80, 0x80, 0x80, 0x80, 2, 3,
+                          0x80, 0x80, 0x80, 0x80, 4, 5);
+  const VFromD<decltype(du8)> shuf_A2 =
+      Dup128VecFromValues(du8, 0x80, 0x80, 0x80, 0x80, 0, 1, 0x80, 0x80, 0x80,
+                          0x80, 2, 3, 0x80, 0x80, 0x80, 0x80);
 
   // The interleaved vectors will be named A, B, C; temporaries with suffix
   // 0..2 indicate which input vector's lanes they hold.
-  const auto shuf_A1 = LoadDup128(du8, tbl_v1);  // 2..1..0.
-                                                 // .2..1..0
   const auto shuf_A0 = CombineShiftRightBytes<2>(du8, shuf_A1, shuf_A1);
-  const auto shuf_A2 = LoadDup128(du8, tbl_v2);  // ..1..0..
 
   const auto A0 = TableLookupBytesOr0(v0, shuf_A0);
   const auto A1 = TableLookupBytesOr0(v1, shuf_A1);
@@ -2165,9 +2174,7 @@ HWY_API void StoreN(VFromD<D> v, D d, T* HWY_RESTRICT p,
 
   BlendedStore(v, FirstN(d, clamped_max_lanes_to_store), d, p);
 
-#if HWY_MEM_OPS_MIGHT_FAULT
   detail::MaybeUnpoison(p, clamped_max_lanes_to_store);
-#endif
 }
 #endif  // HWY_MEM_OPS_MIGHT_FAULT && !HWY_HAVE_SCALABLE
 
@@ -3250,30 +3257,29 @@ HWY_INLINE V SubBytesMulInverseAndAffineLookup(V state, V affine_tblL,
 
   // Change polynomial basis to GF(2^4)
   {
-    alignas(16) static constexpr uint8_t basisL[16] = {
-        0x00, 0x70, 0x2A, 0x5A, 0x98, 0xE8, 0xB2, 0xC2,
-        0x08, 0x78, 0x22, 0x52, 0x90, 0xE0, 0xBA, 0xCA};
-    alignas(16) static constexpr uint8_t basisU[16] = {
-        0x00, 0x4D, 0x7C, 0x31, 0x7D, 0x30, 0x01, 0x4C,
-        0x81, 0xCC, 0xFD, 0xB0, 0xFC, 0xB1, 0x80, 0xCD};
+    const VFromD<decltype(du)> basisL =
+        Dup128VecFromValues(du, 0x00, 0x70, 0x2A, 0x5A, 0x98, 0xE8, 0xB2, 0xC2,
+                            0x08, 0x78, 0x22, 0x52, 0x90, 0xE0, 0xBA, 0xCA);
+    const VFromD<decltype(du)> basisU =
+        Dup128VecFromValues(du, 0x00, 0x4D, 0x7C, 0x31, 0x7D, 0x30, 0x01, 0x4C,
+                            0x81, 0xCC, 0xFD, 0xB0, 0xFC, 0xB1, 0x80, 0xCD);
     const auto sL = And(state, mask);
     const auto sU = ShiftRight<4>(state);  // byte shift => upper bits are zero
-    const auto gf4L = TableLookupBytes(LoadDup128(du, basisL), sL);
-    const auto gf4U = TableLookupBytes(LoadDup128(du, basisU), sU);
+    const auto gf4L = TableLookupBytes(basisL, sL);
+    const auto gf4U = TableLookupBytes(basisU, sU);
     state = Xor(gf4L, gf4U);
   }
 
   // Inversion in GF(2^4). Elements 0 represent "infinity" (division by 0) and
   // cause TableLookupBytesOr0 to return 0.
-  alignas(16) static constexpr uint8_t kZetaInv[16] = {
-      0x80, 7, 11, 15, 6, 10, 4, 1, 9, 8, 5, 2, 12, 14, 13, 3};
-  alignas(16) static constexpr uint8_t kInv[16] = {
-      0x80, 1, 8, 13, 15, 6, 5, 14, 2, 12, 11, 10, 9, 3, 7, 4};
-  const auto tbl = LoadDup128(du, kInv);
+  const VFromD<decltype(du)> zetaInv = Dup128VecFromValues(
+      du, 0x80, 7, 11, 15, 6, 10, 4, 1, 9, 8, 5, 2, 12, 14, 13, 3);
+  const VFromD<decltype(du)> tbl = Dup128VecFromValues(
+      du, 0x80, 1, 8, 13, 15, 6, 5, 14, 2, 12, 11, 10, 9, 3, 7, 4);
   const auto sL = And(state, mask);      // L=low nibble, U=upper
   const auto sU = ShiftRight<4>(state);  // byte shift => upper bits are zero
   const auto sX = Xor(sU, sL);
-  const auto invL = TableLookupBytes(LoadDup128(du, kZetaInv), sL);
+  const auto invL = TableLookupBytes(zetaInv, sL);
   const auto invU = TableLookupBytes(tbl, sU);
   const auto invX = TableLookupBytes(tbl, sX);
   const auto outL = Xor(sX, TableLookupBytesOr0(tbl, Xor(invL, invU)));
@@ -3289,26 +3295,25 @@ HWY_INLINE V SubBytes(V state) {
   const DFromV<V> du;
   // Linear skew (cannot bake 0x63 bias into the table because out* indices
   // may have the infinity flag set).
-  alignas(16) static constexpr uint8_t kAffineL[16] = {
-      0x00, 0xC7, 0xBD, 0x6F, 0x17, 0x6D, 0xD2, 0xD0,
-      0x78, 0xA8, 0x02, 0xC5, 0x7A, 0xBF, 0xAA, 0x15};
-  alignas(16) static constexpr uint8_t kAffineU[16] = {
-      0x00, 0x6A, 0xBB, 0x5F, 0xA5, 0x74, 0xE4, 0xCF,
-      0xFA, 0x35, 0x2B, 0x41, 0xD1, 0x90, 0x1E, 0x8E};
-  return Xor(SubBytesMulInverseAndAffineLookup(state, LoadDup128(du, kAffineL),
-                                               LoadDup128(du, kAffineU)),
+  const VFromD<decltype(du)> affineL =
+      Dup128VecFromValues(du, 0x00, 0xC7, 0xBD, 0x6F, 0x17, 0x6D, 0xD2, 0xD0,
+                          0x78, 0xA8, 0x02, 0xC5, 0x7A, 0xBF, 0xAA, 0x15);
+  const VFromD<decltype(du)> affineU =
+      Dup128VecFromValues(du, 0x00, 0x6A, 0xBB, 0x5F, 0xA5, 0x74, 0xE4, 0xCF,
+                          0xFA, 0x35, 0x2B, 0x41, 0xD1, 0x90, 0x1E, 0x8E);
+  return Xor(SubBytesMulInverseAndAffineLookup(state, affineL, affineU),
              Set(du, uint8_t{0x63}));
 }
 
 template <class V>  // u8
 HWY_INLINE V InvSubBytes(V state) {
   const DFromV<V> du;
-  alignas(16) static constexpr uint8_t kGF2P4InvToGF2P8InvL[16]{
-      0x00, 0x40, 0xF9, 0x7E, 0x53, 0xEA, 0x87, 0x13,
-      0x2D, 0x3E, 0x94, 0xD4, 0xB9, 0x6D, 0xAA, 0xC7};
-  alignas(16) static constexpr uint8_t kGF2P4InvToGF2P8InvU[16]{
-      0x00, 0x1D, 0x44, 0x93, 0x0F, 0x56, 0xD7, 0x12,
-      0x9C, 0x8E, 0xC5, 0xD8, 0x59, 0x81, 0x4B, 0xCA};
+  const VFromD<decltype(du)> gF2P4InvToGF2P8InvL =
+      Dup128VecFromValues(du, 0x00, 0x40, 0xF9, 0x7E, 0x53, 0xEA, 0x87, 0x13,
+                          0x2D, 0x3E, 0x94, 0xD4, 0xB9, 0x6D, 0xAA, 0xC7);
+  const VFromD<decltype(du)> gF2P4InvToGF2P8InvU =
+      Dup128VecFromValues(du, 0x00, 0x1D, 0x44, 0x93, 0x0F, 0x56, 0xD7, 0x12,
+                          0x9C, 0x8E, 0xC5, 0xD8, 0x59, 0x81, 0x4B, 0xCA);
 
   // Apply the inverse affine transformation
   const auto b = Xor(Xor3(Or(ShiftLeft<1>(state), ShiftRight<7>(state)),
@@ -3322,9 +3327,8 @@ HWY_INLINE V InvSubBytes(V state) {
   // - Converting the GF(2^4) multiplicative inverse to the GF(2^8)
   //   multiplicative inverse through table lookups using the
   //   kGF2P4InvToGF2P8InvL and kGF2P4InvToGF2P8InvU tables
-  return SubBytesMulInverseAndAffineLookup(
-      b, LoadDup128(du, kGF2P4InvToGF2P8InvL),
-      LoadDup128(du, kGF2P4InvToGF2P8InvU));
+  return SubBytesMulInverseAndAffineLookup(b, gF2P4InvToGF2P8InvL,
+                                           gF2P4InvToGF2P8InvU);
 }
 
 }  // namespace detail
@@ -3346,24 +3350,18 @@ namespace detail {
 template <class V>  // u8
 HWY_INLINE V ShiftRows(const V state) {
   const DFromV<V> du;
-  alignas(16) static constexpr uint8_t kShiftRow[16] = {
-      0,  5,  10, 15,  // transposed: state is column major
-      4,  9,  14, 3,   //
-      8,  13, 2,  7,   //
-      12, 1,  6,  11};
-  const auto shift_row = LoadDup128(du, kShiftRow);
+  // transposed: state is column major
+  const VFromD<decltype(du)> shift_row = Dup128VecFromValues(
+      du, 0, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12, 1, 6, 11);
   return TableLookupBytes(state, shift_row);
 }
 
 template <class V>  // u8
 HWY_INLINE V InvShiftRows(const V state) {
   const DFromV<V> du;
-  alignas(16) static constexpr uint8_t kShiftRow[16] = {
-      0,  13, 10, 7,   // transposed: state is column major
-      4,  1,  14, 11,  //
-      8,  5,  2,  15,  //
-      12, 9,  6,  3};
-  const auto shift_row = LoadDup128(du, kShiftRow);
+  // transposed: state is column major
+  const VFromD<decltype(du)> shift_row = Dup128VecFromValues(
+      du, 0, 13, 10, 7, 4, 1, 14, 11, 8, 5, 2, 15, 12, 9, 6, 3);
   return TableLookupBytes(state, shift_row);
 }
 
@@ -3384,15 +3382,15 @@ HWY_INLINE V MixColumns(const V state) {
   // 1 2 3 1  // d are on diagonal, no permutation needed.
   // 1 1 2 3  // t1230 indicates column indices of threes for the 4 rows.
   // 3 1 1 2  // We also need to compute s2301 and s3012 (=1230 o 2301).
-  alignas(16) static constexpr uint8_t k2301[16] = {
-      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13};
-  alignas(16) static constexpr uint8_t k1230[16] = {
-      1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12};
+  const VFromD<decltype(du)> v2301 = Dup128VecFromValues(
+      du, 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+  const VFromD<decltype(du)> v1230 = Dup128VecFromValues(
+      du, 1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12);
   const auto d = GF2P8Mod11BMulBy2(state);  // = state*2 in GF(2^8).
-  const auto s2301 = TableLookupBytes(state, LoadDup128(du, k2301));
+  const auto s2301 = TableLookupBytes(state, v2301);
   const auto d_s2301 = Xor(d, s2301);
   const auto t_s2301 = Xor(state, d_s2301);  // t(s*3) = XOR-sum {s, d(s*2)}
-  const auto t1230_s3012 = TableLookupBytes(t_s2301, LoadDup128(du, k1230));
+  const auto t1230_s3012 = TableLookupBytes(t_s2301, v1230);
   return Xor(d_s2301, t1230_s3012);  // XOR-sum of 4 terms
 }
 
@@ -3404,11 +3402,10 @@ HWY_INLINE V InvMixColumns(const V state) {
   //  9 14 11 13
   // 13  9 14 11
   // 11 13  9 14
-  alignas(16) static constexpr uint8_t k2301[16] = {
-      2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13};
-  alignas(16) static constexpr uint8_t k1230[16] = {
-      1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12};
-  const auto v1230 = LoadDup128(du, k1230);
+  const VFromD<decltype(du)> v2301 = Dup128VecFromValues(
+      du, 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13);
+  const VFromD<decltype(du)> v1230 = Dup128VecFromValues(
+      du, 1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12);
 
   const auto sx2 = GF2P8Mod11BMulBy2(state); /* = state*2 in GF(2^8) */
   const auto sx4 = GF2P8Mod11BMulBy2(sx2);   /* = state*4 in GF(2^8) */
@@ -3420,8 +3417,7 @@ HWY_INLINE V InvMixColumns(const V state) {
 
   const auto sx13_0123_sx9_1230 = Xor(sx13, TableLookupBytes(sx9, v1230));
   const auto sx14_0123_sx11_1230 = Xor(sx14, TableLookupBytes(sx11, v1230));
-  const auto sx13_2301_sx9_3012 =
-      TableLookupBytes(sx13_0123_sx9_1230, LoadDup128(du, k2301));
+  const auto sx13_2301_sx9_3012 = TableLookupBytes(sx13_0123_sx9_1230, v2301);
   return Xor(sx14_0123_sx11_1230, sx13_2301_sx9_3012);
 }
 
@@ -3472,15 +3468,15 @@ HWY_API V AESLastRoundInv(V state, const V round_key) {
 
 template <uint8_t kRcon, class V, HWY_IF_U8_D(DFromV<V>)>
 HWY_API V AESKeyGenAssist(V v) {
-  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
-      0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0};
-  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
-      4, 5, 6, 7, 5, 6, 7, 4, 12, 13, 14, 15, 13, 14, 15, 12};
   const DFromV<decltype(v)> d;
+  const V rconXorMask = Dup128VecFromValues(d, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0,
+                                            0, 0, kRcon, 0, 0, 0);
+  const V rotWordShuffle = Dup128VecFromValues(d, 4, 5, 6, 7, 5, 6, 7, 4, 12,
+                                               13, 14, 15, 13, 14, 15, 12);
   const auto sub_word_result = detail::SubBytes(v);
   const auto rot_word_result =
-      TableLookupBytes(sub_word_result, LoadDup128(d, kRotWordShuffle));
-  return Xor(rot_word_result, LoadDup128(d, kRconXorMask));
+      TableLookupBytes(sub_word_result, rotWordShuffle);
+  return Xor(rot_word_result, rconXorMask);
 }
 
 // Constant-time implementation inspired by
@@ -3570,12 +3566,10 @@ template <class V, class D = DFromV<V>, HWY_IF_U8_D(D),
           HWY_IF_V_SIZE_GT_D(D, 8), HWY_IF_POPCNT(D)>
 HWY_API V PopulationCount(V v) {
   const D d;
-  HWY_ALIGN constexpr uint8_t kLookup[16] = {
-      0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-  };
+  const V lookup =
+      Dup128VecFromValues(d, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
   const auto lo = And(v, Set(d, uint8_t{0xF}));
   const auto hi = ShiftRight<4>(v);
-  const auto lookup = LoadDup128(d, kLookup);
   return Add(TableLookupBytes(lookup, hi), TableLookupBytes(lookup, lo));
 }
 
@@ -3724,6 +3718,490 @@ HWY_API V NegMulAdd(V mul, V x, V add) {
 }
 
 #endif  // HWY_NATIVE_INT_FMA
+
+// ------------------------------ Integer division
+#if (defined(HWY_NATIVE_INT_DIV) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_INT_DIV
+#undef HWY_NATIVE_INT_DIV
+#else
+#define HWY_NATIVE_INT_DIV
+#endif
+
+namespace detail {
+
+template <class D, class V, HWY_IF_T_SIZE_D(D, sizeof(TFromV<V>))>
+HWY_INLINE Vec<D> IntDivConvFloatToInt(D di, V vf) {
+  return ConvertTo(di, vf);
+}
+
+template <class D, class V, HWY_IF_T_SIZE_D(D, sizeof(TFromV<V>))>
+HWY_INLINE Vec<D> IntDivConvIntToFloat(D df, V vi) {
+  return ConvertTo(df, vi);
+}
+
+#if !HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
+template <class D, class V, HWY_IF_UI64_D(D), HWY_IF_F32(TFromV<V>)>
+HWY_INLINE Vec<D> IntDivConvFloatToInt(D df, V vi) {
+  return PromoteTo(df, vi);
+}
+
+// If !HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64 is true, then UI64->F32
+// IntDivConvIntToFloat(df, vi) returns an approximation of
+// static_cast<float>(v[i]) that is within 4 ULP of static_cast<float>(v[i])
+template <class D, class V, HWY_IF_F32_D(D), HWY_IF_I64(TFromV<V>)>
+HWY_INLINE Vec<D> IntDivConvIntToFloat(D df32, V vi) {
+  const Twice<decltype(df32)> dt_f32;
+
+  auto vf32 =
+      ConvertTo(dt_f32, BitCast(RebindToSigned<decltype(dt_f32)>(), vi));
+
+#if HWY_IS_LITTLE_ENDIAN
+  const auto lo_f32 = LowerHalf(df32, ConcatEven(dt_f32, vf32, vf32));
+  auto hi_f32 = LowerHalf(df32, ConcatOdd(dt_f32, vf32, vf32));
+#else
+  const auto lo_f32 = LowerHalf(df32, ConcatOdd(dt_f32, vf32, vf32));
+  auto hi_f32 = LowerHalf(df32, ConcatEven(dt_f32, vf32, vf32));
+#endif
+
+  const RebindToSigned<decltype(df32)> di32;
+
+  hi_f32 =
+      Add(hi_f32, And(BitCast(df32, BroadcastSignBit(BitCast(di32, lo_f32))),
+                      Set(df32, 1.0f)));
+  return hwy::HWY_NAMESPACE::MulAdd(hi_f32, Set(df32, 4294967296.0f), lo_f32);
+}
+
+template <class D, class V, HWY_IF_F32_D(D), HWY_IF_U64(TFromV<V>)>
+HWY_INLINE Vec<D> IntDivConvIntToFloat(D df32, V vu) {
+  const Twice<decltype(df32)> dt_f32;
+
+  auto vf32 =
+      ConvertTo(dt_f32, BitCast(RebindToUnsigned<decltype(dt_f32)>(), vu));
+
+#if HWY_IS_LITTLE_ENDIAN
+  const auto lo_f32 = LowerHalf(df32, ConcatEven(dt_f32, vf32, vf32));
+  const auto hi_f32 = LowerHalf(df32, ConcatOdd(dt_f32, vf32, vf32));
+#else
+  const auto lo_f32 = LowerHalf(df32, ConcatOdd(dt_f32, vf32, vf32));
+  const auto hi_f32 = LowerHalf(df32, ConcatEven(dt_f32, vf32, vf32));
+#endif
+
+  return hwy::HWY_NAMESPACE::MulAdd(hi_f32, Set(df32, 4294967296.0f), lo_f32);
+}
+#endif  // !HWY_HAVE_FLOAT64 && HWY_HAVE_INTEGER64
+
+template <size_t kOrigLaneSize, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          HWY_IF_T_SIZE_GT(TFromV<V>, kOrigLaneSize)>
+HWY_INLINE V IntDivUsingFloatDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RebindToFloat<decltype(d)> df;
+
+  // If kOrigLaneSize < sizeof(T) is true, then a[i] and b[i] are both in the
+  // [LimitsMin<SignedFromSize<kOrigLaneSize>>(),
+  // LimitsMax<UnsignedFromSize<kOrigLaneSize>>()] range.
+
+  // floor(|a[i] / b[i]|) <= |flt_q| < floor(|a[i] / b[i]|) + 1 is also
+  // guaranteed to be true if MakeFloat<T> has at least kOrigLaneSize*8 + 1
+  // mantissa bits (including the implied one bit), where flt_q is equal to
+  // static_cast<MakeFloat<T>>(a[i]) / static_cast<MakeFloat<T>>(b[i]),
+  // even in the case where the magnitude of an inexact floating point division
+  // result is rounded up.
+
+  // In other words, floor(flt_q) < flt_q < ceil(flt_q) is guaranteed to be true
+  // if (a[i] % b[i]) != 0 is true and MakeFloat<T> has at least
+  // kOrigLaneSize*8 + 1 mantissa bits (including the implied one bit), even in
+  // the case where the magnitude of an inexact floating point division result
+  // is rounded up.
+
+#if (HWY_TARGET == HWY_NEON || HWY_TARGET == HWY_NEON_WITHOUT_AES) && \
+    !HWY_HAVE_FLOAT64
+  // On Armv7, do division by multiplying by the ApproximateReciprocal
+  // to avoid unnecessary overhead as F32 Div refines the approximate
+  // reciprocal using 4 Newton-Raphson iterations
+
+  const RebindToSigned<decltype(d)> di;
+  const RebindToUnsigned<decltype(d)> du;
+
+  const auto flt_b = ConvertTo(df, b);
+  auto flt_recip_b = ApproximateReciprocal(flt_b);
+  if (kOrigLaneSize > 1) {
+    flt_recip_b =
+        Mul(flt_recip_b, ReciprocalNewtonRaphsonStep(flt_recip_b, flt_b));
+  }
+
+  auto q0 = ConvertTo(d, Mul(ConvertTo(df, a), flt_recip_b));
+  const auto r0 = BitCast(di, hwy::HWY_NAMESPACE::NegMulAdd(q0, b, a));
+
+  auto r1 = r0;
+
+  // Need to negate r1[i] if a[i] < 0 is true
+  if (IsSigned<TFromV<V>>()) {
+    r1 = IfNegativeThenNegOrUndefIfZero(BitCast(di, a), r1);
+  }
+
+  // r1[i] is now equal to (a[i] < 0) ? (-r0[i]) : r0[i]
+
+  auto abs_b = BitCast(du, b);
+  if (IsSigned<TFromV<V>>()) {
+    abs_b = BitCast(du, Abs(BitCast(di, abs_b)));
+  }
+
+  // If (r1[i] < 0 || r1[i] >= abs_b[i]) is true, then set q1[i] to -1.
+  // Otherwise, set q1[i] to 0.
+
+  // (r1[i] < 0 || r1[i] >= abs_b[i]) can be carried out using a single unsigned
+  // comparison as static_cast<TU>(r1[i]) >= TU(LimitsMax<TI>() + 1) >= abs_b[i]
+  // will be true if r1[i] < 0 is true.
+  auto q1 = BitCast(di, VecFromMask(du, Ge(BitCast(du, r1), abs_b)));
+
+  // q1[i] is now equal to (r1[i] < 0 || r1[i] >= abs_b[i]) ? -1 : 0
+
+  // Need to negate q1[i] if r0[i] and b[i] do not have the same sign
+  if (IsSigned<TFromV<V>>()) {
+    q1 = IfNegativeThenElse(Xor(r0, BitCast(di, b)), Neg(q1), q1);
+  }
+
+  // q1[i] is now equal to (r1[i] < 0 || r1[i] >= abs_b[i]) ?
+  //                       (((r0[i] ^ b[i]) < 0) ? 1 : -1)
+
+  // Need to subtract q1[i] from q0[i] to get the final result
+  return Sub(q0, BitCast(d, q1));
+#else
+  // On targets other than Armv7 NEON, use F16 or F32 division as most targets
+  // other than Armv7 NEON have native F32 divide instructions
+  return ConvertTo(d, Div(ConvertTo(df, a), ConvertTo(df, b)));
+#endif
+}
+
+template <size_t kOrigLaneSize, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          HWY_IF_T_SIZE(TFromV<V>, kOrigLaneSize),
+          HWY_IF_T_SIZE_ONE_OF_V(V, (1 << 4) | (1 << 8))>
+HWY_INLINE V IntDivUsingFloatDiv(V a, V b) {
+  // If kOrigLaneSize == sizeof(T) is true, at least two reciprocal
+  // multiplication steps are needed as the mantissa of MakeFloat<T> has fewer
+  // than kOrigLaneSize*8 + 1 bits
+
+  using T = TFromV<V>;
+
+#if HWY_HAVE_FLOAT64
+  using TF = MakeFloat<T>;
+#else
+  using TF = float;
+#endif
+
+  const DFromV<decltype(a)> d;
+  const RebindToSigned<decltype(d)> di;
+  const RebindToUnsigned<decltype(d)> du;
+  const Rebind<TF, decltype(d)> df;
+
+  if (!IsSigned<T>()) {
+    // If T is unsigned, set a[i] to (a[i] >= b[i] ? 1 : 0) and set b[i] to 1 if
+    // b[i] > LimitsMax<MakeSigned<T>>() is true
+
+    const auto one = Set(di, MakeSigned<T>{1});
+    a = BitCast(
+        d, IfNegativeThenElse(BitCast(di, b),
+                              IfThenElseZero(RebindMask(di, Ge(a, b)), one),
+                              BitCast(di, a)));
+    b = BitCast(d, IfNegativeThenElse(BitCast(di, b), one, BitCast(di, b)));
+  }
+
+  // LimitsMin<T>() <= b[i] <= LimitsMax<MakeSigned<T>>() is now true
+
+  const auto flt_b = IntDivConvIntToFloat(df, b);
+
+#if (HWY_TARGET == HWY_NEON || HWY_TARGET == HWY_NEON_WITHOUT_AES) && \
+    !HWY_HAVE_FLOAT64
+  auto flt_recip_b = ApproximateReciprocal(flt_b);
+  flt_recip_b =
+      Mul(flt_recip_b, ReciprocalNewtonRaphsonStep(flt_recip_b, flt_b));
+#else
+  const auto flt_recip_b = Div(Set(df, TF(1.0)), flt_b);
+#endif
+
+  auto q0 =
+      IntDivConvFloatToInt(d, Mul(IntDivConvIntToFloat(df, a), flt_recip_b));
+  const auto r0 = BitCast(di, hwy::HWY_NAMESPACE::NegMulAdd(q0, b, a));
+
+  auto q1 =
+      IntDivConvFloatToInt(di, Mul(IntDivConvIntToFloat(df, r0), flt_recip_b));
+  const auto r1 = hwy::HWY_NAMESPACE::NegMulAdd(q1, BitCast(di, b), r0);
+
+  auto r3 = r1;
+
+#if !HWY_HAVE_FLOAT64
+  // Need two additional reciprocal multiplication steps for I64/U64 vectors if
+  // HWY_HAVE_FLOAT64 is 0
+  if (sizeof(T) == 8) {
+    const auto q2 = IntDivConvFloatToInt(
+        di, Mul(IntDivConvIntToFloat(df, r1), flt_recip_b));
+    const auto r2 = hwy::HWY_NAMESPACE::NegMulAdd(q2, BitCast(di, b), r1);
+
+    const auto q3 = IntDivConvFloatToInt(
+        di, Mul(IntDivConvIntToFloat(df, r2), flt_recip_b));
+    r3 = hwy::HWY_NAMESPACE::NegMulAdd(q3, BitCast(di, b), r2);
+
+    q0 = Add(q0, BitCast(d, q2));
+    q1 = Add(q1, q3);
+  }
+#endif  // !HWY_HAVE_FLOAT64
+
+  auto r4 = r3;
+
+  // Need to negate r4[i] if a[i] < 0 is true
+  if (IsSigned<TFromV<V>>()) {
+    r4 = IfNegativeThenNegOrUndefIfZero(BitCast(di, a), r4);
+  }
+
+  // r4[i] is now equal to (a[i] < 0) ? (-r3[i]) : r3[i]
+
+  auto abs_b = BitCast(du, b);
+  if (IsSigned<TFromV<V>>()) {
+    abs_b = BitCast(du, Abs(BitCast(di, abs_b)));
+  }
+
+  // If (r4[i] < 0 || r4[i] >= abs_b[i]) is true, then set q4[i] to -1.
+  // Otherwise, set r4[i] to 0.
+
+  // (r4[i] < 0 || r4[i] >= abs_b[i]) can be carried out using a single unsigned
+  // comparison as static_cast<TU>(r4[i]) >= TU(LimitsMax<TI>() + 1) >= abs_b[i]
+  // will be true if r4[i] < 0 is true.
+  auto q4 = BitCast(di, VecFromMask(du, Ge(BitCast(du, r4), abs_b)));
+
+  // q4[i] is now equal to (r4[i] < 0 || r4[i] >= abs_b[i]) ? -1 : 0
+
+  // Need to negate q4[i] if r3[i] and b[i] do not have the same sign
+  if (IsSigned<TFromV<V>>()) {
+    q4 = IfNegativeThenElse(Xor(r3, BitCast(di, b)), Neg(q4), q4);
+  }
+
+  // q4[i] is now equal to (r4[i] < 0 || r4[i] >= abs_b[i]) ?
+  //                       (((r3[i] ^ b[i]) < 0) ? 1 : -1)
+
+  // The final result is equal to q0[i] + q1[i] - q4[i]
+  return Sub(Add(q0, BitCast(d, q1)), BitCast(d, q4));
+}
+
+template <size_t kOrigLaneSize, class V,
+          HWY_IF_T_SIZE_ONE_OF_V(V, (1 << 1) | (1 << 2)),
+          HWY_IF_V_SIZE_LE_V(
+              V, HWY_MAX_BYTES /
+                     ((!HWY_HAVE_FLOAT16 && sizeof(TFromV<V>) == 1) ? 4 : 2))>
+HWY_INLINE V IntDiv(V a, V b) {
+  using T = TFromV<V>;
+
+  // If HWY_HAVE_FLOAT16 is 0, need to promote I8 to I32 and U8 to U32
+  using TW = MakeWide<
+      If<(!HWY_HAVE_FLOAT16 && sizeof(TFromV<V>) == 1), MakeWide<T>, T>>;
+
+  const DFromV<decltype(a)> d;
+  const Rebind<TW, decltype(d)> dw;
+
+#if HWY_TARGET <= HWY_SSE2
+  // On SSE2/SSSE3/SSE4/AVX2/AVX3, promote to and from MakeSigned<TW> to avoid
+  // unnecessary overhead
+  const RebindToSigned<decltype(dw)> dw_i;
+
+  // On SSE2/SSSE3/SSE4/AVX2/AVX3, demote to MakeSigned<T> if
+  // kOrigLaneSize < sizeof(T) to avoid unnecessary overhead
+  const If<(kOrigLaneSize < sizeof(T)), RebindToSigned<decltype(d)>,
+           decltype(d)>
+      d_demote_to;
+#else
+  // On other targets, promote to TW and demote to T
+  const decltype(dw) dw_i;
+  const decltype(d) d_demote_to;
+#endif
+
+  return BitCast(
+      d, DemoteTo(d_demote_to, IntDivUsingFloatDiv<kOrigLaneSize>(
+                                   PromoteTo(dw_i, a), PromoteTo(dw_i, b))));
+}
+
+template <size_t kOrigLaneSize, class V,
+          HWY_IF_T_SIZE_ONE_OF_V(V,
+                                 (HWY_HAVE_FLOAT16 ? (1 << 1) : 0) | (1 << 2)),
+          HWY_IF_V_SIZE_GT_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RepartitionToWide<decltype(d)> dw;
+
+#if HWY_TARGET <= HWY_SSE2
+  // On SSE2/SSSE3/SSE4/AVX2/AVX3, promote to and from MakeSigned<TW> to avoid
+  // unnecessary overhead
+  const RebindToSigned<decltype(dw)> dw_i;
+
+  // On SSE2/SSSE3/SSE4/AVX2/AVX3, demote to MakeSigned<TFromV<V>> if
+  // kOrigLaneSize < sizeof(TFromV<V>) to avoid unnecessary overhead
+  const If<(kOrigLaneSize < sizeof(TFromV<V>)), RebindToSigned<decltype(d)>,
+           decltype(d)>
+      d_demote_to;
+#else
+  // On other targets, promote to MakeWide<TFromV<V>> and demote to TFromV<V>
+  const decltype(dw) dw_i;
+  const decltype(d) d_demote_to;
+#endif
+
+  return BitCast(d, OrderedDemote2To(
+                        d_demote_to,
+                        IntDivUsingFloatDiv<kOrigLaneSize>(
+                            PromoteLowerTo(dw_i, a), PromoteLowerTo(dw_i, b)),
+                        IntDivUsingFloatDiv<kOrigLaneSize>(
+                            PromoteUpperTo(dw_i, a), PromoteUpperTo(dw_i, b))));
+}
+
+#if !HWY_HAVE_FLOAT16
+template <size_t kOrigLaneSize, class V, HWY_IF_UI8(TFromV<V>),
+          HWY_IF_V_SIZE_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const Rebind<MakeWide<TFromV<V>>, decltype(d)> dw;
+
+#if HWY_TARGET <= HWY_SSE2
+  // On SSE2/SSSE3, demote from int16_t to TFromV<V> to avoid unnecessary
+  // overhead
+  const RebindToSigned<decltype(dw)> dw_i;
+#else
+  // On other targets, demote from MakeWide<TFromV<V>> to TFromV<V>
+  const decltype(dw) dw_i;
+#endif
+
+  return DemoteTo(d,
+                  BitCast(dw_i, IntDiv<1>(PromoteTo(dw, a), PromoteTo(dw, b))));
+}
+template <size_t kOrigLaneSize, class V, HWY_IF_UI8(TFromV<V>),
+          HWY_IF_V_SIZE_GT_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RepartitionToWide<decltype(d)> dw;
+
+#if HWY_TARGET <= HWY_SSE2
+  // On SSE2/SSSE3, demote from int16_t to TFromV<V> to avoid unnecessary
+  // overhead
+  const RebindToSigned<decltype(dw)> dw_i;
+#else
+  // On other targets, demote from MakeWide<TFromV<V>> to TFromV<V>
+  const decltype(dw) dw_i;
+#endif
+
+  return OrderedDemote2To(
+      d, BitCast(dw_i, IntDiv<1>(PromoteLowerTo(dw, a), PromoteLowerTo(dw, b))),
+      BitCast(dw_i, IntDiv<1>(PromoteUpperTo(dw, a), PromoteUpperTo(dw, b))));
+}
+#endif  // !HWY_HAVE_FLOAT16
+
+template <size_t kOrigLaneSize, class V,
+          HWY_IF_T_SIZE_ONE_OF_V(V,
+                                 (HWY_HAVE_FLOAT64 ? 0 : (1 << 4)) | (1 << 8))>
+HWY_INLINE V IntDiv(V a, V b) {
+  return IntDivUsingFloatDiv<kOrigLaneSize>(a, b);
+}
+
+#if HWY_HAVE_FLOAT64
+template <size_t kOrigLaneSize, class V, HWY_IF_UI32(TFromV<V>),
+          HWY_IF_V_SIZE_LE_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const Rebind<double, decltype(d)> df64;
+
+  return DemoteTo(d, Div(PromoteTo(df64, a), PromoteTo(df64, b)));
+}
+template <size_t kOrigLaneSize, class V, HWY_IF_UI32(TFromV<V>),
+          HWY_IF_V_SIZE_GT_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntDiv(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const Half<decltype(d)> dh;
+  const Repartition<double, decltype(d)> df64;
+
+  return Combine(
+      d, DemoteTo(dh, Div(PromoteUpperTo(df64, a), PromoteUpperTo(df64, b))),
+      DemoteTo(dh, Div(PromoteLowerTo(df64, a), PromoteLowerTo(df64, b))));
+}
+#endif  // HWY_HAVE_FLOAT64
+
+template <size_t kOrigLaneSize, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          HWY_IF_T_SIZE_ONE_OF_V(V, ((HWY_TARGET <= HWY_SSE2 ||
+                                      HWY_TARGET == HWY_WASM ||
+                                      HWY_TARGET == HWY_WASM_EMU256)
+                                         ? 0
+                                         : (1 << 1)) |
+                                        (1 << 2) | (1 << 4) | (1 << 8))>
+HWY_INLINE V IntMod(V a, V b) {
+  return hwy::HWY_NAMESPACE::NegMulAdd(IntDiv<kOrigLaneSize>(a, b), b, a);
+}
+
+#if HWY_TARGET <= HWY_SSE2 || HWY_TARGET == HWY_WASM || \
+    HWY_TARGET == HWY_WASM_EMU256
+template <size_t kOrigLaneSize, class V, HWY_IF_UI8(TFromV<V>),
+          HWY_IF_V_SIZE_LE_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntMod(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const Rebind<MakeWide<TFromV<V>>, decltype(d)> dw;
+  return DemoteTo(d, IntMod<kOrigLaneSize>(PromoteTo(dw, a), PromoteTo(dw, b)));
+}
+
+template <size_t kOrigLaneSize, class V, HWY_IF_UI8(TFromV<V>),
+          HWY_IF_V_SIZE_GT_V(V, HWY_MAX_BYTES / 2)>
+HWY_INLINE V IntMod(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RepartitionToWide<decltype(d)> dw;
+  return OrderedDemote2To(
+      d, IntMod<kOrigLaneSize>(PromoteLowerTo(dw, a), PromoteLowerTo(dw, b)),
+      IntMod<kOrigLaneSize>(PromoteUpperTo(dw, a), PromoteUpperTo(dw, b)));
+}
+#endif  // HWY_TARGET <= HWY_SSE2 || HWY_TARGET == HWY_WASM || HWY_TARGET ==
+        // HWY_WASM_EMU256
+
+}  // namespace detail
+
+#if HWY_TARGET == HWY_SCALAR
+
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec1<T> operator/(Vec1<T> a, Vec1<T> b) {
+  return detail::IntDiv<sizeof(T)>(a, b);
+}
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec1<T> operator%(Vec1<T> a, Vec1<T> b) {
+  return detail::IntMod<sizeof(T)>(a, b);
+}
+
+#else  // HWY_TARGET != HWY_SCALAR
+
+template <class T, size_t N, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec128<T, N> operator/(Vec128<T, N> a, Vec128<T, N> b) {
+  return detail::IntDiv<sizeof(T)>(a, b);
+}
+
+template <class T, size_t N, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec128<T, N> operator%(Vec128<T, N> a, Vec128<T, N> b) {
+  return detail::IntMod<sizeof(T)>(a, b);
+}
+
+#if HWY_CAP_GE256
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec256<T> operator/(Vec256<T> a, Vec256<T> b) {
+  return detail::IntDiv<sizeof(T)>(a, b);
+}
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec256<T> operator%(Vec256<T> a, Vec256<T> b) {
+  return detail::IntMod<sizeof(T)>(a, b);
+}
+#endif
+
+#if HWY_CAP_GE512
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec512<T> operator/(Vec512<T> a, Vec512<T> b) {
+  return detail::IntDiv<sizeof(T)>(a, b);
+}
+template <class T, HWY_IF_NOT_FLOAT_NOR_SPECIAL(T)>
+HWY_API Vec512<T> operator%(Vec512<T> a, Vec512<T> b) {
+  return detail::IntMod<sizeof(T)>(a, b);
+}
+#endif
+
+#endif  // HWY_TARGET == HWY_SCALAR
+
+#endif  // HWY_NATIVE_INT_DIV
 
 // ------------------------------ SatWidenMulPairwiseAdd
 
@@ -4774,7 +5252,9 @@ HWY_API Vec128<T, N> Expand(Vec128<T, N> v, Mask128<T, N> mask) {
       BitCast(du, InterleaveLower(du8x2, indices8, indices8));
   // TableLookupBytesOr0 operates on bytes. To convert u16 lane indices to byte
   // indices, add 0 to even and 1 to odd byte lanes.
-  const Vec128<uint16_t, N> byte_indices = Add(indices16, Set(du, 0x0100));
+  const Vec128<uint16_t, N> byte_indices = Add(
+      indices16,
+      Set(du, static_cast<uint16_t>(HWY_IS_LITTLE_ENDIAN ? 0x0100 : 0x0001)));
   return BitCast(d, TableLookupBytesOr0(v, byte_indices));
 }
 
@@ -4868,9 +5348,9 @@ HWY_API VFromD<D> Reverse2(D d, VFromD<D> v) {
   const Repartition<uint16_t, decltype(d)> du16;
   return BitCast(d, RotateRight<8>(BitCast(du16, v)));
 #else
-  alignas(16) static constexpr TFromD<D> kShuffle[16] = {
-      1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14};
-  return TableLookupBytes(v, LoadDup128(d, kShuffle));
+  const VFromD<D> shuffle = Dup128VecFromValues(d, 1, 0, 3, 2, 5, 4, 7, 6, 9, 8,
+                                                11, 10, 13, 12, 15, 14);
+  return TableLookupBytes(v, shuffle);
 #endif
 }
 
@@ -4880,10 +5360,10 @@ HWY_API VFromD<D> Reverse4(D d, VFromD<D> v) {
   const Repartition<uint16_t, decltype(d)> du16;
   return BitCast(d, Reverse2(du16, BitCast(du16, Reverse2(d, v))));
 #else
-  alignas(16) static constexpr uint8_t kShuffle[16] = {
-      3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12};
   const Repartition<uint8_t, decltype(d)> du8;
-  return TableLookupBytes(v, BitCast(d, LoadDup128(du8, kShuffle)));
+  const VFromD<decltype(du8)> shuffle = Dup128VecFromValues(
+      du8, 3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12);
+  return TableLookupBytes(v, BitCast(d, shuffle));
 #endif
 }
 
@@ -4893,10 +5373,10 @@ HWY_API VFromD<D> Reverse8(D d, VFromD<D> v) {
   const Repartition<uint32_t, D> du32;
   return BitCast(d, Reverse2(du32, BitCast(du32, Reverse4(d, v))));
 #else
-  alignas(16) static constexpr uint8_t kShuffle[16] = {
-      7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8};
   const Repartition<uint8_t, decltype(d)> du8;
-  return TableLookupBytes(v, BitCast(d, LoadDup128(du8, kShuffle)));
+  const VFromD<decltype(du8)> shuffle = Dup128VecFromValues(
+      du8, 7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8);
+  return TableLookupBytes(v, BitCast(d, shuffle));
 #endif
 }
 
@@ -5032,8 +5512,6 @@ HWY_INLINE Vec<D> Per4LaneBlkShufDupSet4xU32(D d, const uint32_t x3,
                                              const uint32_t x2,
                                              const uint32_t x1,
                                              const uint32_t x0) {
-  alignas(16) const uint32_t lanes[4] = {x0, x1, x2, x3};
-
 #if HWY_TARGET == HWY_RVV
   constexpr int kPow2 = d.Pow2();
   constexpr int kLoadPow2 = HWY_MAX(kPow2, -1);
@@ -5049,8 +5527,7 @@ HWY_INLINE Vec<D> Per4LaneBlkShufDupSet4xU32(D d, const uint32_t x3,
       HWY_MAX(kMaxBytes / sizeof(uint32_t), kMinLanesToLoad);
   const CappedTag<uint32_t, kNumToLoad> d_load;
 #endif
-
-  return ResizeBitCast(d, LoadDup128(d_load, lanes));
+  return ResizeBitCast(d, Dup128VecFromValues(d_load, x0, x1, x2, x3));
 }
 
 }  // namespace detail
@@ -5212,10 +5689,6 @@ HWY_INLINE VFromD<D> TblLookupPer4LaneBlkIdxInBlk(D d, const uint32_t idx3,
   const uint16_t u16_idx1 = static_cast<uint16_t>(idx1);
   const uint16_t u16_idx2 = static_cast<uint16_t>(idx2);
   const uint16_t u16_idx3 = static_cast<uint16_t>(idx3);
-  alignas(16)
-      const uint16_t indices[8] = {u16_idx0, u16_idx1, u16_idx2, u16_idx3,
-                                   u16_idx0, u16_idx1, u16_idx2, u16_idx3};
-
 #if HWY_TARGET == HWY_NEON || HWY_TARGET == HWY_NEON_WITHOUT_AES
   constexpr size_t kMinLanesToLoad = 4;
 #else
@@ -5223,8 +5696,9 @@ HWY_INLINE VFromD<D> TblLookupPer4LaneBlkIdxInBlk(D d, const uint32_t idx3,
 #endif
   constexpr size_t kNumToLoad = HWY_MAX(HWY_MAX_LANES_D(D), kMinLanesToLoad);
   const CappedTag<uint16_t, kNumToLoad> d_load;
-
-  return ResizeBitCast(d, LoadDup128(d_load, indices));
+  return ResizeBitCast(
+      d, Dup128VecFromValues(d_load, u16_idx0, u16_idx1, u16_idx2, u16_idx3,
+                             u16_idx0, u16_idx1, u16_idx2, u16_idx3));
 }
 
 template <class D, HWY_IF_T_SIZE_D(D, 4)>
@@ -5816,6 +6290,10 @@ HWY_API V Mul(V a, V b) {
 template <class V>
 HWY_API V Div(V a, V b) {
   return a / b;
+}
+template <class V>
+HWY_API V Mod(V a, V b) {
+  return a % b;
 }
 
 template <class V>

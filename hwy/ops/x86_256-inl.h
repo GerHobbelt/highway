@@ -101,6 +101,9 @@ class Vec256 {
   HWY_INLINE Vec256& operator-=(const Vec256 other) {
     return *this = (*this - other);
   }
+  HWY_INLINE Vec256& operator%=(const Vec256 other) {
+    return *this = (*this % other);
+  }
   HWY_INLINE Vec256& operator&=(const Vec256 other) {
     return *this = (*this & other);
   }
@@ -3162,16 +3165,13 @@ HWY_API VFromD<D> Load(D /* tag */, const TFromD<D>* HWY_RESTRICT aligned) {
       _mm256_load_si256(reinterpret_cast<const __m256i*>(aligned))};
 }
 // bfloat16_t is handled by x86_128-inl.h.
-template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
-HWY_API Vec256<float16_t> Load(D d, const float16_t* HWY_RESTRICT aligned) {
 #if HWY_HAVE_FLOAT16
-  (void)d;
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
+HWY_API Vec256<float16_t> Load(D /* tag */,
+                               const float16_t* HWY_RESTRICT aligned) {
   return Vec256<float16_t>{_mm256_load_ph(aligned)};
-#else
-  const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, Load(du, reinterpret_cast<const uint16_t*>(aligned)));
-#endif  // HWY_HAVE_FLOAT16
 }
+#endif
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
 HWY_API Vec256<float> Load(D /* tag */, const float* HWY_RESTRICT aligned) {
   return Vec256<float>{_mm256_load_ps(aligned)};
@@ -3186,16 +3186,12 @@ HWY_API VFromD<D> LoadU(D /* tag */, const TFromD<D>* HWY_RESTRICT p) {
   return VFromD<D>{_mm256_loadu_si256(reinterpret_cast<const __m256i*>(p))};
 }
 // bfloat16_t is handled by x86_128-inl.h.
-template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
-HWY_API Vec256<float16_t> LoadU(D d, const float16_t* HWY_RESTRICT p) {
 #if HWY_HAVE_FLOAT16
-  (void)d;
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
+HWY_API Vec256<float16_t> LoadU(D /* tag */, const float16_t* HWY_RESTRICT p) {
   return Vec256<float16_t>{_mm256_loadu_ph(p)};
-#else
-  const RebindToUnsigned<decltype(d)> du;
-  return BitCast(d, LoadU(du, reinterpret_cast<const uint16_t*>(p)));
-#endif  // HWY_HAVE_FLOAT16
 }
+#endif
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
 HWY_API Vec256<float> LoadU(D /* tag */, const float* HWY_RESTRICT p) {
   return Vec256<float>{_mm256_loadu_ps(p)};
@@ -3379,16 +3375,13 @@ template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(D)>
 HWY_API void Store(VFromD<D> v, D /* tag */, TFromD<D>* HWY_RESTRICT aligned) {
   _mm256_store_si256(reinterpret_cast<__m256i*>(aligned), v.raw);
 }
-template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
-HWY_API void Store(Vec256<float16_t> v, D d, float16_t* HWY_RESTRICT aligned) {
 #if HWY_HAVE_FLOAT16
-  (void)d;
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
+HWY_API void Store(Vec256<float16_t> v, D /* tag */,
+                   float16_t* HWY_RESTRICT aligned) {
   _mm256_store_ph(aligned, v.raw);
-#else
-  const RebindToUnsigned<decltype(d)> du;
-  Store(BitCast(du, v), du, reinterpret_cast<uint16_t*>(aligned));
-#endif  // HWY_HAVE_FLOAT16
 }
+#endif  // HWY_HAVE_FLOAT16
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
 HWY_API void Store(Vec256<float> v, D /* tag */, float* HWY_RESTRICT aligned) {
   _mm256_store_ps(aligned, v.raw);
@@ -3403,16 +3396,13 @@ template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(D)>
 HWY_API void StoreU(VFromD<D> v, D /* tag */, TFromD<D>* HWY_RESTRICT p) {
   _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v.raw);
 }
-template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
-HWY_API void StoreU(Vec256<float16_t> v, D d, float16_t* HWY_RESTRICT p) {
 #if HWY_HAVE_FLOAT16
-  (void)d;
+template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F16_D(D)>
+HWY_API void StoreU(Vec256<float16_t> v, D /* tag */,
+                    float16_t* HWY_RESTRICT p) {
   _mm256_storeu_ph(p, v.raw);
-#else
-  const RebindToUnsigned<decltype(d)> du;
-  StoreU(BitCast(du, v), du, reinterpret_cast<uint16_t*>(p));
-#endif  // HWY_HAVE_FLOAT16
 }
+#endif
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_F32_D(D)>
 HWY_API void StoreU(Vec256<float> v, D /* tag */, float* HWY_RESTRICT p) {
   _mm256_storeu_ps(p, v.raw);
@@ -4524,9 +4514,9 @@ HWY_API VFromD<D> Reverse(D d, const VFromD<D> v) {
                         _mm256_permutexvar_epi16(idx.raw, BitCast(di, v).raw)});
 #else
   const RebindToSigned<decltype(d)> di;
-  alignas(16) static constexpr int16_t kShuffle[8] = {
-      0x0F0E, 0x0D0C, 0x0B0A, 0x0908, 0x0706, 0x0504, 0x0302, 0x0100};
-  const auto rev128 = TableLookupBytes(v, LoadDup128(di, kShuffle));
+  const VFromD<decltype(di)> shuffle = Dup128VecFromValues(
+      di, 0x0F0E, 0x0D0C, 0x0B0A, 0x0908, 0x0706, 0x0504, 0x0302, 0x0100);
+  const auto rev128 = TableLookupBytes(v, shuffle);
   return VFromD<D>{
       _mm256_permute4x64_epi64(rev128.raw, _MM_SHUFFLE(1, 0, 3, 2))};
 #endif
@@ -4555,9 +4545,9 @@ HWY_API VFromD<D> Reverse(D d, const VFromD<D> v) {
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse4(D d, const VFromD<D> v) {
   const RebindToSigned<decltype(d)> di;
-  alignas(16) static constexpr int16_t kShuffle[8] = {
-      0x0706, 0x0504, 0x0302, 0x0100, 0x0F0E, 0x0D0C, 0x0B0A, 0x0908};
-  return BitCast(d, TableLookupBytes(v, LoadDup128(di, kShuffle)));
+  const VFromD<decltype(di)> shuffle = Dup128VecFromValues(
+      di, 0x0706, 0x0504, 0x0302, 0x0100, 0x0F0E, 0x0D0C, 0x0B0A, 0x0908);
+  return BitCast(d, TableLookupBytes(v, shuffle));
 }
 
 // 32 bit Reverse4 defined in x86_128.
@@ -4573,9 +4563,9 @@ HWY_API VFromD<D> Reverse4(D /* tag */, const VFromD<D> v) {
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 2)>
 HWY_API VFromD<D> Reverse8(D d, const VFromD<D> v) {
   const RebindToSigned<decltype(d)> di;
-  alignas(16) static constexpr int16_t kShuffle[8] = {
-      0x0F0E, 0x0D0C, 0x0B0A, 0x0908, 0x0706, 0x0504, 0x0302, 0x0100};
-  return BitCast(d, TableLookupBytes(v, LoadDup128(di, kShuffle)));
+  const VFromD<decltype(di)> shuffle = Dup128VecFromValues(
+      di, 0x0F0E, 0x0D0C, 0x0B0A, 0x0908, 0x0706, 0x0504, 0x0302, 0x0100);
+  return BitCast(d, TableLookupBytes(v, shuffle));
 }
 
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 4)>
@@ -5112,9 +5102,10 @@ template <typename T, HWY_IF_T_SIZE(T, 1)>
 HWY_INLINE Vec256<T> OddEven(Vec256<T> a, Vec256<T> b) {
   const DFromV<decltype(a)> d;
   const Full256<uint8_t> d8;
-  alignas(32) static constexpr uint8_t mask[16] = {
-      0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0};
-  return IfThenElse(MaskFromVec(BitCast(d, LoadDup128(d8, mask))), b, a);
+  const VFromD<decltype(d8)> mask =
+      Dup128VecFromValues(d8, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF, 0, 0xFF,
+                          0, 0xFF, 0, 0xFF, 0);
+  return IfThenElse(MaskFromVec(BitCast(d, mask)), b, a);
 }
 
 template <typename T, HWY_IF_UI16(T)>
@@ -5736,14 +5727,15 @@ HWY_API Vec256<uint8_t> Shl(hwy::UnsignedTag tag, Vec256<uint8_t> v,
   const DFromV<decltype(v)> d;
 #if HWY_TARGET <= HWY_AVX3_DL
   (void)tag;
-  // kMask[i] = 0xFF >> i
-  alignas(16) static constexpr uint8_t kMasks[16] = {
-      0xFF, 0x7F, 0x3F, 0x1F, 0x0F, 0x07, 0x03, 0x01, 0x00};
+  // masks[i] = 0xFF >> i
+  const VFromD<decltype(d)> masks =
+      Dup128VecFromValues(d, 0xFF, 0x7F, 0x3F, 0x1F, 0x0F, 0x07, 0x03, 0x01, 0,
+                          0, 0, 0, 0, 0, 0, 0);
   // kShl[i] = 1 << i
-  alignas(16) static constexpr uint8_t kShl[16] = {1,    2,    4,    8,   0x10,
-                                                   0x20, 0x40, 0x80, 0x00};
-  v = And(v, TableLookupBytes(LoadDup128(d, kMasks), bits));
-  const VFromD<decltype(d)> mul = TableLookupBytes(LoadDup128(d, kShl), bits);
+  const VFromD<decltype(d)> shl = Dup128VecFromValues(
+      d, 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 0, 0, 0, 0, 0, 0, 0, 0);
+  v = And(v, TableLookupBytes(masks, bits));
+  const VFromD<decltype(d)> mul = TableLookupBytes(shl, bits);
   return VFromD<decltype(d)>{_mm256_gf2p8mul_epi8(v.raw, mul.raw)};
 #else
   const Repartition<uint16_t, decltype(d)> dw;
@@ -6752,14 +6744,14 @@ template <uint8_t kRcon>
 HWY_API Vec256<uint8_t> AESKeyGenAssist(Vec256<uint8_t> v) {
   const Full256<uint8_t> d;
 #if HWY_TARGET <= HWY_AVX3_DL
-  alignas(16) static constexpr uint8_t kRconXorMask[16] = {
-      0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0};
-  alignas(16) static constexpr uint8_t kRotWordShuffle[16] = {
-      0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12};
+  const VFromD<decltype(d)> rconXorMask = Dup128VecFromValues(
+      d, 0, kRcon, 0, 0, 0, 0, 0, 0, 0, kRcon, 0, 0, 0, 0, 0, 0);
+  const VFromD<decltype(d)> rotWordShuffle = Dup128VecFromValues(
+      d, 0, 13, 10, 7, 1, 14, 11, 4, 8, 5, 2, 15, 9, 6, 3, 12);
   const Repartition<uint32_t, decltype(d)> du32;
   const auto w13 = BitCast(d, DupOdd(BitCast(du32, v)));
-  const auto sub_word_result = AESLastRound(w13, LoadDup128(d, kRconXorMask));
-  return TableLookupBytes(sub_word_result, LoadDup128(d, kRotWordShuffle));
+  const auto sub_word_result = AESLastRound(w13, rconXorMask);
+  return TableLookupBytes(sub_word_result, rotWordShuffle);
 #else
   const Half<decltype(d)> d2;
   return Combine(d, AESKeyGenAssist<kRcon>(UpperHalf(d2, v)),
@@ -7019,9 +7011,9 @@ HWY_INLINE Mask256<T> LoadMaskBits256(uint64_t mask_bits) {
       0x0303030303030303ull};
   const auto rep8 = TableLookupBytes(vbits, BitCast(du, Load(du64, kRep8)));
 
-  alignas(32) static constexpr uint8_t kBit[16] = {1, 2, 4, 8, 16, 32, 64, 128,
-                                                   1, 2, 4, 8, 16, 32, 64, 128};
-  return RebindMask(d, TestBit(rep8, LoadDup128(du, kBit)));
+  const VFromD<decltype(du)> bit = Dup128VecFromValues(
+      du, 1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128);
+  return RebindMask(d, TestBit(rep8, bit));
 }
 
 template <typename T, HWY_IF_T_SIZE(T, 2)>
