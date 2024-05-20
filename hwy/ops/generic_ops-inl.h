@@ -197,6 +197,21 @@ HWY_API void SafeCopyN(const size_t num, D d, const T* HWY_RESTRICT from,
 #endif
 }
 
+// ------------------------------ MaskFalse
+#if (defined(HWY_NATIVE_MASK_FALSE) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_MASK_FALSE
+#undef HWY_NATIVE_MASK_FALSE
+#else
+#define HWY_NATIVE_MASK_FALSE
+#endif
+
+template <class D>
+HWY_API Mask<D> MaskFalse(D d) {
+  return MaskFromVec(Zero(d));
+}
+
+#endif  // HWY_NATIVE_MASK_FALSE
+
 // ------------------------------ BitwiseIfThenElse
 #if (defined(HWY_NATIVE_BITWISE_IF_THEN_ELSE) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_BITWISE_IF_THEN_ELSE
@@ -394,6 +409,37 @@ HWY_API V InterleaveWholeLower(V a, V b) {
   return InterleaveWholeLower(DFromV<V>(), a, b);
 }
 #endif  // HWY_TARGET != HWY_SCALAR
+
+// ------------------------------ AddSub
+
+template <class V, HWY_IF_LANES_D(DFromV<V>, 1)>
+HWY_API V AddSub(V a, V b) {
+  // AddSub(a, b) for a one-lane vector is equivalent to Sub(a, b)
+  return Sub(a, b);
+}
+
+// AddSub for F32x2, F32x4, and F64x2 vectors is implemented in x86_128-inl.h on
+// SSSE3/SSE4/AVX2/AVX3
+
+// AddSub for F32x8 and F64x4 vectors is implemented in x86_256-inl.h on
+// AVX2/AVX3
+template <class V, HWY_IF_V_SIZE_GT_V(V, ((HWY_TARGET <= HWY_SSSE3 &&
+                                           hwy::IsFloat3264<TFromV<V>>())
+                                              ? 32
+                                              : sizeof(TFromV<V>)))>
+HWY_API V AddSub(V a, V b) {
+  using D = DFromV<decltype(a)>;
+  using T = TFromD<D>;
+  using TNegate = If<!hwy::IsSigned<T>(), MakeSigned<T>, T>;
+
+  const D d;
+  const Rebind<TNegate, D> d_negate;
+
+  // Negate the even lanes of b
+  const auto negated_even_b = OddEven(b, BitCast(d, Neg(BitCast(d_negate, b))));
+
+  return Add(a, negated_even_b);
+}
 
 // ------------------------------ MaskedAddOr etc.
 #if (defined(HWY_NATIVE_MASKED_ARITH) == defined(HWY_TARGET_TOGGLE))
@@ -2999,6 +3045,55 @@ HWY_API VFromD<D> DemoteTo(D df16, VFromD<Rebind<float, D>> v) {
 
 #endif  // HWY_NATIVE_F16C
 
+// ------------------------------ F64->F16 DemoteTo
+#if (defined(HWY_NATIVE_DEMOTE_F64_TO_F16) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_DEMOTE_F64_TO_F16
+#undef HWY_NATIVE_DEMOTE_F64_TO_F16
+#else
+#define HWY_NATIVE_DEMOTE_F64_TO_F16
+#endif
+
+#if HWY_HAVE_FLOAT64
+template <class D, HWY_IF_F16_D(D)>
+HWY_API VFromD<D> DemoteTo(D df16, VFromD<Rebind<double, D>> v) {
+  const Rebind<double, D> df64;
+  const Rebind<uint64_t, D> du64;
+  const Rebind<float, D> df32;
+
+  // The mantissa bits of v[i] are first rounded using round-to-odd rounding to
+  // the nearest F64 value that has the lower 29 bits zeroed out to ensure that
+  // the result is correctly rounded to a F16.
+
+  const auto vf64_rounded = OrAnd(
+      And(v,
+          BitCast(df64, Set(du64, static_cast<uint64_t>(0xFFFFFFFFE0000000u)))),
+      BitCast(df64, Add(BitCast(du64, v),
+                        Set(du64, static_cast<uint64_t>(0x000000001FFFFFFFu)))),
+      BitCast(df64, Set(du64, static_cast<uint64_t>(0x0000000020000000ULL))));
+
+  return DemoteTo(df16, DemoteTo(df32, vf64_rounded));
+}
+#endif  // HWY_HAVE_FLOAT64
+
+#endif  // HWY_NATIVE_DEMOTE_F64_TO_F16
+
+// ------------------------------ F16->F64 PromoteTo
+#if (defined(HWY_NATIVE_PROMOTE_F16_TO_F64) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_PROMOTE_F16_TO_F64
+#undef HWY_NATIVE_PROMOTE_F16_TO_F64
+#else
+#define HWY_NATIVE_PROMOTE_F16_TO_F64
+#endif
+
+#if HWY_HAVE_FLOAT64
+template <class D, HWY_IF_F64_D(D)>
+HWY_API VFromD<D> PromoteTo(D df64, VFromD<Rebind<float16_t, D>> v) {
+  return PromoteTo(df64, PromoteTo(Rebind<float, D>(), v));
+}
+#endif  // HWY_HAVE_FLOAT64
+
+#endif  // HWY_NATIVE_PROMOTE_F16_TO_F64
+
 // ------------------------------ SumsOf2
 
 #if HWY_TARGET != HWY_SCALAR
@@ -3818,17 +3913,83 @@ HWY_API V operator*(V x, V y) {
 #define HWY_NATIVE_INT_FMA
 #endif
 
-template <class V, HWY_IF_NOT_FLOAT_V(V)>
+#ifdef HWY_NATIVE_INT_FMSUB
+#undef HWY_NATIVE_INT_FMSUB
+#else
+#define HWY_NATIVE_INT_FMSUB
+#endif
+
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
 HWY_API V MulAdd(V mul, V x, V add) {
   return Add(Mul(mul, x), add);
 }
 
-template <class V, HWY_IF_NOT_FLOAT_V(V)>
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
 HWY_API V NegMulAdd(V mul, V x, V add) {
   return Sub(add, Mul(mul, x));
 }
 
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V MulSub(V mul, V x, V sub) {
+  return Sub(Mul(mul, x), sub);
+}
 #endif  // HWY_NATIVE_INT_FMA
+
+// ------------------------------ Integer MulSub / NegMulSub
+#if (defined(HWY_NATIVE_INT_FMSUB) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_INT_FMSUB
+#undef HWY_NATIVE_INT_FMSUB
+#else
+#define HWY_NATIVE_INT_FMSUB
+#endif
+
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V MulSub(V mul, V x, V sub) {
+  const DFromV<decltype(mul)> d;
+  const RebindToSigned<decltype(d)> di;
+  return MulAdd(mul, x, BitCast(d, Neg(BitCast(di, sub))));
+}
+
+#endif  // HWY_NATIVE_INT_FMSUB
+
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V NegMulSub(V mul, V x, V sub) {
+  const DFromV<decltype(mul)> d;
+  const RebindToSigned<decltype(d)> di;
+
+  return BitCast(d, Neg(BitCast(di, MulAdd(mul, x, sub))));
+}
+
+// ------------------------------ MulAddSub
+
+// MulAddSub(mul, x, sub_or_add) for a 1-lane vector is equivalent to
+// MulSub(mul, x, sub_or_add)
+template <class V, HWY_IF_LANES_D(DFromV<V>, 1)>
+HWY_API V MulAddSub(V mul, V x, V sub_or_add) {
+  return MulSub(mul, x, sub_or_add);
+}
+
+// MulAddSub for F16/F32/F64 vectors with 2 or more lanes on
+// SSSE3/SSE4/AVX2/AVX3 is implemented in x86_128-inl.h, x86_256-inl.h, and
+// x86_512-inl.h
+template <class V, HWY_IF_LANES_GT_D(DFromV<V>, 1),
+          HWY_IF_T_SIZE_ONE_OF_V(V, (1 << 1) | ((HWY_TARGET <= HWY_SSSE3 &&
+                                                 hwy::IsFloat<TFromV<V>>())
+                                                    ? 0
+                                                    : ((1 << 2) | (1 << 4) |
+                                                       (1 << 8))))>
+HWY_API V MulAddSub(V mul, V x, V sub_or_add) {
+  using D = DFromV<V>;
+  using T = TFromD<D>;
+  using TNegate = If<!IsSigned<T>(), MakeSigned<T>, T>;
+
+  const D d;
+  const Rebind<TNegate, D> d_negate;
+
+  const auto add =
+      OddEven(sub_or_add, BitCast(d, Neg(BitCast(d_negate, sub_or_add))));
+  return MulAdd(mul, x, add);
+}
 
 // ------------------------------ Integer division
 #if (defined(HWY_NATIVE_INT_DIV) == defined(HWY_TARGET_TOGGLE))

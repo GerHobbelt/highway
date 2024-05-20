@@ -2500,13 +2500,13 @@ HWY_API Vec128<T, N> NegMulAdd(Vec128<T, N> mul, Vec128<T, N> x,
   return detail::NegMulAdd(add, mul, x);
 }
 
-template <typename T, size_t N>
+template <typename T, size_t N, HWY_IF_FLOAT(T)>
 HWY_API Vec128<T, N> MulSub(Vec128<T, N> mul, Vec128<T, N> x,
                             Vec128<T, N> sub) {
   return MulAdd(mul, x, Neg(sub));
 }
 
-template <typename T, size_t N>
+template <typename T, size_t N, HWY_IF_FLOAT(T)>
 HWY_API Vec128<T, N> NegMulSub(Vec128<T, N> mul, Vec128<T, N> x,
                                Vec128<T, N> sub) {
   return Neg(MulAdd(mul, x, sub));
@@ -7568,22 +7568,35 @@ HWY_NEON_DEF_REDUCTION_CORE_TYPES(ReduceSum, vaddv)
 HWY_NEON_DEF_REDUCTION_UI64(ReduceSum, vaddv)
 
 // Emulate missing UI64 and partial N=2.
-template <class D, HWY_IF_LANES_D(D, 2)>
+template <class D, HWY_IF_LANES_D(D, 2),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 1) | (1 << 2))>
 HWY_API TFromD<D> ReduceSum(D /* tag */, VFromD<D> v10) {
   return GetLane(v10) + ExtractLane(v10, 1);
 }
 
-template <class D, HWY_IF_LANES_D(D, 2)>
+template <class D, HWY_IF_LANES_D(D, 2), HWY_IF_NOT_FLOAT_D(D),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 1) | (1 << 2) | (1 << 8))>
 HWY_API TFromD<D> ReduceMin(D /* tag */, VFromD<D> v10) {
   return HWY_MIN(GetLane(v10), ExtractLane(v10, 1));
 }
 
-template <class D, HWY_IF_LANES_D(D, 2)>
+template <class D, HWY_IF_LANES_D(D, 2), HWY_IF_NOT_FLOAT_D(D),
+          HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 1) | (1 << 2) | (1 << 8))>
 HWY_API TFromD<D> ReduceMax(D /* tag */, VFromD<D> v10) {
   return HWY_MAX(GetLane(v10), ExtractLane(v10, 1));
 }
 
 #if HWY_HAVE_FLOAT16
+template <class D, HWY_IF_LANES_D(D, 2), HWY_IF_F16_D(D)>
+HWY_API float16_t ReduceMin(D d, VFromD<D> v10) {
+  return GetLane(Min(v10, Reverse2(d, v10)));
+}
+
+template <class D, HWY_IF_LANES_D(D, 2), HWY_IF_F16_D(D)>
+HWY_API float16_t ReduceMax(D d, VFromD<D> v10) {
+  return GetLane(Max(v10, Reverse2(d, v10)));
+}
+
 template <class D, HWY_IF_F16_D(D), HWY_IF_V_SIZE_D(D, 8)>
 HWY_API float16_t ReduceSum(D /* tag */, VFromD<D> v) {
   const float16x4_t x2 = vpadd_f16(v.raw, v.raw);

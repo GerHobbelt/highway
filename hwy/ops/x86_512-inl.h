@@ -2197,6 +2197,23 @@ HWY_API Vec512<double> NegMulSub(Vec512<double> mul, Vec512<double> x,
   return Vec512<double>{_mm512_fnmsub_pd(mul.raw, x.raw, sub.raw)};
 }
 
+#if HWY_HAVE_FLOAT16
+HWY_API Vec512<float16_t> MulAddSub(Vec512<float16_t> mul, Vec512<float16_t> x,
+                                    Vec512<float16_t> sub_or_add) {
+  return Vec512<float16_t>{_mm512_fmaddsub_ph(mul.raw, x.raw, sub_or_add.raw)};
+}
+#endif  // HWY_HAVE_FLOAT16
+
+HWY_API Vec512<float> MulAddSub(Vec512<float> mul, Vec512<float> x,
+                                Vec512<float> sub_or_add) {
+  return Vec512<float>{_mm512_fmaddsub_ps(mul.raw, x.raw, sub_or_add.raw)};
+}
+
+HWY_API Vec512<double> MulAddSub(Vec512<double> mul, Vec512<double> x,
+                                 Vec512<double> sub_or_add) {
+  return Vec512<double>{_mm512_fmaddsub_pd(mul.raw, x.raw, sub_or_add.raw)};
+}
+
 // ------------------------------ Floating-point square root
 
 // Full precision square root
@@ -5332,6 +5349,15 @@ HWY_API VFromD<D> PromoteTo(D /* tag */, Vec256<float16_t> v) {
 #endif  // HWY_HAVE_FLOAT16
 }
 
+#if HWY_HAVE_FLOAT16
+
+template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F64_D(D)>
+HWY_INLINE VFromD<D> PromoteTo(D /*tag*/, Vec128<float16_t> v) {
+  return VFromD<D>{_mm512_cvtph_pd(v.raw)};
+}
+
+#endif  // HWY_HAVE_FLOAT16
+
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_F32_D(D)>
 HWY_API VFromD<D> PromoteTo(D df32, Vec256<bfloat16_t> v) {
   const Rebind<uint16_t, decltype(df32)> du16;
@@ -5512,6 +5538,13 @@ HWY_API VFromD<D> DemoteTo(D df16, Vec512<float> v) {
       df16, VFromD<decltype(du16)>{_mm512_cvtps_ph(v.raw, _MM_FROUND_NO_EXC)});
   HWY_DIAGNOSTICS(pop)
 }
+
+#if HWY_HAVE_FLOAT16
+template <class D, HWY_IF_V_SIZE_D(D, 16), HWY_IF_F16_D(D)>
+HWY_API VFromD<D> DemoteTo(D /*df16*/, Vec512<double> v) {
+  return VFromD<D>{_mm512_cvtpd_ph(v.raw)};
+}
+#endif  // HWY_HAVE_FLOAT16
 
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_BF16_D(D)>
 HWY_API VFromD<D> DemoteTo(D dbf16, Vec512<float> v) {
