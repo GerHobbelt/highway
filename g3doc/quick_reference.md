@@ -1,7 +1,5 @@
 # API synopsis / quick reference
 
-[[_TOC_]]
-
 ## High-level overview
 
 Highway is a collection of 'ops': platform-agnostic pure functions that operate
@@ -731,6 +729,23 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
     </code>: widens `a_u` and `b_i` to `TFromD<DI>` and computes
     `a_u[2*i+1]*b_i[2*i+1] + a_u[2*i+0]*b_i[2*i+0]`, saturated to the range of
     `TFromD<D>`.
+
+*   `DW`: `i32`, `D`: `Rebind<MakeNarrow<TFromD<DW>>, DW>`,
+    `VW`: `Vec<DW>`, `V`: `Vec<D>` \
+    <code>Vec&lt;D&gt; **SatWidenMulPairwiseAccumulate**(DW, V a, V b, VW sum)
+    </code>: widens `a[i]` and `b[i]` to `TFromD<DI>` and computes
+    `a[2*i]*b[2*i] + a[2*i+1]*b[2*i+1] + sum[i]`, saturated to the range of
+    `TFromD<DW>`.
+
+*   `DW`: `i32`, `D`: `Rebind<MakeNarrow<TFromD<DW>>, DW>`,
+    `VW`: `Vec<DW>`, `V`: `Vec<D>` \
+    <code>VW **SatWidenMulAccumFixedPoint**(DW, V a, V b, VW sum)**</code>:
+    First, widens `a` and `b` to `TFromD<DW>`, then adds `a[i] * b[i] * 2` to
+    `sum[i]`, saturated to the range of `TFromD<DW>`.
+
+    If `a[i] == LimitsMin<TFromD<D>>() && b[i] == LimitsMin<TFromD<D>>()`,
+    it is implementation-defined whether `a[i] * b[i] * 2` is first saturated
+    to `TFromD<DW>` prior to the addition of `a[i] * b[i] * 2` to `sum[i]`.
 
 *   `V`: `{bf,u,i}16`, `D`: `RepartitionToWide<DFromV<V>>`, `VW`: `Vec<D>` \
     <code>VW **ReorderWidenMulAccumulate**(D d, V a, V b, VW sum0, VW&
@@ -1654,6 +1669,12 @@ All functions except `Stream` are defined in cache_control.h.
     zero and converts the value to same-sized signed/unsigned integer. Returns
     the closest representable value if the input exceeds the destination range.
 
+*   `V`: `{f}` \
+    <code>Vec&lt;D&gt; **ConvertInRangeTo**(D, V)</code>: rounds floating point
+    towards zero and converts the value to same-sized signed/unsigned integer.
+    Returns an implementation-defined value if the input exceeds the destination
+    range.
+
 *   `V`: `f32`; `Ret`: `i32` \
     <code>Ret **NearestInt**(V a)</code>: returns the integer nearest to `a[i]`;
     results are undefined for NaN.
@@ -1685,6 +1706,11 @@ obtain the `D` that describes the return type.
     towards zero and converts the value to 32-bit integers. Returns the closest
     representable value if the input exceeds the destination range.
 
+*   `V`,`D`: `f64,{u,i}32` \
+    <code>Vec&lt;D&gt; **DemoteInRangeTo**(D, V v)</code>: rounds floating point
+    towards zero and converts the value to 32-bit integers. Returns an
+    implementation-defined value if the input exceeds the destination range.
+
 *   `V`,`D`: `{u,i}64,f32` \
     <code>Vec&lt;D&gt; **DemoteTo**(D, V v)</code>: converts 64-bit integer to
     `float`.
@@ -1713,6 +1739,12 @@ These functions promote a half vector to a full vector. To obtain halves, use
     zero and converts the rounded value to a 64-bit signed or unsigned integer.
     Returns the representable value if the input exceeds the destination range.
 
+*   `f32` to `i64` or `u64` \
+    <code>Vec&lt;D&gt; **PromoteInRangeTo**(D, V part)</code>: rounds `part[i]`
+    towards zero and converts the rounded value to a 64-bit signed or unsigned
+    integer. Returns an implementation-defined value if the input exceeds the
+    destination range.
+
 The following may be more convenient or efficient than also calling `LowerHalf`
 / `UpperHalf`:
 
@@ -1732,6 +1764,13 @@ The following may be more convenient or efficient than also calling `LowerHalf`
     zero and converts the rounded value to a 64-bit signed or unsigned integer,
     for i in `[0, Lanes(D()))`. Note that `V` has twice as many lanes as `D` and
     the return value.
+
+*   `f32` to `i64` or `u64` \
+    <code>Vec&lt;D&gt; **PromoteInRangeLowerTo**(D, V v)</code>: rounds `v[i]`
+    towards zero and converts the rounded value to a 64-bit signed or unsigned
+    integer, for i in `[0, Lanes(D()))`. Note that `V` has twice as many lanes
+    as `D` and the return value. Returns an implementation-defined value if the
+    input exceeds the destination range.
 
 *   Unsigned `V` to wider signed/unsigned `D`; signed to wider signed, `f16` to
     `f32`, `bf16` to `f32`, `f32` to `f64` \
@@ -1753,6 +1792,14 @@ The following may be more convenient or efficient than also calling `LowerHalf`
     lanes as `D` and the return value. Only available if
     `HWY_TARGET != HWY_SCALAR`.
 
+*   `f32` to `i64` or `u64` \
+    <code>Vec&lt;D&gt; **PromoteInRangeUpperTo**(D, V v)</code>: rounds `v[i]`
+    towards zero and converts the rounded value to a 64-bit signed or unsigned
+    integer, for i in `[Lanes(D()), 2 * Lanes(D()))`. Note that `V` has twice as
+    many lanes as `D` and the return value. Returns an implementation-defined
+    value if the input exceeds the destination range. Only available if
+    `HWY_TARGET != HWY_SCALAR`.
+
 The following may be more convenient or efficient than also calling `ConcatEven`
 or `ConcatOdd` followed by `PromoteLowerTo`:
 
@@ -1769,6 +1816,20 @@ or `ConcatOdd` followed by `PromoteLowerTo`:
     return value. `PromoteOddTo(d, v)` is equivalent to, but potentially more
     efficient than `PromoteLowerTo(d, ConcatOdd(Repartition<TFromV<V>, D>(), v,
     v))`. Only available if `HWY_TARGET != HWY_SCALAR`.
+
+*   `V`:`f32`, `D`:`{u,i}64` \
+    <code>Vec&lt;D&gt; **PromoteInRangeEvenTo**(D, V v)</code>: promotes the
+    even lanes of `v` to `TFromD<D>`. Note that `V` has twice as many lanes as
+    `D` and the return value. `PromoteInRangeEvenTo(d, v)` is equivalent to, but
+    potentially more efficient than `PromoteInRangeLowerTo(d, ConcatEven(
+    Repartition<TFromV<V>, D>(), v, v))`.
+
+*   `V`:`f32`, `D`:`{u,i}64` \
+    <code>Vec&lt;D&gt; **PromoteInRangeOddTo**(D, V v)</code>: promotes the odd
+    lanes of `v` to `TFromD<D>`. Note that `V` has twice as many lanes as `D`
+    and the return value. `PromoteInRangeOddTo(d, v)` is equivalent to, but
+    potentially more efficient than `PromoteInRangeLowerTo(d, ConcatOdd(
+    Repartition<TFromV<V>, D>(), v, v))`.
 
 #### Two-vector demotion
 

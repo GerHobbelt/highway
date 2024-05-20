@@ -1,5 +1,7 @@
 // Copyright 2020 Google LLC
+// Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: BSD-3-Clause
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -116,7 +118,15 @@
   ",vpclmulqdq,avx512vbmi,avx512vbmi2,vaes,avx512vnni,avx512bitalg," \
   "avx512vpopcntdq,gfni"
 
-#define HWY_TARGET_STR_AVX3_SPR HWY_TARGET_STR_AVX3_DL ",avx512fp16"
+#if !HWY_COMPILER_CLANGCL &&                                          \
+    (HWY_COMPILER_GCC_ACTUAL >= 1000 || HWY_COMPILER_CLANG >= 900) && \
+    !defined(HWY_AVX3_DISABLE_AVX512BF16)
+#define HWY_TARGET_STR_AVX3_ZEN4 HWY_TARGET_STR_AVX3_DL ",avx512bf16"
+#else
+#define HWY_TARGET_STR_AVX3_ZEN4 HWY_TARGET_STR_AVX3_DL
+#endif
+
+#define HWY_TARGET_STR_AVX3_SPR HWY_TARGET_STR_AVX3_ZEN4 ",avx512fp16"
 
 #if defined(HWY_DISABLE_PPC8_CRYPTO)
 #define HWY_TARGET_STR_PPC8_CRYPTO ""
@@ -272,8 +282,7 @@
 #elif HWY_TARGET == HWY_AVX3_ZEN4
 
 #define HWY_NAMESPACE N_AVX3_ZEN4
-// Currently the same as HWY_AVX3_DL: both support Icelake.
-#define HWY_TARGET_STR HWY_TARGET_STR_AVX3_DL
+#define HWY_TARGET_STR HWY_TARGET_STR_AVX3_ZEN4
 
 #elif HWY_TARGET == HWY_AVX3_SPR
 
@@ -376,7 +385,7 @@
 
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 
-#if defined(__ARM_VFPV4__) || HWY_ARCH_ARM_A64
+#if defined(__ARM_FEATURE_FMA) || defined(__ARM_VFPV4__) || HWY_ARCH_ARM_A64
 #define HWY_NATIVE_FMA 1
 #else
 #define HWY_NATIVE_FMA 0

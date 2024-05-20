@@ -139,9 +139,10 @@ namespace hwy {
 #define HWY_ASSUME_ALIGNED(ptr, align) (ptr) /* not supported */
 #endif
 
-// Special case to increases required alignment
+// Returns a pointer whose type is `type` (T*), while allowing the compiler to
+// assume that the untyped pointer `ptr` is aligned to a multiple of sizeof(T).
 #define HWY_RCAST_ALIGNED(type, ptr) \
-  reinterpret_cast<type>(HWY_ASSUME_ALIGNED((ptr), alignof(type)))
+  reinterpret_cast<type>(HWY_ASSUME_ALIGNED((ptr), alignof(RemovePtr<type>)))
 
 // Clang and GCC require attributes on each function into which SIMD intrinsics
 // are inlined. Support both per-function annotation (HWY_ATTR) for lambdas and
@@ -575,6 +576,30 @@ using RemoveRef = typename RemoveRefT<T>::type;
 
 template <class T>
 using RemoveCvRef = RemoveConst<RemoveVolatile<RemoveRef<T>>>;
+
+template <class T>
+struct RemovePtrT {
+  using type = T;
+};
+template <class T>
+struct RemovePtrT<T*> {
+  using type = T;
+};
+template <class T>
+struct RemovePtrT<const T*> {
+  using type = T;
+};
+template <class T>
+struct RemovePtrT<volatile T*> {
+  using type = T;
+};
+template <class T>
+struct RemovePtrT<const volatile T*> {
+  using type = T;
+};
+
+template <class T>
+using RemovePtr = typename RemovePtrT<T>::type;
 
 // Insert into template/function arguments to enable this overload only for
 // vectors of exactly, at most (LE), or more than (GT) this many bytes.
@@ -1759,12 +1784,42 @@ HWY_API HWY_BF16_CONSTEXPR float F32FromBF16(bfloat16_t bf) {
 #endif
 }
 
+namespace detail {
+
+// Returns the increment to add to the bits of a finite F32 value to round a
+// finite F32 to the nearest BF16 value
+static HWY_INLINE HWY_MAYBE_UNUSED constexpr uint32_t F32BitsToBF16RoundIncr(
+    const uint32_t f32_bits) {
+  return static_cast<uint32_t>(((f32_bits & 0x7FFFFFFFu) < 0x7F800000u)
+                                   ? (0x7FFFu + ((f32_bits >> 16) & 1u))
+                                   : 0u);
+}
+
+// Converts f32_bits (which is the bits of a F32 value) to BF16 bits,
+// rounded to the nearest F16 value
+static HWY_INLINE HWY_MAYBE_UNUSED constexpr uint16_t F32BitsToBF16Bits(
+    const uint32_t f32_bits) {
+  // Round f32_bits to the nearest BF16 by first adding
+  // F32BitsToBF16RoundIncr(f32_bits) to f32_bits and then right shifting
+  // f32_bits + F32BitsToBF16RoundIncr(f32_bits) by 16
+
+  // If f32_bits is the bit representation of a NaN F32 value, make sure that
+  // bit 6 of the BF16 result is set to convert SNaN F32 values to QNaN BF16
+  // values and to prevent NaN F32 values from being converted to an infinite
+  // BF16 value
+  return static_cast<uint16_t>(
+      ((f32_bits + F32BitsToBF16RoundIncr(f32_bits)) >> 16) |
+      (static_cast<uint32_t>((f32_bits & 0x7FFFFFFFu) > 0x7F800000u) << 6));
+}
+
+}  // namespace detail
+
 HWY_API HWY_BF16_CONSTEXPR bfloat16_t BF16FromF32(float f) {
 #if HWY_HAVE_SCALAR_BF16_OPERATORS
   return static_cast<bfloat16_t>(f);
 #else
   return bfloat16_t::FromBits(
-      static_cast<uint16_t>(BitCastScalar<uint32_t>(f) >> 16));
+      detail::F32BitsToBF16Bits(BitCastScalar<uint32_t>(f)));
 #endif
 }
 

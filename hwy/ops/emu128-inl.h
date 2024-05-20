@@ -1566,6 +1566,47 @@ HWY_INLINE ToT CastValueForPromoteTo(hwy::UnsignedTag /*to_type_tag*/,
                                      float val) {
   return CastValueForF2IConv<ToT>(val);
 }
+// If val is within the range of ToT, CastValueForInRangeF2IConv<ToT>(val)
+// returns static_cast<ToT>(val)
+//
+// Otherwise, CastValueForInRangeF2IConv<ToT>(val) returns an
+// implementation-defined result if val is not within the range of ToT.
+template <class ToT, class FromT>
+HWY_INLINE ToT CastValueForInRangeF2IConv(FromT val) {
+  // Prevent ubsan errors when converting float to narrower integer
+
+  using FromTU = MakeUnsigned<FromT>;
+
+  constexpr unsigned kMaxExpField =
+      static_cast<unsigned>(MaxExponentField<FromT>());
+  constexpr unsigned kExpBias = kMaxExpField >> 1;
+  constexpr unsigned kMinOutOfRangeExpField = static_cast<unsigned>(HWY_MIN(
+      kExpBias + sizeof(ToT) * 8 - static_cast<unsigned>(IsSigned<ToT>()),
+      kMaxExpField));
+
+  // If ToT is signed, compare only the exponent bits of val against
+  // kMinOutOfRangeExpField.
+  //
+  // Otherwise, if ToT is unsigned, compare the sign bit plus exponent bits of
+  // val against kMinOutOfRangeExpField as a negative value is outside of the
+  // range of an unsigned integer type.
+  const FromT val_to_compare =
+      static_cast<FromT>(IsSigned<ToT>() ? ScalarAbs(val) : val);
+
+  // val is within the range of ToT if
+  // (BitCastScalar<FromTU>(val_to_compare) >> MantissaBits<FromT>()) is less
+  // than kMinOutOfRangeExpField
+  //
+  // Otherwise, val is either outside of the range of ToT or equal to
+  // LimitsMin<ToT>() if
+  // (BitCastScalar<FromTU>(val_to_compare) >> MantissaBits<FromT>()) is greater
+  // than or equal to kMinOutOfRangeExpField.
+
+  return (static_cast<unsigned>(BitCastScalar<FromTU>(val_to_compare) >>
+                                MantissaBits<FromT>()) < kMinOutOfRangeExpField)
+             ? static_cast<ToT>(val)
+             : static_cast<ToT>(LimitsMin<ToT>());
+}
 
 }  // namespace detail
 
@@ -1577,6 +1618,21 @@ HWY_API VFromD<DTo> PromoteTo(DTo d, Vec128<TFrom, HWY_MAX_LANES_D(DTo)> from) {
     // For bits Y > X, floatX->floatY and intX->intY are always representable.
     ret.raw[i] = detail::CastValueForPromoteTo<TFromD<DTo>>(
         hwy::TypeTag<TFromD<DTo>>(), from.raw[i]);
+  }
+  return ret;
+}
+
+#ifdef HWY_NATIVE_F32_TO_UI64_PROMOTE_IN_RANGE_TO
+#undef HWY_NATIVE_F32_TO_UI64_PROMOTE_IN_RANGE_TO
+#else
+#define HWY_NATIVE_F32_TO_UI64_PROMOTE_IN_RANGE_TO
+#endif
+
+template <class D64, HWY_IF_UI64_D(D64)>
+HWY_API VFromD<D64> PromoteInRangeTo(D64 d64, VFromD<Rebind<float, D64>> v) {
+  VFromD<D64> ret;
+  for (size_t i = 0; i < MaxLanes(d64); ++i) {
+    ret.raw[i] = detail::CastValueForInRangeF2IConv<TFromD<D64>>(v.raw[i]);
   }
   return ret;
 }
@@ -1624,17 +1680,32 @@ HWY_API VFromD<DTo> DemoteTo(DTo /* tag */, Vec128<TFrom, N> from) {
   return ret;
 }
 
+// Disable the default unsigned to signed DemoteTo/ReorderDemote2To
+// implementations in generic_ops-inl.h on EMU128 as the EMU128 target has
+// target-specific implementations of the unsigned to signed DemoteTo and
+// ReorderDemote2To ops
+
+// NOTE: hwy::EnableIf<!hwy::IsSame<V, V>()>* = nullptr is used instead of
+// hwy::EnableIf<false>* = nullptr to avoid compiler errors since
+// !hwy::IsSame<V, V>() is always false and as !hwy::IsSame<V, V>() will cause
+// SFINAE to occur instead of a hard error due to a dependency on the V template
+// argument
+#undef HWY_IF_U2I_DEMOTE_FROM_LANE_SIZE_V
+#define HWY_IF_U2I_DEMOTE_FROM_LANE_SIZE_V(V) \
+  hwy::EnableIf<!hwy::IsSame<V, V>()>* = nullptr
+
 template <class DTo, typename TFrom, size_t N, HWY_IF_UNSIGNED(TFrom),
-          HWY_IF_UNSIGNED_D(DTo)>
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DTo)>
 HWY_API VFromD<DTo> DemoteTo(DTo /* tag */, Vec128<TFrom, N> from) {
   using TTo = TFromD<DTo>;
   static_assert(sizeof(TTo) < sizeof(TFrom), "Not demoting");
 
+  const auto max = static_cast<MakeUnsigned<TTo>>(LimitsMax<TTo>());
+
   VFromD<DTo> ret;
   for (size_t i = 0; i < N; ++i) {
     // Int to int: choose closest value in ToT to `from` (avoids UB)
-    from.raw[i] = HWY_MIN(from.raw[i], LimitsMax<TTo>());
-    ret.raw[i] = static_cast<TTo>(from.raw[i]);
+    ret.raw[i] = static_cast<TTo>(HWY_MIN(from.raw[i], max));
   }
   return ret;
 }
@@ -1682,14 +1753,15 @@ HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
   return ret;
 }
 
-template <class DN, HWY_IF_UNSIGNED_D(DN), class V, HWY_IF_UNSIGNED_V(V),
-          HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
+template <class DN, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DN), class V,
+          HWY_IF_UNSIGNED_V(V), HWY_IF_T_SIZE_V(V, sizeof(TFromD<DN>) * 2),
           HWY_IF_LANES_D(DN, HWY_MAX_LANES_D(DFromV<V>) * 2)>
 HWY_API VFromD<DN> ReorderDemote2To(DN dn, V a, V b) {
   const RepartitionToWide<decltype(dn)> dw;
   const size_t NW = Lanes(dw);
   using TN = TFromD<DN>;
-  const TN max = LimitsMax<TN>();
+  using TN_U = MakeUnsigned<TN>;
+  const TN_U max = static_cast<TN_U>(LimitsMax<TN>());
   VFromD<DN> ret;
   for (size_t i = 0; i < NW; ++i) {
     ret.raw[i] = static_cast<TN>(HWY_MIN(a.raw[i], max));
@@ -1748,11 +1820,32 @@ HWY_API VFromD<D> PromoteTo(D /* tag */, Vec128<bfloat16_t, N> v) {
   return ret;
 }
 
+#ifdef HWY_NATIVE_DEMOTE_F32_TO_BF16
+#undef HWY_NATIVE_DEMOTE_F32_TO_BF16
+#else
+#define HWY_NATIVE_DEMOTE_F32_TO_BF16
+#endif
+
 template <class D, HWY_IF_BF16_D(D), size_t N>
 HWY_API VFromD<D> DemoteTo(D /* tag */, Vec128<float, N> v) {
   VFromD<D> ret;
   for (size_t i = 0; i < N; ++i) {
     ret.raw[i] = BF16FromF32(v.raw[i]);
+  }
+  return ret;
+}
+
+#ifdef HWY_NATIVE_F64_TO_UI32_DEMOTE_IN_RANGE_TO
+#undef HWY_NATIVE_F64_TO_UI32_DEMOTE_IN_RANGE_TO
+#else
+#define HWY_NATIVE_F64_TO_UI32_DEMOTE_IN_RANGE_TO
+#endif
+
+template <class D32, HWY_IF_UI32_D(D32)>
+HWY_API VFromD<D32> DemoteInRangeTo(D32 d32, VFromD<Rebind<double, D32>> v) {
+  VFromD<D32> ret;
+  for (size_t i = 0; i < MaxLanes(d32); ++i) {
+    ret.raw[i] = detail::CastValueForInRangeF2IConv<TFromD<D32>>(v.raw[i]);
   }
   return ret;
 }
@@ -1794,6 +1887,22 @@ HWY_API VFromD<DTo> ConvertTo(hwy::NonFloatTag /*tag*/, DTo /* tag */,
 template <class DTo, typename TFrom>
 HWY_API VFromD<DTo> ConvertTo(DTo d, Vec128<TFrom, HWY_MAX_LANES_D(DTo)> from) {
   return detail::ConvertTo(hwy::IsFloatTag<TFrom>(), d, from);
+}
+
+#ifdef HWY_NATIVE_F2I_CONVERT_IN_RANGE_TO
+#undef HWY_NATIVE_F2I_CONVERT_IN_RANGE_TO
+#else
+#define HWY_NATIVE_F2I_CONVERT_IN_RANGE_TO
+#endif
+
+template <class DI, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DI),
+          HWY_IF_T_SIZE_ONE_OF_D(DI, (1 << 4) | (1 << 8))>
+HWY_API VFromD<DI> ConvertInRangeTo(DI di, VFromD<RebindToFloat<DI>> v) {
+  VFromD<DI> ret;
+  for (size_t i = 0; i < MaxLanes(di); i++) {
+    ret.raw[i] = detail::CastValueForInRangeF2IConv<TFromD<DI>>(v.raw[i]);
+  }
+  return ret;
 }
 
 template <size_t N>

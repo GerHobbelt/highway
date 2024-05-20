@@ -156,6 +156,7 @@ COMPAT = [
 cc_library(
     name = "hwy",
     srcs = [
+        "hwy/abort.cc",
         "hwy/aligned_allocator.cc",
         "hwy/per_target.cc",
         "hwy/print.cc",
@@ -163,6 +164,7 @@ cc_library(
     ],
     # Normal headers with include guards
     hdrs = [
+        "hwy/abort.h",
         "hwy/aligned_allocator.h",
         "hwy/base.h",
         "hwy/cache_control.h",
@@ -452,6 +454,7 @@ HWY_TESTS = [
     # To run bench_sort, specify --test=hwy/contrib/sort:bench_sort.
     ("hwy/examples/", "skeleton_test"),
     ("hwy/", "nanobenchmark_test"),
+    ("hwy/", "abort_test"),
     ("hwy/", "aligned_allocator_test"),
     ("hwy/", "base_test"),
     ("hwy/", "highway_test"),
@@ -472,6 +475,7 @@ HWY_TESTS = [
     ("hwy/tests/", "float_test"),
     ("hwy/tests/", "foreach_vec_test"),
     ("hwy/tests/", "if_test"),
+    ("hwy/tests/", "in_range_float_to_int_conv_test"),
     ("hwy/tests/", "interleaved_test"),
     ("hwy/tests/", "logical_test"),
     ("hwy/tests/", "mask_combine_test"),
@@ -480,6 +484,7 @@ HWY_TESTS = [
     ("hwy/tests/", "mask_slide_test"),
     ("hwy/tests/", "mask_test"),
     ("hwy/tests/", "masked_arithmetic_test"),
+    ("hwy/tests/", "masked_minmax_test"),
     ("hwy/tests/", "memory_test"),
     ("hwy/tests/", "minmax_test"),
     ("hwy/tests/", "mul_test"),

@@ -15,18 +15,12 @@
 
 #include "hwy/targets.h"
 
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>  // abort / exit
 
 #include "hwy/detect_targets.h"
 #include "hwy/highway.h"
 #include "hwy/per_target.h"  // VectorBytes
-
-#if HWY_IS_ASAN || HWY_IS_MSAN || HWY_IS_TSAN
-#include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace
-#endif
 
 #if HWY_ARCH_X86
 #include <xmmintrin.h>
@@ -138,6 +132,7 @@ enum class FeatureIndex : uint32_t {
   kAVX512DQ,
   kAVX512BW,
   kAVX512FP16,
+  kAVX512BF16,
 
   kVNNI,
   kVPCLMULQDQ,
@@ -205,6 +200,9 @@ uint64_t FlagsFromCPUID() {
     flags |= IsBitSet(abcd[2], 14) ? Bit(FeatureIndex::kPOPCNTDQ) : 0;
 
     flags |= IsBitSet(abcd[3], 23) ? Bit(FeatureIndex::kAVX512FP16) : 0;
+
+    Cpuid(7, 1, abcd);
+    flags |= IsBitSet(abcd[0], 5) ? Bit(FeatureIndex::kAVX512BF16) : 0;
   }
 
   return flags;
@@ -254,8 +252,11 @@ constexpr uint64_t kGroupAVX3_DL =
     Bit(FeatureIndex::kVAES) | Bit(FeatureIndex::kPOPCNTDQ) |
     Bit(FeatureIndex::kBITALG) | Bit(FeatureIndex::kGFNI) | kGroupAVX3;
 
+constexpr uint64_t kGroupAVX3_ZEN4 =
+    Bit(FeatureIndex::kAVX512BF16) | kGroupAVX3_DL;
+
 constexpr uint64_t kGroupAVX3_SPR =
-    Bit(FeatureIndex::kAVX512FP16) | kGroupAVX3_DL;
+    Bit(FeatureIndex::kAVX512FP16) | kGroupAVX3_ZEN4;
 
 int64_t DetectTargets() {
   int64_t bits = 0;  // return value of supported targets.
@@ -332,7 +333,8 @@ int64_t DetectTargets() {
 
   // This is mainly to work around the slow Zen4 CompressStore. It's unclear
   // whether subsequent AMD models will be affected; assume yes.
-  if ((bits & HWY_AVX3_DL) && IsAMD()) {
+  if ((bits & HWY_AVX3_DL) && (flags & kGroupAVX3_ZEN4) == kGroupAVX3_ZEN4 &&
+      IsAMD()) {
     bits |= HWY_AVX3_ZEN4;
   }
 
@@ -536,34 +538,6 @@ int64_t DetectTargets() {
 }
 
 }  // namespace
-
-HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
-    Abort(const char* file, int line, const char* format, ...) {
-  char buf[800];
-  va_list args;
-  va_start(args, format);
-  vsnprintf(buf, sizeof(buf), format, args);
-  va_end(args);
-
-  fprintf(stderr, "Abort at %s:%d: %s\n", file, line, buf);
-
-// If compiled with any sanitizer, they can also print a stack trace.
-#if HWY_IS_ASAN || HWY_IS_MSAN || HWY_IS_TSAN
-  __sanitizer_print_stack_trace();
-#endif  // HWY_IS_*
-  fflush(stderr);
-
-// Now terminate the program:
-#if HWY_ARCH_RVV
-  exit(1);  // trap/abort just freeze Spike.
-#elif HWY_IS_DEBUG_BUILD && !HWY_COMPILER_MSVC
-  // Facilitates breaking into a debugger, but don't use this in non-debug
-  // builds because it looks like "illegal instruction", which is misleading.
-  __builtin_trap();
-#else
-  abort();  // Compile error without this due to HWY_NORETURN.
-#endif
-}
 
 HWY_DLLEXPORT void DisableTargets(int64_t disabled_targets) {
   supported_mask_ = static_cast<int64_t>(~disabled_targets);
