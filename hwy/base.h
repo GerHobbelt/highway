@@ -1038,6 +1038,19 @@ HWY_API HWY_BITCASTSCALAR_CONSTEXPR To BitCastScalar(const From& val) {
 #endif
 #endif  // HWY_HAVE_SCALAR_F16_OPERATORS
 
+namespace detail {
+
+template <class T, class TVal = RemoveCvRef<T>>
+struct NativeSpecialFloatToWrapperT {
+  using type = T;
+};
+
+template <class T>
+using NativeSpecialFloatToWrapper =
+    typename NativeSpecialFloatToWrapperT<T>::type;
+
+}  // namespace detail
+
 // Match [u]int##_t naming scheme so rvv-inl.h macros can obtain the type name
 // by concatenating base type and bits. We use a wrapper class instead of a
 // typedef to the native type to ensure that the same symbols, e.g. for VQSort,
@@ -1166,6 +1179,17 @@ struct alignas(2) float16_t {
 #endif  // HWY_HAVE_SCALAR_F16_OPERATORS
 };
 static_assert(sizeof(hwy::float16_t) == 2, "Wrong size of float16_t");
+
+#if HWY_HAVE_SCALAR_F16_TYPE
+namespace detail {
+
+template <class T>
+struct NativeSpecialFloatToWrapperT<T, hwy::float16_t::Native> {
+  using type = hwy::float16_t;
+};
+
+}  // namespace detail
+#endif  // HWY_HAVE_SCALAR_F16_TYPE
 
 #if HWY_HAS_BUILTIN(__builtin_bit_cast) || HWY_COMPILER_MSVC >= 1926
 namespace detail {
@@ -1422,9 +1446,9 @@ HWY_F16_CONSTEXPR inline std::partial_ordering operator<=>(
 #endif
 
 #ifndef HWY_HAVE_SCALAR_BF16_OPERATORS
-// Recent enough compiler also has operators.
-#if HWY_HAVE_SCALAR_BF16_TYPE && \
-    (HWY_COMPILER_CLANG >= 1800 || HWY_COMPILER_GCC_ACTUAL >= 1300)
+// Recent enough compiler also has operators. aarch64 clang 18 hits internal
+// compiler errors on bf16 ToString, hence only enable on GCC for now.
+#if HWY_HAVE_SCALAR_BF16_TYPE && (HWY_COMPILER_GCC_ACTUAL >= 1300)
 #define HWY_HAVE_SCALAR_BF16_OPERATORS 1
 #else
 #define HWY_HAVE_SCALAR_BF16_OPERATORS 0
@@ -1567,6 +1591,17 @@ struct alignas(2) bfloat16_t {
 static_assert(sizeof(hwy::bfloat16_t) == 2, "Wrong size of bfloat16_t");
 
 #pragma pack(pop)
+
+#if HWY_HAVE_SCALAR_BF16_TYPE
+namespace detail {
+
+template <class T>
+struct NativeSpecialFloatToWrapperT<T, hwy::bfloat16_t::Native> {
+  using type = hwy::bfloat16_t;
+};
+
+}  // namespace detail
+#endif  // HWY_HAVE_SCALAR_BF16_TYPE
 
 #if HWY_HAS_BUILTIN(__builtin_bit_cast) || HWY_COMPILER_MSVC >= 1926
 namespace detail {
@@ -2145,6 +2180,7 @@ constexpr inline size_t RoundUpTo(size_t what, size_t align) {
 
 // Undefined results for x == 0.
 HWY_API size_t Num0BitsBelowLS1Bit_Nonzero32(const uint32_t x) {
+  HWY_DASSERT(x != 0);
 #if HWY_COMPILER_MSVC
   unsigned long index;  // NOLINT
   _BitScanForward(&index, x);
@@ -2155,6 +2191,7 @@ HWY_API size_t Num0BitsBelowLS1Bit_Nonzero32(const uint32_t x) {
 }
 
 HWY_API size_t Num0BitsBelowLS1Bit_Nonzero64(const uint64_t x) {
+  HWY_DASSERT(x != 0);
 #if HWY_COMPILER_MSVC
 #if HWY_ARCH_X86_64
   unsigned long index;  // NOLINT
@@ -2180,6 +2217,7 @@ HWY_API size_t Num0BitsBelowLS1Bit_Nonzero64(const uint64_t x) {
 
 // Undefined results for x == 0.
 HWY_API size_t Num0BitsAboveMS1Bit_Nonzero32(const uint32_t x) {
+  HWY_DASSERT(x != 0);
 #if HWY_COMPILER_MSVC
   unsigned long index;  // NOLINT
   _BitScanReverse(&index, x);
@@ -2190,6 +2228,7 @@ HWY_API size_t Num0BitsAboveMS1Bit_Nonzero32(const uint32_t x) {
 }
 
 HWY_API size_t Num0BitsAboveMS1Bit_Nonzero64(const uint64_t x) {
+  HWY_DASSERT(x != 0);
 #if HWY_COMPILER_MSVC
 #if HWY_ARCH_X86_64
   unsigned long index;  // NOLINT
@@ -2356,20 +2395,21 @@ ScalarAbs(hwy::UnsignedTag /*tag*/, T val) {
 
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR RemoveCvRef<T> ScalarAbs(T val) {
-  using TVal = MakeLaneTypeIfInteger<RemoveCvRef<T>>;
+  using TVal = MakeLaneTypeIfInteger<
+      detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>>;
   return detail::ScalarAbs(hwy::TypeTag<TVal>(), static_cast<TVal>(val));
 }
 
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsNaN(T val) {
-  using TF = RemoveCvRef<T>;
+  using TF = detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>;
   using TU = MakeUnsigned<TF>;
   return (BitCastScalar<TU>(ScalarAbs(val)) > ExponentMask<TF>());
 }
 
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsInf(T val) {
-  using TF = RemoveCvRef<T>;
+  using TF = detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>;
   using TU = MakeUnsigned<TF>;
   return static_cast<TU>(BitCastScalar<TU>(static_cast<TF>(val)) << 1) ==
          static_cast<TU>(MaxExponentTimes2<TF>());
@@ -2381,7 +2421,7 @@ template <typename T>
 static HWY_INLINE HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsFinite(
     hwy::FloatTag /*tag*/, T val) {
   using TU = MakeUnsigned<T>;
-  return (BitCastScalar<TU>(ScalarAbs(val)) < ExponentMask<T>());
+  return (BitCastScalar<TU>(hwy::ScalarAbs(val)) < ExponentMask<T>());
 }
 
 template <typename T>
@@ -2395,7 +2435,8 @@ static HWY_INLINE HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsFinite(
 
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsFinite(T val) {
-  using TVal = MakeLaneTypeIfInteger<RemoveCvRef<T>>;
+  using TVal = MakeLaneTypeIfInteger<
+      detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>>;
   return detail::ScalarIsFinite(hwy::IsFloatTag<TVal>(),
                                 static_cast<TVal>(val));
 }
@@ -2403,7 +2444,7 @@ HWY_API HWY_BITCASTSCALAR_CONSTEXPR bool ScalarIsFinite(T val) {
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR RemoveCvRef<T> ScalarCopySign(T magn,
                                                                   T sign) {
-  using TF = RemoveCvRef<T>;
+  using TF = RemoveCvRef<detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>>;
   using TU = MakeUnsigned<TF>;
   return BitCastScalar<TF>(static_cast<TU>(
       (BitCastScalar<TU>(static_cast<TF>(magn)) & (~SignMask<TF>())) |
@@ -2412,12 +2453,29 @@ HWY_API HWY_BITCASTSCALAR_CONSTEXPR RemoveCvRef<T> ScalarCopySign(T magn,
 
 template <typename T>
 HWY_API HWY_BITCASTSCALAR_CONSTEXPR bool ScalarSignBit(T val) {
-  using TVal = MakeLaneTypeIfInteger<RemoveCvRef<T>>;
+  using TVal = MakeLaneTypeIfInteger<
+      detail::NativeSpecialFloatToWrapper<RemoveCvRef<T>>>;
   using TU = MakeUnsigned<TVal>;
   return ((BitCastScalar<TU>(static_cast<TVal>(val)) & SignMask<TVal>()) != 0);
 }
 
 // Prevents the compiler from eliding the computations that led to "output".
+#if HWY_ARCH_PPC && (HWY_COMPILER_GCC || HWY_COMPILER_CLANG) && \
+    !defined(_SOFT_FLOAT)
+// Workaround to avoid test failures on PPC if compiled with Clang
+template <class T, HWY_IF_F32(T)>
+HWY_API void PreventElision(T&& output) {
+  asm volatile("" : "+f"(output)::"memory");
+}
+template <class T, HWY_IF_F64(T)>
+HWY_API void PreventElision(T&& output) {
+  asm volatile("" : "+d"(output)::"memory");
+}
+template <class T, HWY_IF_NOT_FLOAT3264(T)>
+HWY_API void PreventElision(T&& output) {
+  asm volatile("" : "+r"(output)::"memory");
+}
+#else
 template <class T>
 HWY_API void PreventElision(T&& output) {
 #if HWY_COMPILER_MSVC
@@ -2434,6 +2492,7 @@ HWY_API void PreventElision(T&& output) {
   asm volatile("" : "+r"(output) : : "memory");
 #endif
 }
+#endif
 
 }  // namespace hwy
 

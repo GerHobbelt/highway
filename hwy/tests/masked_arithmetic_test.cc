@@ -112,9 +112,9 @@ struct TestSignedMinMax {
     for (size_t rep = 0; rep < AdjustedReps(200); ++rep) {
       for (size_t i = 0; i < N; ++i) {
         bool_lanes[i] = (Random32(&rng) & 1024) ? TI(1) : TI(0);
-        const T t2 = static_cast<T>(AddWithWraparound(static_cast<T>(i), 2));
-        const T t3 = static_cast<T>(AddWithWraparound(static_cast<T>(i), 3));
-        const T t4 = static_cast<T>(AddWithWraparound(static_cast<T>(i), 4));
+        const T t2 = AddWithWraparound(ConvertScalarTo<T>(i), 2);
+        const T t3 = AddWithWraparound(ConvertScalarTo<T>(i), 3);
+        const T t4 = AddWithWraparound(ConvertScalarTo<T>(i), 4);
         if (bool_lanes[i]) {
           expected_min[i] = HWY_MIN(t3, t4);
           expected_max[i] = HWY_MAX(t3, t4);
@@ -170,14 +170,15 @@ struct TestAddSubMul {
       for (size_t i = 0; i < N; ++i) {
         bool_lanes[i] = (Random32(&rng) & 1024) ? TI(1) : TI(0);
         if (bool_lanes[i]) {
-          expected_add[i] = static_cast<T>(2 * i + 7);
-          expected_sub[i] = static_cast<T>(i + 5);
+          expected_add[i] = ConvertScalarTo<T>(2 * i + 7);
+          expected_sub[i] = ConvertScalarTo<T>(i + 5);
           const size_t mod_i = i & ((16 / sizeof(T)) - 1);
-          expected_mul[i] = static_cast<T>(mod_lanes[mod_i] * mod_lanes[mod_i]);
+          expected_mul[i] =
+              ConvertScalarTo<T>(mod_lanes[mod_i] * mod_lanes[mod_i]);
         } else {
-          expected_add[i] = static_cast<T>(i + 2);
-          expected_sub[i] = static_cast<T>(i + 2);
-          expected_mul[i] = static_cast<T>(i + 2);
+          expected_add[i] = ConvertScalarTo<T>(i + 2);
+          expected_sub[i] = ConvertScalarTo<T>(i + 2);
+          expected_mul[i] = ConvertScalarTo<T>(i + 2);
         }
       }
 
@@ -329,9 +330,10 @@ struct TestDiv {
       for (size_t i = 0; i < N; ++i) {
         bool_lanes[i] = (Random32(&rng) & 1024) ? TI(1) : TI(0);
         const size_t iota1 = (i + 1) & 7;
-        expected[i] = static_cast<T>(iota1);
+        expected[i] = ConvertScalarTo<T>(iota1);
         if (bool_lanes[i]) {
-          expected[i] = static_cast<T>(static_cast<double>(1 << iota1) / 2.0);
+          expected[i] =
+              ConvertScalarTo<T>(static_cast<double>(1 << iota1) / 2.0);
         }
       }
 
@@ -345,6 +347,120 @@ struct TestDiv {
 };
 
 HWY_NOINLINE void TestAllDiv() { ForFloatTypes(ForPartialVectors<TestDiv>()); }
+
+struct TestIntegerDivMod {
+  template <class D, HWY_IF_SIGNED_D(D)>
+  static HWY_INLINE void DoSignedDivModTests(
+      D d, const TFromD<D>* HWY_RESTRICT expected_quot,
+      const TFromD<D>* HWY_RESTRICT expected_mod,
+      const TFromD<D>* HWY_RESTRICT neg_expected_quot,
+      const TFromD<D>* HWY_RESTRICT neg_expected_mod, Mask<D> mask, Vec<D> va,
+      Vec<D> vb) {
+    using T = TFromD<D>;
+
+    const auto v1 = Set(d, static_cast<T>(1));
+    const auto vneg1 = Set(d, static_cast<T>(-1));
+
+    const auto neg_a = Neg(va);
+    const auto neg_b = Neg(vb);
+
+    HWY_ASSERT_VEC_EQ(d, neg_expected_quot,
+                      MaskedDivOr(vneg1, mask, neg_a, vb));
+    HWY_ASSERT_VEC_EQ(d, neg_expected_quot,
+                      MaskedDivOr(vneg1, mask, va, neg_b));
+    HWY_ASSERT_VEC_EQ(d, expected_quot, MaskedDivOr(v1, mask, neg_a, neg_b));
+
+    HWY_ASSERT_VEC_EQ(d, neg_expected_mod, MaskedModOr(neg_b, mask, neg_a, vb));
+    HWY_ASSERT_VEC_EQ(d, expected_mod, MaskedModOr(vb, mask, va, neg_b));
+    HWY_ASSERT_VEC_EQ(d, neg_expected_mod,
+                      MaskedModOr(neg_b, mask, neg_a, neg_b));
+  }
+
+  template <class D, HWY_IF_UNSIGNED_D(D)>
+  static HWY_INLINE void DoSignedDivModTests(
+      D /*d*/, const TFromD<D>* HWY_RESTRICT /*expected_quot*/,
+      const TFromD<D>* HWY_RESTRICT /*expected_mod*/,
+      const TFromD<D>* HWY_RESTRICT /*neg_expected_quot*/,
+      const TFromD<D>* HWY_RESTRICT /*neg_expected_mod*/, Mask<D> /*mask*/,
+      Vec<D> /*va*/, Vec<D> /*vb*/) {}
+
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    RandomState rng;
+
+    const auto v1 = Set(d, static_cast<T>(1));
+    const auto vmax = Set(d, LimitsMax<T>());
+
+    const auto vb = Max(And(Iota(d, static_cast<T>(hwy::Unpredictable1() + 1)),
+                            Set(d, static_cast<T>(LimitsMax<T>() >> 1))),
+                        Set(d, static_cast<T>(2)));
+    const auto va =
+        Max(And(Sub(vmax, Iota(d, static_cast<T>(hwy::Unpredictable1() - 1))),
+                vmax),
+            Add(vb, vb));
+
+    using TI = MakeSigned<T>;  // For mask > 0 comparison
+    using TU = MakeUnsigned<T>;
+    const Rebind<TI, D> di;
+    using VI = Vec<decltype(di)>;
+    const size_t N = Lanes(d);
+
+#if HWY_TARGET <= HWY_AVX3 && HWY_IS_MSAN
+    // Workaround for MSAN bug on AVX3
+    if (sizeof(T) <= 2 && N >= 16) {
+      return;
+    }
+#endif
+
+    auto bool_lanes = AllocateAligned<TI>(N);
+    auto expected_quot = AllocateAligned<T>(N);
+    auto expected_mod = AllocateAligned<T>(N);
+    auto neg_expected_quot = AllocateAligned<T>(N);
+    auto neg_expected_mod = AllocateAligned<T>(N);
+    HWY_ASSERT(bool_lanes && expected_quot && expected_mod &&
+               neg_expected_quot && neg_expected_mod);
+
+    // Each lane should have a chance of having mask=true.
+    for (size_t rep = 0; rep < AdjustedReps(200); ++rep) {
+      for (size_t i = 0; i < N; ++i) {
+        const auto a0 = static_cast<T>((static_cast<TU>(LimitsMax<T>()) - i) &
+                                       LimitsMax<T>());
+        const auto b0 =
+            static_cast<T>((i + 2u) & static_cast<TU>(LimitsMax<T>() >> 1));
+
+        const auto b = static_cast<T>(HWY_MAX(b0, 2));
+        const auto a = static_cast<T>(HWY_MAX(a0, b + b));
+
+        bool_lanes[i] = (Random32(&rng) & 1024) ? TI(1) : TI(0);
+        if (bool_lanes[i]) {
+          expected_quot[i] = static_cast<T>(a / b);
+          expected_mod[i] = static_cast<T>(a % b);
+        } else {
+          expected_quot[i] = static_cast<T>(1);
+          expected_mod[i] = b;
+        }
+
+        neg_expected_quot[i] =
+            static_cast<T>(static_cast<T>(0) - expected_quot[i]);
+        neg_expected_mod[i] =
+            static_cast<T>(static_cast<T>(0) - expected_mod[i]);
+      }
+
+      const VI mask_i = Load(di, bool_lanes.get());
+      const Mask<D> mask = RebindMask(d, Gt(mask_i, Zero(di)));
+
+      HWY_ASSERT_VEC_EQ(d, expected_quot.get(), MaskedDivOr(v1, mask, va, vb));
+      HWY_ASSERT_VEC_EQ(d, expected_mod.get(), MaskedModOr(vb, mask, va, vb));
+      DoSignedDivModTests(d, expected_quot.get(), expected_mod.get(),
+                          neg_expected_quot.get(), neg_expected_mod.get(), mask,
+                          va, vb);
+    }
+  }
+};
+
+HWY_NOINLINE void TestAllIntegerDivMod() {
+  ForIntegerTypes(ForPartialVectors<TestIntegerDivMod>());
+}
 
 struct TestFloatExceptions {
   template <class T, class D>
@@ -386,6 +502,7 @@ HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllSignedMinMax);
 HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllAddSubMul);
 HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllSatAddSub);
 HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllDiv);
+HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllIntegerDivMod);
 HWY_EXPORT_AND_TEST_P(HwyMaskedArithmeticTest, TestAllFloatExceptions);
 }  // namespace hwy
 
