@@ -72,11 +72,14 @@ us via the below email.
 
 *   Browsers: Chromium (+Vivaldi), Firefox (+floorp / foxhound / librewolf / Waterfox)
 *   Cryptography: google/distributed_point_functions
+*   Data structures: bkille/BitLib
 *   Image codecs: eustas/2im, [Grok JPEG 2000](https://github.com/GrokImageCompression/grok), [JPEG XL](https://github.com/libjxl/libjxl), OpenHTJ2K, [JPEGenc](https://github.com/osamu620/JPEGenc)
 *   Image processing: cloudinary/ssimulacra2, m-ab-s/media-autobuild_suite, [libvips](https://github.com/libvips/libvips)
 *   Image viewers: AlienCowEatCake/ImageViewer, mirillis/jpegxl-wic,
     [Lux panorama/image viewer](https://bitbucket.org/kfj/pv/)
 *   Information retrieval: [iresearch database index](https://github.com/iresearch-toolkit/iresearch/blob/e7638e7a4b99136ca41f82be6edccf01351a7223/core/utils/simd_utils.hpp), michaeljclark/zvec
+*   Machine learning: Tensorflow, Numpy, zpye/SimpleInfer
+*   Voxels: rools/voxl
 
 Other
 
@@ -261,7 +264,9 @@ be prefixed with `HWY_ATTR`, OR reside between `HWY_BEFORE_NAMESPACE()` and
 their opening brace.
 
 The entry points into code using Highway differ slightly depending on whether
-they use static or dynamic dispatch.
+they use static or dynamic dispatch. In both cases, we recommend that the
+top-level function receives one or more pointers to arrays, rather than
+target-specific vector types.
 
 *   For static dispatch, `HWY_TARGET` will be the best available target among
     `HWY_BASELINE_TARGETS`, i.e. those allowed for use by the compiler (see

@@ -41,7 +41,8 @@ HWY_NOINLINE void SimpleMatVec(const MatT* mat, const T* vec, size_t rows,
            [=](uint32_t r, size_t /*thread*/) {
              T dot = T{0};
              for (size_t c = 0; c < cols; c++) {
-               dot += mat[r * cols + c] * vec[c];
+               // For reasons unknown, fp16 += does not compile on clang (Arm).
+               dot = dot + static_cast<T>(mat[r * cols + c] * vec[c]);
              }
              out[r] = dot;
            });
@@ -139,7 +140,9 @@ class TestMatVec {
     for (size_t i = 0; i < kRows; ++i) {
       const double exp = static_cast<double>(expected[i]);
       const double act = static_cast<double>(actual[i]);
-      const double tolerance = exp * Epsilon<T>() * 20;
+      const double tolerance =
+          exp * 20 * 1.0 /
+          (1ULL << HWY_MIN(MantissaBits<MatT>(), MantissaBits<VecT>()));
       if (!(exp - tolerance <= act && act <= exp + tolerance)) {
         fprintf(stderr, "%s %zu x %zu: mismatch at %zu %f %f; tol %f\n",
                 TypeName(MatT(), 1).c_str(), kRows, kCols, i, exp, act,
@@ -170,13 +173,13 @@ class TestMatVec {
  public:
   template <class T, class D>
   HWY_INLINE void operator()(T /*unused*/, D d) {
-    #if HWY_ARCH_WASM
+#if HWY_ARCH_WASM
     // Threads might not be work on WASM; run only on main thread.
     CreatePoolAndTest(d, 0);
-    #else
+#else
     CreatePoolAndTest(d, 13);
     CreatePoolAndTest(d, 16);
-    #endif  // HWY_ARCH_WASM
+#endif  // HWY_ARCH_WASM
   }
 };
 

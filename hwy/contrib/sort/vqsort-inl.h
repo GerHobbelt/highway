@@ -43,6 +43,40 @@
 #include "hwy/contrib/sort/vqsort.h"  // Fill16BytesSecure
 #endif
 
+namespace hwy {
+namespace detail {
+
+HWY_INLINE void Fill16BytesStatic(void* bytes) {
+#if !VQSORT_ONLY_STATIC
+  if (Fill16BytesSecure(bytes)) return;
+#endif
+
+  uint64_t* words = reinterpret_cast<uint64_t*>(bytes);
+
+  // Static-only, or Fill16BytesSecure failed. Get some entropy from the
+  // stack/code location, and the clock() timer.
+  uint64_t** seed_stack = &words;
+  void (*seed_code)(void*) = &Fill16BytesStatic;
+  const uintptr_t bits_stack = reinterpret_cast<uintptr_t>(seed_stack);
+  const uintptr_t bits_code = reinterpret_cast<uintptr_t>(seed_code);
+  const uint64_t bits_time = static_cast<uint64_t>(clock());
+  words[0] = bits_stack ^ bits_time ^ 0xFEDCBA98;  // "Nothing up my sleeve"
+  words[1] = bits_code ^ bits_time ^ 0x01234567;   // constants.
+}
+
+HWY_INLINE uint64_t* GetGeneratorStateStatic() {
+  thread_local uint64_t state[3] = {0};
+  // This is a counter; zero indicates not yet initialized.
+  if (HWY_UNLIKELY(state[2] == 0)) {
+    Fill16BytesStatic(state);
+    state[2] = 1;
+  }
+  return state;
+}
+
+}  // namespace detail
+}  // namespace hwy
+
 #endif  // HIGHWAY_HWY_CONTRIB_SORT_VQSORT_INL_H_
 
 // Per-target
@@ -268,7 +302,7 @@ HWY_NOINLINE void Sort8Rows(Traits st, T* HWY_RESTRICT keys, size_t num_lanes,
 #endif  // HWY_MEM_OPS_MIGHT_FAULT
 #if !HWY_MEM_OPS_MIGHT_FAULT || HWY_IDE
   (void)buf;
-  const V vnum_lanes = Set(d, static_cast<T>(num_lanes));
+  const V vnum_lanes = Set(d, ConvertScalarTo<T>(num_lanes));
   // First offset where not all vector are guaranteed valid.
   const V kIota = Iota(d, static_cast<T>(kMinLanes));
   const V k1 = Set(d, static_cast<T>(kLanesPerRow));
@@ -369,7 +403,7 @@ HWY_NOINLINE void Sort16Rows(Traits st, T* HWY_RESTRICT keys, size_t num_lanes,
 #endif  // HWY_MEM_OPS_MIGHT_FAULT
 #if !HWY_MEM_OPS_MIGHT_FAULT || HWY_IDE
   (void)buf;
-  const V vnum_lanes = Set(d, static_cast<T>(num_lanes));
+  const V vnum_lanes = Set(d, ConvertScalarTo<T>(num_lanes));
   // First offset where not all vector are guaranteed valid.
   const V kIota = Iota(d, static_cast<T>(kMinLanes));
   const V k1 = Set(d, static_cast<T>(kLanesPerRow));
@@ -1757,34 +1791,6 @@ HWY_INLINE size_t CountAndReplaceNaN(D, Traits, T* HWY_RESTRICT, size_t) {
   return 0;
 }
 
-HWY_INLINE void Fill16BytesStatic(void* bytes) {
-#if !VQSORT_ONLY_STATIC
-  if (Fill16BytesSecure(bytes)) return;
-#endif
-
-  uint64_t* words = reinterpret_cast<uint64_t*>(bytes);
-
-  // Static-only, or Fill16BytesSecure failed. Get some entropy from the
-  // stack/code location, and the clock() timer.
-  uint64_t** seed_stack = &words;
-  void (*seed_code)(void*) = &Fill16BytesStatic;
-  const uintptr_t bits_stack = reinterpret_cast<uintptr_t>(seed_stack);
-  const uintptr_t bits_code = reinterpret_cast<uintptr_t>(seed_code);
-  const uint64_t bits_time = static_cast<uint64_t>(clock());
-  words[0] = bits_stack ^ bits_time ^ 0xFEDCBA98;  // "Nothing up my sleeve"
-  words[1] = bits_code ^ bits_time ^ 0x01234567;   // constants.
-}
-
-HWY_INLINE uint64_t* GetGeneratorStateStatic() {
-  thread_local uint64_t state[3] = {0};
-  // This is a counter; zero indicates not yet initialized.
-  if (HWY_UNLIKELY(state[2] == 0)) {
-    Fill16BytesStatic(state);
-    state[2] = 1;
-  }
-  return state;
-}
-
 }  // namespace detail
 
 // Old interface with user-specified buffer, retained for compatibility. Called
@@ -1809,7 +1815,7 @@ void Sort(D d, Traits st, T* HWY_RESTRICT keys, size_t num,
 
 #if VQSORT_ENABLED || HWY_IDE
   if (!detail::HandleSpecialCases(d, st, keys, num, buf)) {
-    uint64_t* HWY_RESTRICT state = detail::GetGeneratorStateStatic();
+    uint64_t* HWY_RESTRICT state = hwy::detail::GetGeneratorStateStatic();
     // Introspection: switch to worst-case N*logN heapsort after this many.
     // Should never be reached, so computing log2 exactly does not help.
     const size_t max_levels = 50;
