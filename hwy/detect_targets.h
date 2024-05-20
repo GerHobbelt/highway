@@ -505,7 +505,8 @@
 #endif
 
 // RVV requires intrinsics 0.11 or later, see #1156.
-#if HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 11000
+#if HWY_ARCH_RISCV && defined(__riscv_v_intrinsic) && \
+    __riscv_v_intrinsic >= 11000
 #define HWY_BASELINE_RVV HWY_RVV
 #else
 #define HWY_BASELINE_RVV 0
@@ -553,12 +554,11 @@
 // Clang, GCC and MSVC allow runtime dispatch on x86.
 #if HWY_ARCH_X86
 #define HWY_HAVE_RUNTIME_DISPATCH 1
-// On Arm/PPC, GCC and Clang 16+ do, and we require Linux to detect CPU
-// capabilities. Currently require opt-in for Clang because it is experimental.
-#elif (HWY_ARCH_ARM || HWY_ARCH_PPC || HWY_ARCH_S390X) &&                    \
-    (HWY_COMPILER_GCC_ACTUAL || (HWY_COMPILER_CLANG >= 1600 &&               \
-                                 defined(HWY_ENABLE_CLANG_ARM_DISPATCH))) && \
-    HWY_OS_LINUX && !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
+// On Arm, PPC, S390X, and RISC-V: GCC and Clang 17+ do, and we require Linux
+// to detect CPU capabilities.
+#elif (HWY_ARCH_ARM || HWY_ARCH_PPC || HWY_ARCH_S390X || HWY_ARCH_RISCV) &&    \
+    (HWY_COMPILER_GCC_ACTUAL || HWY_COMPILER_CLANG >= 1700) && HWY_OS_LINUX && \
+    !defined(TOOLCHAIN_MISS_SYS_AUXV_H)
 #define HWY_HAVE_RUNTIME_DISPATCH 1
 #else
 #define HWY_HAVE_RUNTIME_DISPATCH 0

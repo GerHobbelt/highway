@@ -73,7 +73,9 @@
 // https://github.com/simd-everywhere/simde/blob/47d6e603de9d04ee05cdfbc57cf282a02be1bf2a/simde/simde-detect-clang.h#L59.
 // Please send updates below to them as well, thanks!
 #if defined(__apple_build_version__) || __clang_major__ >= 999
-#if __has_attribute(unsafe_buffer_usage)  // no new warnings in 17.0
+#if __has_warning("-Woverriding-option")
+#define HWY_COMPILER_CLANG 1801
+#elif __has_attribute(unsafe_buffer_usage)  // no new warnings in 17.0
 #define HWY_COMPILER_CLANG 1700
 #elif __has_attribute(nouwtable)  // no new warnings in 16.0
 #define HWY_COMPILER_CLANG 1600
@@ -233,10 +235,12 @@
 #endif
 
 #ifdef __riscv
-#define HWY_ARCH_RVV 1
+#define HWY_ARCH_RISCV 1
 #else
-#define HWY_ARCH_RVV 0
+#define HWY_ARCH_RISCV 0
 #endif
+// DEPRECATED names; please use HWY_ARCH_RISCV instead.
+#define HWY_ARCH_RVV HWY_ARCH_RISCV 
 
 #if defined(__s390x__)
 #define HWY_ARCH_S390X 1
@@ -247,7 +251,7 @@
 // It is an error to detect multiple architectures at the same time, but OK to
 // detect none of the above.
 #if (HWY_ARCH_X86 + HWY_ARCH_PPC + HWY_ARCH_ARM + HWY_ARCH_ARM_OLD + \
-     HWY_ARCH_WASM + HWY_ARCH_RVV + HWY_ARCH_S390X) > 1
+     HWY_ARCH_WASM + HWY_ARCH_RISCV + HWY_ARCH_S390X) > 1
 #error "Must not detect more than one architecture"
 #endif
 

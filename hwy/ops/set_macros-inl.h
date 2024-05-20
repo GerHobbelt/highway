@@ -46,6 +46,14 @@
 #undef HWY_CAP_GE256
 #undef HWY_CAP_GE512
 
+#undef HWY_TARGET_IS_SVE
+#if HWY_TARGET == HWY_SVE || HWY_TARGET == HWY_SVE2 || \
+    HWY_TARGET == HWY_SVE_256 || HWY_TARGET == HWY_SVE2_128
+#define HWY_TARGET_IS_SVE 1
+#else
+#define HWY_TARGET_IS_SVE 0
+#endif
+
 // Supported on all targets except RVV (requires GCC 14 or upcoming Clang)
 #if HWY_TARGET == HWY_RVV &&                                        \
     ((HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1400) || \
@@ -415,8 +423,13 @@
 
 #if HWY_TARGET == HWY_NEON_WITHOUT_AES
 // Do not define HWY_TARGET_STR (no pragma).
-#else
+#elif (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1300) || \
+    (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 1300)
+// GCC 12 or earlier and Clang 12 or earlier require +crypto be added to the
+// target string to enable AArch64 AES intrinsics
 #define HWY_TARGET_STR "+crypto"
+#else
+#define HWY_TARGET_STR "+aes"
 #endif  // HWY_TARGET == HWY_NEON_WITHOUT_AES
 
 #endif  // HWY_ARCH_ARM_V7
@@ -426,8 +439,7 @@
 
 //-----------------------------------------------------------------------------
 // SVE[2]
-#elif HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE || \
-    HWY_TARGET == HWY_SVE_256 || HWY_TARGET == HWY_SVE2_128
+#elif HWY_TARGET_IS_SVE
 
 // SVE only requires lane alignment, not natural alignment of the entire vector.
 #define HWY_ALIGN alignas(8)

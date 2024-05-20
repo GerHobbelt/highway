@@ -241,19 +241,29 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
     }                                     \
   } while (0)
 
-#if HWY_HAS_FEATURE(memory_sanitizer) || defined(MEMORY_SANITIZER)
+#if HWY_HAS_FEATURE(memory_sanitizer) || defined(MEMORY_SANITIZER) || \
+    defined(__SANITIZE_MEMORY__)
 #define HWY_IS_MSAN 1
 #else
 #define HWY_IS_MSAN 0
 #endif
 
-#if HWY_HAS_FEATURE(address_sanitizer) || defined(ADDRESS_SANITIZER)
+#if HWY_HAS_FEATURE(address_sanitizer) || defined(ADDRESS_SANITIZER) || \
+    defined(__SANITIZE_ADDRESS__)
 #define HWY_IS_ASAN 1
 #else
 #define HWY_IS_ASAN 0
 #endif
 
-#if HWY_HAS_FEATURE(thread_sanitizer) || defined(THREAD_SANITIZER)
+#if HWY_HAS_FEATURE(hwaddress_sanitizer) || defined(HWADDRESS_SANITIZER) || \
+    defined(__SANITIZE_HWADDRESS__)
+#define HWY_IS_HWASAN 1
+#else
+#define HWY_IS_HWASAN 0
+#endif
+
+#if HWY_HAS_FEATURE(thread_sanitizer) || defined(THREAD_SANITIZER) || \
+    defined(__SANITIZE_THREAD__)
 #define HWY_IS_TSAN 1
 #else
 #define HWY_IS_TSAN 0
@@ -279,7 +289,8 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
 // Clang does not define NDEBUG, but it and GCC define __OPTIMIZE__, and recent
 // MSVC defines NDEBUG (if not, could instead check _DEBUG).
 #if (!defined(__OPTIMIZE__) && !defined(NDEBUG)) || HWY_IS_ASAN || \
-    HWY_IS_MSAN || HWY_IS_TSAN || HWY_IS_UBSAN || defined(__clang_analyzer__)
+    HWY_IS_HWASAN || HWY_IS_MSAN || HWY_IS_TSAN || HWY_IS_UBSAN || \
+    defined(__clang_analyzer__)
 #define HWY_IS_DEBUG_BUILD 1
 #else
 #define HWY_IS_DEBUG_BUILD 0
@@ -370,7 +381,7 @@ HWY_API void ZeroBytes(void* to, size_t num_bytes) {
 
 #if HWY_ARCH_X86
 static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 64;  // AVX-512
-#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && \
+#elif HWY_ARCH_RISCV && defined(__riscv_v_intrinsic) && \
     __riscv_v_intrinsic >= 11000
 // Not actually an upper bound on the size.
 static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 4096;
@@ -386,7 +397,7 @@ static constexpr HWY_MAYBE_UNUSED size_t kMaxVectorSize = 16;
 // exceed the stack size.
 #if HWY_ARCH_X86
 #define HWY_ALIGN_MAX alignas(64)
-#elif HWY_ARCH_RVV && defined(__riscv_v_intrinsic) && \
+#elif HWY_ARCH_RISCV && defined(__riscv_v_intrinsic) && \
     __riscv_v_intrinsic >= 11000
 #define HWY_ALIGN_MAX alignas(8)  // only elements need be aligned
 #else
@@ -1046,7 +1057,7 @@ HWY_API HWY_BITCASTSCALAR_CONSTEXPR To BitCastScalar(const From& val) {
 
 // RVV with f16 extension supports _Float16 and f16 vector ops. If set, implies
 // HWY_HAVE_FLOAT16.
-#if HWY_ARCH_RVV && defined(__riscv_zvfh) && HWY_COMPILER_CLANG >= 1600
+#if HWY_ARCH_RISCV && defined(__riscv_zvfh) && HWY_COMPILER_CLANG >= 1600
 #define HWY_RVV_HAVE_F16_VEC 1
 #else
 #define HWY_RVV_HAVE_F16_VEC 0
@@ -1394,8 +1405,22 @@ HWY_API HWY_F16_CONSTEXPR float16_t F16FromF32(float f32) {
   // 1[01] + 10 =  1[11]
   // 1[10] + 10 = C0[00]  (round up toward even with C=1 carry out)
   // 1[11] + 10 = C0[01]  (round up toward even with C=1 carry out)
-  const uint32_t odd_bit = (mantissa32 >> 13) & 1;
-  const uint32_t rounded = mantissa32 + odd_bit + 0xFFF;
+
+  // If |f32| >= 2^-24, f16_ulp_bit_idx is the index of the F32 mantissa bit
+  // that will be shifted down into the ULP bit of the rounded down F16 result
+
+  // The biased F32 exponent of 2^-14 (the smallest positive normal F16 value)
+  // is 113, and bit 13 of the F32 mantissa will be shifted down to into the ULP
+  // bit of the rounded down F16 result if |f32| >= 2^14
+
+  // If |f32| < 2^-24, f16_ulp_bit_idx is equal to 24 as there are 24 mantissa
+  // bits (including the implied 1 bit) in the mantissa of a normal F32 value
+  // and as we want to round up the mantissa if |f32| > 2^-25 && |f32| < 2^-24
+  const int32_t f16_ulp_bit_idx =
+      HWY_MIN(HWY_MAX(126 - static_cast<int32_t>(biased_exp32), 13), 24);
+  const uint32_t odd_bit = ((mantissa32 | 0x800000u) >> f16_ulp_bit_idx) & 1;
+  const uint32_t rounded =
+      mantissa32 + odd_bit + (uint32_t{1} << (f16_ulp_bit_idx - 1)) - 1u;
   const bool carry = rounded >= (1u << 23);
 
   const int32_t exp = static_cast<int32_t>(biased_exp32) - 127 + carry;
