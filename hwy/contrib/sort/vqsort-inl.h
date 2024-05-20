@@ -2202,6 +2202,7 @@ void VQPartialSortStatic(T* HWY_RESTRICT keys, const size_t num, const size_t k,
 #else
   (void)keys;
   (void)num;
+  (void)k;
   HWY_ASSERT(0);
 #endif  // VQSORT_ENABLED
 }
@@ -2220,6 +2221,7 @@ void VQPartialSortStatic(T* HWY_RESTRICT keys, const size_t num, const size_t k,
 #else
   (void)keys;
   (void)num;
+  (void)k;
   HWY_ASSERT(0);
 #endif  // VQSORT_ENABLED
 }
@@ -2237,6 +2239,7 @@ void VQSelectStatic(T* HWY_RESTRICT keys, const size_t num, const size_t k,
 #else
   (void)keys;
   (void)num;
+  (void)k;
   HWY_ASSERT(0);
 #endif  // VQSORT_ENABLED
 }
@@ -2254,6 +2257,7 @@ void VQSelectStatic(T* HWY_RESTRICT keys, const size_t num, const size_t k,
 #else
   (void)keys;
   (void)num;
+  (void)k;
   HWY_ASSERT(0);
 #endif  // VQSORT_ENABLED
 }

@@ -154,10 +154,12 @@ class TestMatVec {
     Generate(dv, av, kRows, GenerateMod());
 
     AlignedFreeUniquePtr<T[]> expected_without_add = AllocateAligned<T>(kRows);
+    HWY_ASSERT(expected_without_add);
     SimpleMatVecAdd(pm, pv, static_cast<VecT*>(nullptr), kRows, kCols,
                     expected_without_add.get(), pool);
 
     AlignedFreeUniquePtr<T[]> actual_without_add = AllocateAligned<T>(kRows);
+    HWY_ASSERT(actual_without_add);
     MatVec<kRows, kCols>(pm, pv, actual_without_add.get(), pool);
 
     const auto assert_close = [&](const AlignedFreeUniquePtr<T[]>& expected,
@@ -206,6 +208,8 @@ class TestMatVec {
     ThreadPool pool(HWY_MIN(num_threads, ThreadPool::MaxThreads()));
 
     Test<AdjustedReps(192), AdjustedReps(256)>(d, pool);
+// Fewer tests due to compiler OOM
+#if HWY_TARGET != HWY_RVV
     Test<40, AdjustedReps(512)>(d, pool);
     Test<AdjustedReps(1024), 50>(d, pool);
 
@@ -213,27 +217,35 @@ class TestMatVec {
     if (sizeof(TFromD<D>) != 2 && sizeof(VecT) != 2) {
       Test<AdjustedReps(1536), AdjustedReps(1536)>(d, pool);
     }
+#endif  // HWY_TARGET != HWY_RVV
   }
 
  public:
   template <class T, class D>
   HWY_INLINE void operator()(T /*unused*/, D d) {
     CreatePoolAndTest(d, 13);
+// Fewer tests due to compiler OOM
+#if HWY_TARGET != HWY_RVV
     CreatePoolAndTest(d, 16);
+#endif
   }
 };
 
 void TestMatVecAdd() {
   ThreadPool pool(1);
   auto mat = AllocateAligned<float>(8);
+  HWY_ASSERT(mat);
   CopyBytes(std::vector<float>{1, 2, 3, 4, 5, 6, 7, 8}.data(), mat.get(),
             8 * sizeof(float));
   auto vec = AllocateAligned<float>(4);
+  HWY_ASSERT(vec);
   CopyBytes(std::vector<float>{1, 2, 3, 4}.data(), vec.get(),
             4 * sizeof(float));
   auto add = AllocateAligned<float>(2);
+  HWY_ASSERT(add);
   CopyBytes(std::vector<float>{1, 2}.data(), add.get(), 2 * sizeof(float));
   auto out = AllocateAligned<float>(2);
+  HWY_ASSERT(out);
   MatVecAdd<2, 4>(mat.get(), vec.get(), add.get(), out.get(), pool);
   HWY_ASSERT_EQ(out[0], 1 * 1 + 2 * 2 + 3 * 3 + 4 * 4 + 1);
   HWY_ASSERT_EQ(out[1], 5 * 1 + 6 * 2 + 7 * 3 + 8 * 4 + 2);

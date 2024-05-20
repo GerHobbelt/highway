@@ -38,7 +38,7 @@
 #ifndef TOOLCHAIN_MISS_ASM_HWCAP_H
 #include <asm/hwcap.h>
 #endif
-#ifndef TOOLCHAIN_MISS_SYS_AUXV_H
+#if HWY_HAVE_AUXV
 #include <sys/auxv.h>
 #endif
 
@@ -455,6 +455,7 @@ namespace arm {
 int64_t DetectTargets() {
   int64_t bits = 0;               // return value of supported targets.
   using CapBits = unsigned long;  // NOLINT
+  // For Android, this has been supported since API 20 (2014).
   const CapBits hw = getauxval(AT_HWCAP);
   (void)hw;
 
@@ -465,6 +466,13 @@ int64_t DetectTargets() {
 #if defined(HWCAP_AES)
   if (hw & HWCAP_AES) {
     bits |= HWY_NEON;
+
+#if defined(HWCAP_ASIMDHP) && defined(HWCAP_ASIMDDP) && defined(HWCAP_ASIMDBF16)
+    const int64_t kGroupBF16 = HWCAP_ASIMDHP | HWCAP_ASIMDDP | HWCAP_ASIMDBF16;
+    if ((hw & kGroupBF16) == kGroupBF16) {
+      bits |= HWY_NEON_BF16;
+    }
+#endif  // HWCAP_ASIMDHP && HWCAP_ASIMDDP && HWCAP_ASIMDBF16
   }
 #endif  // HWCAP_AES
 
@@ -629,8 +637,13 @@ int64_t DetectTargets() {
     // Check that a vuint8m1_t vector is at least 16 bytes and that tail
     // agnostic and mask agnostic mode are supported
     asm volatile(
+        // Avoid compiler error on GCC or Clang if -march=rv64gcv1p0 or
+        // -march=rv32gcv1p0 option is not specified on the command line
+        ".option push\n\t"
+        ".option arch, +v\n\t"
         "vsetvli %0, zero, e8, m1, ta, ma\n\t"
-        "csrr %1, vtype"
+        "csrr %1, vtype\n\t"
+        ".option pop"
         : "=r"(e8m1_vec_len), "=r"(vtype_reg_val));
 
     // The RVV target is supported if the VILL bit of VTYPE (the MSB bit of

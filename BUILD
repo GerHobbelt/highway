@@ -308,15 +308,24 @@ cc_library(
 )
 
 cc_library(
+    name = "bit_set",
+    hdrs = ["hwy/contrib/thread_pool/bit_set.h"],
+    compatible_with = [],
+    copts = COPTS,
+    deps = [
+        ":hwy",  # HWY_ASSERT
+    ],
+)
+
+cc_library(
     name = "topology",
     srcs = ["hwy/contrib/thread_pool/topology.cc"],
     hdrs = ["hwy/contrib/thread_pool/topology.h"],
     compatible_with = [],
     copts = COPTS,
     deps = [
+        ":bit_set",
         ":hwy",  # HWY_ASSERT
-        ":nanobenchmark",
-        ":stats",
     ],
 )
 
@@ -418,6 +427,7 @@ cc_library(
     # GUNIT_INTERNAL_BUILD_MODE defined by the test.
     deps = [
         ":hwy",
+        ":nanobenchmark",
     ],
 )
 
@@ -461,6 +471,7 @@ HWY_TESTS = [
     ("hwy/contrib/math/", "math_test"),
     ("hwy/contrib/random/", "random_test"),
     ("hwy/contrib/matvec/", "matvec_test"),
+    ("hwy/contrib/thread_pool/", "bit_set_test"),
     ("hwy/contrib/thread_pool/", "thread_pool_test"),
     ("hwy/contrib/thread_pool/", "topology_test"),
     ("hwy/contrib/unroller/", "unroller_test"),
@@ -474,6 +485,7 @@ HWY_TESTS = [
     ("hwy/", "highway_test"),
     ("hwy/", "targets_test"),
     ("hwy/tests/", "arithmetic_test"),
+    ("hwy/tests/", "bit_permute_test"),
     ("hwy/tests/", "blockwise_shift_test"),
     ("hwy/tests/", "blockwise_test"),
     ("hwy/tests/", "cast_test"),
@@ -531,6 +543,7 @@ HWY_TEST_COPTS = select({
 HWY_TEST_DEPS = [
     ":algo",
     ":bit_pack",
+    ":bit_set",
     ":dot",
     ":hwy",
     ":hwy_test_util",
@@ -559,6 +572,11 @@ HWY_TEST_DEPS = [
                 subdir + test + ".cc",
             ],
             copts = COPTS + HWY_TEST_COPTS,
+            # Fixes OOM for matvec_test on RVV.
+            exec_properties = select({
+                "@platforms//cpu:riscv64": {"mem": "16g"},
+                "//conditions:default": None,
+            }),
             features = select({
                 "@platforms//cpu:riscv64": ["fully_static_link"],
                 "//conditions:default": [],
@@ -579,6 +597,7 @@ HWY_TEST_DEPS = [
                 "//conditions:default": False,
             }),
             local_defines = ["HWY_IS_TEST"],
+            # Placeholder for malloc, do not remove
             # for test_suite.
             tags = ["hwy_ops_test"],
             deps = HWY_TEST_DEPS + select({
