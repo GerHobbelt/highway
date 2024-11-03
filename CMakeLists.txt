@@ -663,6 +663,7 @@ set(HWY_TEST_FILES
   hwy/abort_test.cc
   hwy/aligned_allocator_test.cc
   hwy/base_test.cc
+  hwy/bit_set_test.cc
   hwy/highway_test.cc
   hwy/nanobenchmark_test.cc
   hwy/targets_test.cc
@@ -679,6 +680,7 @@ set(HWY_TEST_FILES
   hwy/tests/count_test.cc
   hwy/tests/crypto_test.cc
   hwy/tests/demote_test.cc
+  hwy/tests/div_test.cc
   hwy/tests/dup128_vec_test.cc
   hwy/tests/expand_test.cc
   hwy/tests/float_test.cc
@@ -700,6 +702,7 @@ set(HWY_TEST_FILES
   hwy/tests/reduction_test.cc
   hwy/tests/resize_test.cc
   hwy/tests/reverse_test.cc
+  hwy/tests/saturated_test.cc
   hwy/tests/shift_test.cc
   hwy/tests/shuffle4_test.cc
   hwy/tests/slide_up_down_test.cc
@@ -729,7 +732,6 @@ list(APPEND HWY_TEST_FILES
   hwy/contrib/random/random_test.cc
   hwy/contrib/sort/sort_test.cc
   hwy/contrib/sort/bench_sort.cc
-  hwy/contrib/thread_pool/bit_set_test.cc
   hwy/contrib/thread_pool/thread_pool_test.cc
   hwy/contrib/thread_pool/topology_test.cc
   hwy/contrib/unroller/unroller_test.cc

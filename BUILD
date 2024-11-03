@@ -245,6 +245,16 @@ cc_library(
 )
 
 cc_library(
+    name = "bit_set",
+    hdrs = ["hwy/bit_set.h"],
+    compatible_with = [],
+    copts = COPTS,
+    deps = [
+        ":hwy",  # HWY_ASSERT
+    ],
+)
+
+cc_library(
     name = "profiler",
     hdrs = [
         "hwy/profiler.h",
@@ -304,16 +314,6 @@ cc_library(
     ],
     deps = [
         ":hwy",
-    ],
-)
-
-cc_library(
-    name = "bit_set",
-    hdrs = ["hwy/contrib/thread_pool/bit_set.h"],
-    compatible_with = [],
-    copts = COPTS,
-    deps = [
-        ":hwy",  # HWY_ASSERT
     ],
 )
 
@@ -471,18 +471,18 @@ HWY_TESTS = [
     ("hwy/contrib/math/", "math_test"),
     ("hwy/contrib/random/", "random_test"),
     ("hwy/contrib/matvec/", "matvec_test"),
-    ("hwy/contrib/thread_pool/", "bit_set_test"),
     ("hwy/contrib/thread_pool/", "thread_pool_test"),
     ("hwy/contrib/thread_pool/", "topology_test"),
     ("hwy/contrib/unroller/", "unroller_test"),
     # contrib/sort has its own BUILD, we also add sort_test to GUITAR_TESTS.
     # To run bench_sort, specify --test=hwy/contrib/sort:bench_sort.
     ("hwy/examples/", "skeleton_test"),
-    ("hwy/", "nanobenchmark_test"),
     ("hwy/", "abort_test"),
     ("hwy/", "aligned_allocator_test"),
     ("hwy/", "base_test"),
+    ("hwy/", "bit_set_test"),
     ("hwy/", "highway_test"),
+    ("hwy/", "nanobenchmark_test"),
     ("hwy/", "targets_test"),
     ("hwy/tests/", "arithmetic_test"),
     ("hwy/tests/", "bit_permute_test"),
@@ -496,6 +496,7 @@ HWY_TESTS = [
     ("hwy/tests/", "count_test"),
     ("hwy/tests/", "crypto_test"),
     ("hwy/tests/", "demote_test"),
+    ("hwy/tests/", "div_test"),
     ("hwy/tests/", "dup128_vec_test"),
     ("hwy/tests/", "expand_test"),
     ("hwy/tests/", "float_test"),
@@ -517,6 +518,7 @@ HWY_TESTS = [
     ("hwy/tests/", "reduction_test"),
     ("hwy/tests/", "resize_test"),
     ("hwy/tests/", "reverse_test"),
+    ("hwy/tests/", "saturated_test"),
     ("hwy/tests/", "shift_test"),
     ("hwy/tests/", "shuffle4_test"),
     ("hwy/tests/", "slide_up_down_test"),
@@ -545,13 +547,13 @@ HWY_TEST_DEPS = [
     ":bit_pack",
     ":bit_set",
     ":dot",
-    ":hwy",
     ":hwy_test_util",
+    ":hwy",
     ":image",
     ":math",
-    ":random",
     ":matvec",
     ":nanobenchmark",
+    ":random",
     ":skeleton",
     ":thread_pool",
     ":topology",
