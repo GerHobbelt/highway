@@ -87,10 +87,10 @@ selects.config_setting_group(
 
 # Additional warnings for Clang OR GCC (skip for MSVC)
 CLANG_GCC_COPTS = [
-    "-Wunused-parameter",
-    "-Wunused-variable",
+    "-Wunused",
     "-Wextra-semi",
     "-Wunreachable-code",
+    "-Wshadow",
 ]
 
 # Warnings supported by Clang and Clang-cl
@@ -109,6 +109,7 @@ CLANG_OR_CLANGCL_OPTS = CLANG_GCC_COPTS + [
     "-Wtautological-overlap-compare",
     "-Wthread-safety-analysis",
     "-Wundefined-func-template",
+    "-Wunreachable-code-aggressive",
     "-Wunused-comparison",
 ]
 
@@ -487,12 +488,14 @@ HWY_TESTS = [
     ("hwy/", "targets_test"),
     ("hwy/tests/", "arithmetic_test"),
     ("hwy/tests/", "bit_permute_test"),
+    ("hwy/tests/", "blockwise_combine_test"),
     ("hwy/tests/", "blockwise_shift_test"),
     ("hwy/tests/", "blockwise_test"),
     ("hwy/tests/", "cast_test"),
     ("hwy/tests/", "combine_test"),
     ("hwy/tests/", "compare_test"),
     ("hwy/tests/", "compress_test"),
+    ("hwy/tests/", "concat_test"),
     ("hwy/tests/", "convert_test"),
     ("hwy/tests/", "count_test"),
     ("hwy/tests/", "crypto_test"),
