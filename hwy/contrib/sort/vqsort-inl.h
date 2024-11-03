@@ -1,5 +1,7 @@
 // Copyright 2021 Google LLC
+// Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: BSD-3-Clause
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -588,16 +590,17 @@ HWY_NOINLINE void BaseCase(D d, TraitsKV, T* HWY_RESTRICT keys,
 
   using FuncPtr = decltype(&Sort2To2<Traits, T>);
   const FuncPtr funcs[9] = {
-    /* <= 1 */ nullptr,  // We ensured num_keys > 1.
-    /* <= 2 */ &Sort2To2<Traits, T>,
-    /* <= 4 */ &Sort3To4<Traits, T>,
-    /* <= 8 */ &Sort8Rows<1, Traits, T>,  // 1 key per row
-    /* <= 16 */ kMaxKeysPerVector >= 2 ? &Sort8Rows<2, Traits, T> : nullptr,
-    /* <= 32 */ kMaxKeysPerVector >= 4 ? &Sort8Rows<4, Traits, T> : nullptr,
-    /* <= 64 */ kMaxKeysPerVector >= 4 ? &Sort16Rows<4, Traits, T> : nullptr,
-    /* <= 128 */ kMaxKeysPerVector >= 8 ? &Sort16Rows<8, Traits, T> : nullptr,
+      /* <= 1 */ nullptr,  // We ensured num_keys > 1.
+      /* <= 2 */ &Sort2To2<Traits, T>,
+      /* <= 4 */ &Sort3To4<Traits, T>,
+      /* <= 8 */ &Sort8Rows<1, Traits, T>,  // 1 key per row
+      /* <= 16 */ kMaxKeysPerVector >= 2 ? &Sort8Rows<2, Traits, T> : nullptr,
+      /* <= 32 */ kMaxKeysPerVector >= 4 ? &Sort8Rows<4, Traits, T> : nullptr,
+      /* <= 64 */ kMaxKeysPerVector >= 4 ? &Sort16Rows<4, Traits, T> : nullptr,
+      /* <= 128 */ kMaxKeysPerVector >= 8 ? &Sort16Rows<8, Traits, T> : nullptr,
 #if !HWY_COMPILER_MSVC && !HWY_IS_DEBUG_BUILD
-    /* <= 256 */ kMaxKeysPerVector >= 16 ? &Sort16Rows<16, Traits, T> : nullptr,
+      /* <= 256 */ kMaxKeysPerVector >= 16 ? &Sort16Rows<16, Traits, T>
+                                           : nullptr,
 #endif
   };
   funcs[ceil_log2](st, keys, num_lanes, buf);
@@ -762,9 +765,10 @@ HWY_INLINE void StoreRightAndBuf(D d, Traits st, const Vec<D> v,
   const size_t N = Lanes(d);
   const Mask<D> comp = st.Compare(d, pivot, v);
   const size_t numL = CompressStore(v, Not(comp), d, buf + bufL);
+  const size_t numR = N - numL;
   bufL += numL;
-  writeR -= (N - numL);
-  (void)CompressBlendedStore(v, comp, d, keys + writeR);
+  writeR -= numR;
+  StoreN(Compress(v, comp), d, keys + writeR, numR);
 }
 
 // Moves "<= pivot" keys to the front, and others to the back. pivot is
@@ -965,7 +969,7 @@ HWY_NOINLINE bool MaybePartitionTwoValue(D d, Traits st, T* HWY_RESTRICT keys,
             StoreU(valueR, d, keys + writeL);
           }
         }
-        BlendedStore(valueR, FirstN(d, i - writeL), d, keys + writeL);
+        StoreN(valueR, d, keys + writeL, i - writeL);
         return false;
       }
       StoreU(valueL, d, keys + writeL);
@@ -996,10 +1000,10 @@ HWY_NOINLINE bool MaybePartitionTwoValue(D d, Traits st, T* HWY_RESTRICT keys,
         StoreU(valueR, d, keys + writeL);
       }
     }
-    BlendedStore(valueR, FirstN(d, i - writeL), d, keys + writeL);
+    StoreN(valueR, d, keys + writeL, i - writeL);
     return false;
   }
-  BlendedStore(valueL, valid, d, keys + writeL);
+  StoreN(valueL, d, keys + writeL, remaining);
   writeL += CountTrue(d, eqL);
 
   // Fill right side
@@ -1009,7 +1013,7 @@ HWY_NOINLINE bool MaybePartitionTwoValue(D d, Traits st, T* HWY_RESTRICT keys,
       StoreU(valueR, d, keys + i);
     }
   }
-  BlendedStore(valueR, FirstN(d, num - i), d, keys + i);
+  StoreN(valueR, d, keys + i, num - i);
 
   if (VQSORT_PRINT >= 2) {
     fprintf(stderr, "Successful MaybePartitionTwoValue\n");
@@ -1060,7 +1064,7 @@ HWY_INLINE bool MaybePartitionTwoValueR(D d, Traits st, T* HWY_RESTRICT keys,
           StoreU(valueL, d, keys + pos);
         }
       }
-      BlendedStore(valueL, FirstN(d, endL - pos), d, keys + pos);
+      StoreN(valueL, d, keys + pos, endL - pos);
       return false;
     }
     StoreU(valueR, d, keys + pos);
@@ -1095,7 +1099,7 @@ HWY_INLINE bool MaybePartitionTwoValueR(D d, Traits st, T* HWY_RESTRICT keys,
         StoreU(valueL, d, keys + pos);
       }
     }
-    BlendedStore(valueL, FirstN(d, endL - pos), d, keys + pos);
+    StoreN(valueL, d, keys + pos, endL - pos);
     return false;
   }
   const size_t lastR = CountTrue(d, eqR);
@@ -1855,7 +1859,10 @@ HWY_NOINLINE void Recurse(D d, Traits st, T* HWY_RESTRICT keys,
   // of only one unique value. Note that for floating-point, PrevValue can
   // return the same value (for -inf inputs), but that would just mean the
   // pivot is again one of the keys.
-  HWY_DASSERT(bound != 0);
+  using Order = typename Traits::Order;
+  (void)Order::IsAscending();
+  HWY_DASSERT_M(bound != 0,
+                (Order::IsAscending() ? "Ascending" : "Descending"));
   // ChoosePivot* ensure pivot != last, so the right partition is never empty
   // except in the rare case of the pivot matching the last-in-sort-order value,
   // which implies we anyway skip the right partition due to kWasLast.

@@ -22,6 +22,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if !defined(HWY_NO_LIBCXX)
+#include <ostream>
+#endif
+
 #include "hwy/detect_compiler_arch.h"
 #include "hwy/highway_export.h"
 
@@ -253,12 +257,13 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
   ::hwy::Abort(__FILE__, __LINE__, format, ##__VA_ARGS__)
 
 // Always enabled.
-#define HWY_ASSERT(condition)             \
-  do {                                    \
-    if (!(condition)) {                   \
-      HWY_ABORT("Assert %s", #condition); \
-    }                                     \
+#define HWY_ASSERT_M(condition, msg)               \
+  do {                                             \
+    if (!(condition)) {                            \
+      HWY_ABORT("Assert %s: %s", #condition, msg); \
+    }                                              \
   } while (0)
+#define HWY_ASSERT(condition) HWY_ASSERT_M(condition, "")
 
 #if HWY_HAS_FEATURE(memory_sanitizer) || defined(MEMORY_SANITIZER) || \
     defined(__SANITIZE_MEMORY__)
@@ -317,8 +322,12 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
 #endif  // HWY_IS_DEBUG_BUILD
 
 #if HWY_IS_DEBUG_BUILD
-#define HWY_DASSERT(condition) HWY_ASSERT(condition)
+#define HWY_DASSERT_M(condition, msg) HWY_ASSERT_M(condition, msg)
+#define HWY_DASSERT(condition) HWY_ASSERT_M(condition, "")
 #else
+#define HWY_DASSERT_M(condition, msg) \
+  do {                                \
+  } while (0)
 #define HWY_DASSERT(condition) \
   do {                         \
   } while (0)
@@ -453,6 +462,13 @@ static inline HWY_MAYBE_UNUSED bool operator==(const uint128_t& a,
   return a.lo == b.lo && a.hi == b.hi;
 }
 
+#if !defined(HWY_NO_LIBCXX)
+static inline HWY_MAYBE_UNUSED std::ostream& operator<<(std::ostream& os,
+                                                        const uint128_t& n) {
+  return os << "[hi=" << n.hi << ",lo=" << n.lo << "]";
+}
+#endif
+
 static inline HWY_MAYBE_UNUSED bool operator<(const K64V64& a,
                                               const K64V64& b) {
   return a.key < b.key;
@@ -467,6 +483,13 @@ static inline HWY_MAYBE_UNUSED bool operator==(const K64V64& a,
   return a.key == b.key;
 }
 
+#if !defined(HWY_NO_LIBCXX)
+static inline HWY_MAYBE_UNUSED std::ostream& operator<<(std::ostream& os,
+                                                        const K64V64& n) {
+  return os << "[k=" << n.key << ",v=" << n.value << "]";
+}
+#endif
+
 static inline HWY_MAYBE_UNUSED bool operator<(const K32V32& a,
                                               const K32V32& b) {
   return a.key < b.key;
@@ -480,6 +503,13 @@ static inline HWY_MAYBE_UNUSED bool operator==(const K32V32& a,
                                                const K32V32& b) {
   return a.key == b.key;
 }
+
+#if !defined(HWY_NO_LIBCXX)
+static inline HWY_MAYBE_UNUSED std::ostream& operator<<(std::ostream& os,
+                                                        const K32V32& n) {
+  return os << "[k=" << n.key << ",v=" << n.value << "]";
+}
+#endif
 
 //------------------------------------------------------------------------------
 // Controlling overload resolution (SFINAE)
@@ -882,76 +912,85 @@ HWY_INLINE constexpr bool IsIntegerLaneType<uint64_t>() {
   return true;
 }
 
+namespace detail {
+
 template <class T>
-HWY_API constexpr bool IsInteger() {
-  // NOTE: Do not add a IsInteger<wchar_t>() specialization below as it is
+static HWY_INLINE constexpr bool IsNonCvInteger() {
+  // NOTE: Do not add a IsNonCvInteger<wchar_t>() specialization below as it is
   // possible for IsSame<wchar_t, uint16_t>() to be true when compiled with MSVC
   // with the /Zc:wchar_t- option.
-  return IsIntegerLaneType<T>() || IsSame<RemoveCvRef<T>, wchar_t>() ||
-         IsSameEither<RemoveCvRef<T>, size_t, ptrdiff_t>() ||
-         IsSameEither<RemoveCvRef<T>, intptr_t, uintptr_t>();
+  return IsIntegerLaneType<T>() || IsSame<T, wchar_t>() ||
+         IsSameEither<T, size_t, ptrdiff_t>() ||
+         IsSameEither<T, intptr_t, uintptr_t>();
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<bool>() {
+HWY_INLINE constexpr bool IsNonCvInteger<bool>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<char>() {
+HWY_INLINE constexpr bool IsNonCvInteger<char>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<signed char>() {
+HWY_INLINE constexpr bool IsNonCvInteger<signed char>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<unsigned char>() {
+HWY_INLINE constexpr bool IsNonCvInteger<unsigned char>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<short>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<short>() {  // NOLINT
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<unsigned short>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<unsigned short>() {  // NOLINT
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<int>() {
+HWY_INLINE constexpr bool IsNonCvInteger<int>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<unsigned>() {
+HWY_INLINE constexpr bool IsNonCvInteger<unsigned>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<long>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<long>() {  // NOLINT
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<unsigned long>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<unsigned long>() {  // NOLINT
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<long long>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<long long>() {  // NOLINT
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<unsigned long long>() {  // NOLINT
+HWY_INLINE constexpr bool IsNonCvInteger<unsigned long long>() {  // NOLINT
   return true;
 }
 #if defined(__cpp_char8_t) && __cpp_char8_t >= 201811L
 template <>
-HWY_INLINE constexpr bool IsInteger<char8_t>() {
+HWY_INLINE constexpr bool IsNonCvInteger<char8_t>() {
   return true;
 }
 #endif
 template <>
-HWY_INLINE constexpr bool IsInteger<char16_t>() {
+HWY_INLINE constexpr bool IsNonCvInteger<char16_t>() {
   return true;
 }
 template <>
-HWY_INLINE constexpr bool IsInteger<char32_t>() {
+HWY_INLINE constexpr bool IsNonCvInteger<char32_t>() {
   return true;
+}
+
+}  // namespace detail
+
+template <class T>
+HWY_API constexpr bool IsInteger() {
+  return detail::IsNonCvInteger<RemoveCvRef<T>>();
 }
 
 // -----------------------------------------------------------------------------
