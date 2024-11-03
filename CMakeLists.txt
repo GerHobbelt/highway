@@ -684,6 +684,7 @@ set(HWY_TEST_FILES
   hwy/tests/dup128_vec_test.cc
   hwy/tests/expand_test.cc
   hwy/tests/float_test.cc
+  hwy/tests/fma_test.cc
   hwy/tests/foreach_vec_test.cc
   hwy/tests/if_test.cc
   hwy/tests/in_range_float_to_int_conv_test.cc
@@ -698,10 +699,13 @@ set(HWY_TEST_FILES
   hwy/tests/masked_minmax_test.cc
   hwy/tests/memory_test.cc
   hwy/tests/minmax_test.cc
+  hwy/tests/mul_by_pow2_test.cc
+  hwy/tests/mul_pairwise_test.cc
   hwy/tests/mul_test.cc
   hwy/tests/reduction_test.cc
   hwy/tests/resize_test.cc
   hwy/tests/reverse_test.cc
+  hwy/tests/rotate_test.cc
   hwy/tests/saturated_test.cc
   hwy/tests/shift_test.cc
   hwy/tests/shuffle4_test.cc

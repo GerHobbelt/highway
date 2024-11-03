@@ -2651,6 +2651,25 @@ HWY_API Vec256<double> operator*(Vec256<double> a, Vec256<double> b) {
   return Vec256<double>{_mm256_mul_pd(a.raw, b.raw)};
 }
 
+#if HWY_TARGET <= HWY_AVX3
+
+#if HWY_HAVE_FLOAT16
+HWY_API Vec256<float16_t> MulByFloorPow2(Vec256<float16_t> a,
+                                         Vec256<float16_t> b) {
+  return Vec256<float16_t>{_mm256_scalef_ph(a.raw, b.raw)};
+}
+#endif
+
+HWY_API Vec256<float> MulByFloorPow2(Vec256<float> a, Vec256<float> b) {
+  return Vec256<float>{_mm256_scalef_ps(a.raw, b.raw)};
+}
+
+HWY_API Vec256<double> MulByFloorPow2(Vec256<double> a, Vec256<double> b) {
+  return Vec256<double>{_mm256_scalef_pd(a.raw, b.raw)};
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3
+
 #if HWY_HAVE_FLOAT16
 HWY_API Vec256<float16_t> operator/(Vec256<float16_t> a, Vec256<float16_t> b) {
   return Vec256<float16_t>{_mm256_div_ph(a.raw, b.raw)};
@@ -6133,6 +6152,19 @@ HWY_API Vec256<int64_t> operator>>(Vec256<int64_t> v, Vec256<int64_t> bits) {
 }
 
 // ------------------------------ WidenMulPairwiseAdd
+
+#if HWY_NATIVE_DOT_BF16
+
+template <class DF, HWY_IF_F32_D(DF), HWY_IF_V_SIZE_D(DF, 32),
+          class VBF = VFromD<Repartition<bfloat16_t, DF>>>
+HWY_API VFromD<DF> WidenMulPairwiseAdd(DF df, VBF a, VBF b) {
+  return VFromD<DF>{_mm256_dpbf16_ps(Zero(df).raw,
+                                     reinterpret_cast<__m256bh>(a.raw),
+                                     reinterpret_cast<__m256bh>(b.raw))};
+}
+
+#endif  // HWY_NATIVE_DOT_BF16
+
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_I32_D(D)>
 HWY_API VFromD<D> WidenMulPairwiseAdd(D /*d32*/, Vec256<int16_t> a,
                                       Vec256<int16_t> b) {

@@ -627,8 +627,8 @@ from left to right, of the arguments passed to `Create{2-4}`.
     <code>V **SaturatedSub**(V a, V b)</code> returns `a[i] - b[i]` saturated to
     the minimum/maximum representable value.
 
-*   `V`: `{u}{8,16}` \
-    <code>V **AverageRound**(V a, V b)</code> returns `(a[i] + b[i] + 1) / 2`.
+*   `V`: `{u,i}` \
+    <code>V **AverageRound**(V a, V b)</code> returns `(a[i] + b[i] + 1) >> 1`.
 
 *   <code>V **Clamp**(V a, V lo, V hi)</code>: returns `a[i]` clamped to
     `[lo[i], hi[i]]`.
@@ -701,6 +701,32 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 *   <code>V <b>operator*</b>(V a, V b)</code>: returns `r[i] = a[i] * b[i]`,
     truncating it to the lower half for integer inputs. Currently unavailable on
     SVE/RVV; use the equivalent `Mul` instead.
+
+*   `V`: `f`, `VI`: `Vec<RebindToSigned<DFromV<V>>>` \
+    <code>V **MulByPow2**(V a, VI b)</code>: Multiplies `a[i]` by `2^b[i]`.
+
+    `MulByPow2(a, b)` is equivalent to
+    `std::ldexp(a[i], HWY_MIN(HWY_MAX(b[i], LimitsMin<int>()), LimitsMax<int>()))`.
+
+*   `V`: `f`
+    <code>V **MulByFloorPow2**(V a, V b)</code>: Multiplies `a[i]` by
+    `2^floor(b[i])`.
+
+    It is implementation-defined if `MulByFloorPow2(a, b)` returns zero or NaN
+    in any lanes where `a[i]` is NaN and `b[i]` is equal to negative infinity.
+
+    It is implementation-defined if `MulByFloorPow2(a, b)` returns positive
+    infinity or NaN in any lanes where `a[i]` is NaN and `b[i]` is equal to
+    positive infinity.
+
+    If `a[i]` is a non-NaN value and `b[i]` is equal to negative infinity,
+    `MulByFloorPow2(a, b)` is equivalent to `a[i] * 0.0`.
+
+    If `b[i]` is NaN or if `a[i]` is non-NaN and `b[i]` is positive infinity,
+    `MulByFloorPow2(a, b)` is equivalent to `a[i] * b[i]`.
+
+    If `b[i]` is a finite value, `MulByFloorPow2(a, b)` is equivalent to
+    `MulByPow2(a, FloorInt(b))`.
 
 *   `V`: `{u,i}` \
     <code>V **MulHigh**(V a, V b)</code>: returns the upper half of `a[i] *
@@ -877,6 +903,10 @@ lane sizes, and `RotateRight` is often emulated with shifts:
     <code>V **ShiftRight**&lt;int&gt;(V a)</code> returns `a[i] >> int`.
 
 *   `V`: `{u,i}` \
+    <code>V **RoundingShiftRight**&lt;int&gt;(V a)</code> returns
+    `((int == 0) ? a[i] : (((a[i] >> (int - 1)) + 1) >> 1)`.
+
+*   `V`: `{u,i}` \
     <code>V **RotateLeft**&lt;int&gt;(V a)</code> returns `(a[i] << int) |
     (static_cast<TU>(a[i]) >> (sizeof(T)*8 - int))`.
 
@@ -891,6 +921,10 @@ Shift all lanes by the same (not necessarily compile-time constant) amount:
 
 *   `V`: `{u,i}` \
     <code>V **ShiftRightSame**(V a, int bits)</code> returns `a[i] >> bits`.
+
+*   `V`: `{u,i}` \
+    <code>V **RoundingShiftRightSame**&lt;int kShiftAmt&gt;(V a, int bits)
+    </code> returns `((bits == 0) ? a[i] : (((a[i] >> (bits - 1)) + 1) >> 1)`.
 
 *   `V`: `{u,i}` \
     <code>V **RotateLeftSame**(V a, int bits)</code> returns
@@ -913,6 +947,10 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
 *   `V`: `{u,i}` \
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`. Currently
     unavailable on SVE/RVV; use the equivalent `Shr` instead.
+
+*   `V`: `{u,i}` \
+    <code>V **RoundingShr**(V a, V b)</code> returns
+    `((b[i] == 0) ? a[i] : (((a[i] >> (b[i] - 1)) + 1) >> 1)`.
 
 *   `V`: `{u,i}` \
     <code>V **Rol**(V a, V b)</code> returns
@@ -1697,6 +1735,16 @@ All functions except `Stream` are defined in cache_control.h.
 *   `V`: `f`; `Ret`: `Vec<RebindToSigned<DFromV<V>>>` \
     <code>Ret **NearestInt**(V a)</code>: returns the integer nearest to `a[i]`;
     results are undefined for NaN.
+
+*   `V`: `f`; `Ret`: `Vec<RebindToSigned<DFromV<V>>>` \
+    <code>Ret **CeilInt**(V a)</code>: equivalent to
+    `ConvertTo(RebindToSigned<DFromV<V>>(), Ceil(a))`, but `CeilInt(a)` is more
+    efficient on some targets, including SSE2, SSSE3, and AArch64 NEON.
+
+*   `V`: `f`; `Ret`: `Vec<RebindToSigned<DFromV<V>>>` \
+    <code>Ret **FloorInt**(V a)</code>: equivalent to
+    `ConvertTo(RebindToSigned<DFromV<V>>(), Floor(a))`, but `FloorInt(a)` is
+    more efficient on some targets, including SSE2, SSSE3, and AArch64 NEON.
 
 *   `D`: `i32`, `V`: `f64`
     <code>Vec&lt;D&gt; **DemoteToNearestInt**(D d, V v)</code>: converts `v[i]`

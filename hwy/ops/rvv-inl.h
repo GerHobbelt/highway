@@ -1114,6 +1114,18 @@ HWY_RVV_FOREACH_I(HWY_RVV_RETV_ARGVV, SaturatedSub, ssub, _ALL)
 
 // ------------------------------ AverageRound
 
+#ifdef HWY_NATIVE_AVERAGE_ROUND_UI32
+#undef HWY_NATIVE_AVERAGE_ROUND_UI32
+#else
+#define HWY_NATIVE_AVERAGE_ROUND_UI32
+#endif
+
+#ifdef HWY_NATIVE_AVERAGE_ROUND_UI64
+#undef HWY_NATIVE_AVERAGE_ROUND_UI64
+#else
+#define HWY_NATIVE_AVERAGE_ROUND_UI64
+#endif
+
 // Define this to opt-out of the default behavior, which is AVOID on certain
 // compiler versions. You can define only this to use VXRM, or define both this
 // and HWY_RVV_AVOID_VXRM to always avoid VXRM.
@@ -1153,8 +1165,8 @@ HWY_RVV_FOREACH_I(HWY_RVV_RETV_ARGVV, SaturatedSub, ssub, _ALL)
         a, b, HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RNU, HWY_RVV_AVL(SEW, SHIFT))); \
   }
 
-HWY_RVV_FOREACH_U08(HWY_RVV_RETV_AVERAGE, AverageRound, aaddu, _ALL)
-HWY_RVV_FOREACH_U16(HWY_RVV_RETV_AVERAGE, AverageRound, aaddu, _ALL)
+HWY_RVV_FOREACH_I(HWY_RVV_RETV_AVERAGE, AverageRound, aadd, _ALL)
+HWY_RVV_FOREACH_U(HWY_RVV_RETV_AVERAGE, AverageRound, aaddu, _ALL)
 
 #undef HWY_RVV_RETV_AVERAGE
 
@@ -1182,6 +1194,35 @@ HWY_RVV_FOREACH_U(HWY_RVV_SHIFT, ShiftRight, srl, _ALL)
 HWY_RVV_FOREACH_I(HWY_RVV_SHIFT, ShiftRight, sra, _ALL)
 
 #undef HWY_RVV_SHIFT
+
+// ------------------------------ RoundingShiftRight[Same]
+
+#ifdef HWY_NATIVE_ROUNDING_SHR
+#undef HWY_NATIVE_ROUNDING_SHR
+#else
+#define HWY_NATIVE_ROUNDING_SHR
+#endif
+
+// Intrinsics do not define .vi forms, so use .vx instead.
+#define HWY_RVV_ROUNDING_SHR(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD, LMULH, \
+                             SHIFT, MLEN, NAME, OP)                           \
+  template <int kBits>                                                        \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL) NAME(HWY_RVV_V(BASE, SEW, LMUL) v) {     \
+    return __riscv_v##OP##_vx_##CHAR##SEW##LMUL(                              \
+        v, kBits,                                                             \
+        HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RNU, HWY_RVV_AVL(SEW, SHIFT)));      \
+  }                                                                           \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                          \
+      NAME##Same(HWY_RVV_V(BASE, SEW, LMUL) v, int bits) {                    \
+    return __riscv_v##OP##_vx_##CHAR##SEW##LMUL(                              \
+        v, static_cast<uint8_t>(bits),                                        \
+        HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RNU, HWY_RVV_AVL(SEW, SHIFT)));      \
+  }
+
+HWY_RVV_FOREACH_U(HWY_RVV_ROUNDING_SHR, RoundingShiftRight, ssrl, _ALL)
+HWY_RVV_FOREACH_I(HWY_RVV_ROUNDING_SHR, RoundingShiftRight, ssra, _ALL)
+
+#undef HWY_RVV_ROUNDING_SHR
 
 // ------------------------------ SumsOf8 (ShiftRight, Add)
 template <class VU8, HWY_IF_U8_D(DFromV<VU8>)>
@@ -1275,6 +1316,33 @@ HWY_RVV_FOREACH_I(HWY_RVV_SHIFT_II, Shr, sra, _ALL)
 
 #undef HWY_RVV_SHIFT_II
 #undef HWY_RVV_SHIFT_VV
+
+// ------------------------------ RoundingShr
+#define HWY_RVV_ROUNDING_SHR_VV(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD,   \
+                                LMULH, SHIFT, MLEN, NAME, OP)               \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                        \
+      NAME(HWY_RVV_V(BASE, SEW, LMUL) v, HWY_RVV_V(BASE, SEW, LMUL) bits) { \
+    return __riscv_v##OP##_vv_##CHAR##SEW##LMUL(                            \
+        v, bits,                                                            \
+        HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RNU, HWY_RVV_AVL(SEW, SHIFT)));    \
+  }
+
+HWY_RVV_FOREACH_U(HWY_RVV_ROUNDING_SHR_VV, RoundingShr, ssrl, _ALL)
+
+#define HWY_RVV_ROUNDING_SHR_II(BASE, CHAR, SEW, SEWD, SEWH, LMUL, LMULD,   \
+                                LMULH, SHIFT, MLEN, NAME, OP)               \
+  HWY_API HWY_RVV_V(BASE, SEW, LMUL)                                        \
+      NAME(HWY_RVV_V(BASE, SEW, LMUL) v, HWY_RVV_V(BASE, SEW, LMUL) bits) { \
+    const HWY_RVV_D(uint, SEW, HWY_LANES(HWY_RVV_T(BASE, SEW)), SHIFT) du;  \
+    return __riscv_v##OP##_vv_##CHAR##SEW##LMUL(                            \
+        v, BitCast(du, bits),                                               \
+        HWY_RVV_INSERT_VXRM(__RISCV_VXRM_RNU, HWY_RVV_AVL(SEW, SHIFT)));    \
+  }
+
+HWY_RVV_FOREACH_I(HWY_RVV_ROUNDING_SHR_II, RoundingShr, ssra, _ALL)
+
+#undef HWY_RVV_ROUNDING_SHR_VV
+#undef HWY_RVV_ROUNDING_SHR_II
 
 // ------------------------------ Min
 

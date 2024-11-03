@@ -4226,6 +4226,18 @@ HWY_API Vec128<uint16_t, N> AverageRound(const Vec128<uint16_t, N> a,
   return Vec128<uint16_t, N>{_mm_avg_epu16(a.raw, b.raw)};
 }
 
+// I8/I16 AverageRound is generic for all vector lengths
+template <class V, HWY_IF_SIGNED_V(V),
+          HWY_IF_T_SIZE_ONE_OF_V(V, (1 << 1) | (1 << 2))>
+HWY_API V AverageRound(V a, V b) {
+  const DFromV<decltype(a)> d;
+  const RebindToUnsigned<decltype(d)> du;
+  const V sign_bit = SignBit(d);
+  return Xor(BitCast(d, AverageRound(BitCast(du, Xor(a, sign_bit)),
+                                     BitCast(du, Xor(b, sign_bit)))),
+             sign_bit);
+}
+
 // ------------------------------ Integer multiplication
 
 template <size_t N>
@@ -5050,6 +5062,43 @@ HWY_API Vec128<double, N> operator*(const Vec128<double, N> a,
 HWY_API Vec64<double> operator*(const Vec64<double> a, const Vec64<double> b) {
   return Vec64<double>{_mm_mul_sd(a.raw, b.raw)};
 }
+
+#if HWY_TARGET <= HWY_AVX3
+
+#ifdef HWY_NATIVE_MUL_BY_POW2
+#undef HWY_NATIVE_MUL_BY_POW2
+#else
+#define HWY_NATIVE_MUL_BY_POW2
+#endif
+
+#if HWY_HAVE_FLOAT16
+template <size_t N>
+HWY_API Vec128<float16_t, N> MulByFloorPow2(Vec128<float16_t, N> a,
+                                            Vec128<float16_t, N> b) {
+  return Vec128<float16_t, N>{_mm_scalef_ph(a.raw, b.raw)};
+}
+#endif
+
+template <size_t N>
+HWY_API Vec128<float, N> MulByFloorPow2(Vec128<float, N> a,
+                                        Vec128<float, N> b) {
+  return Vec128<float, N>{_mm_scalef_ps(a.raw, b.raw)};
+}
+
+template <size_t N>
+HWY_API Vec128<double, N> MulByFloorPow2(Vec128<double, N> a,
+                                         Vec128<double, N> b) {
+  return Vec128<double, N>{_mm_scalef_pd(a.raw, b.raw)};
+}
+
+// MulByPow2 is generic for all vector lengths on AVX3
+template <class V, HWY_IF_FLOAT_V(V)>
+HWY_API V MulByPow2(V v, VFromD<RebindToSigned<DFromV<V>>> exp) {
+  const DFromV<decltype(v)> d;
+  return MulByFloorPow2(v, ConvertTo(d, exp));
+}
+
+#endif  // HWY_TARGET <= HWY_AVX3
 
 #if HWY_HAVE_FLOAT16
 template <size_t N>
@@ -9588,6 +9637,18 @@ HWY_INLINE VFromD<D> PromoteOddTo(hwy::SignedTag /*to_type_tag*/,
 
 // ------------------------------ WidenMulPairwiseAdd (PromoteEvenTo)
 
+#if HWY_NATIVE_DOT_BF16
+
+template <class DF, HWY_IF_F32_D(DF), HWY_IF_V_SIZE_LE_D(DF, 16),
+          class VBF = VFromD<Repartition<bfloat16_t, DF>>>
+HWY_API VFromD<DF> WidenMulPairwiseAdd(DF df, VBF a, VBF b) {
+  return VFromD<DF>{_mm_dpbf16_ps(Zero(df).raw,
+                                  reinterpret_cast<__m128bh>(a.raw),
+                                  reinterpret_cast<__m128bh>(b.raw))};
+}
+
+#else
+
 // Generic for all vector lengths.
 template <class DF, HWY_IF_F32_D(DF),
           class VBF = VFromD<Repartition<bfloat16_t, DF>>>
@@ -9596,6 +9657,8 @@ HWY_API VFromD<DF> WidenMulPairwiseAdd(DF df, VBF a, VBF b) {
   return MulAdd(PromoteEvenTo(df, a), PromoteEvenTo(df, b),
                 Mul(PromoteOddTo(df, a), PromoteOddTo(df, b)));
 }
+
+#endif  // HWY_NATIVE_DOT_BF16
 
 // Even if N=1, the input is always at least 2 lanes, hence madd_epi16 is safe.
 template <class D32, HWY_IF_I32_D(D32), HWY_IF_V_SIZE_LE_D(D32, 16),
@@ -11937,6 +12000,25 @@ HWY_API Vec128<T, N> Ceil(const Vec128<T, N> v) {
   return IfThenElse(detail::UseInt(v), int_f - neg1, v);
 }
 
+#ifdef HWY_NATIVE_CEIL_FLOOR_INT
+#undef HWY_NATIVE_CEIL_FLOOR_INT
+#else
+#define HWY_NATIVE_CEIL_FLOOR_INT
+#endif
+
+template <class V, HWY_IF_FLOAT_V(V)>
+HWY_API VFromD<RebindToSigned<DFromV<V>>> CeilInt(V v) {
+  const DFromV<decltype(v)> df;
+  const RebindToSigned<decltype(df)> di;
+
+  const auto integer = ConvertTo(di, v);  // round toward 0
+  const auto int_f = ConvertTo(df, integer);
+
+  // Truncating a positive non-integer ends up smaller; if so, add 1.
+  return integer -
+         VecFromMask(di, RebindMask(di, And(detail::UseInt(v), int_f < v)));
+}
+
 // Toward -infinity, aka floor
 template <typename T, size_t N>
 HWY_API Vec128<T, N> Floor(const Vec128<T, N> v) {
@@ -11951,6 +12033,19 @@ HWY_API Vec128<T, N> Floor(const Vec128<T, N> v) {
   const auto neg1 = ConvertTo(df, VecFromMask(di, RebindMask(di, int_f > v)));
 
   return IfThenElse(detail::UseInt(v), int_f + neg1, v);
+}
+
+template <class V, HWY_IF_FLOAT_V(V)>
+HWY_API VFromD<RebindToSigned<DFromV<V>>> FloorInt(V v) {
+  const DFromV<decltype(v)> df;
+  const RebindToSigned<decltype(df)> di;
+
+  const auto integer = ConvertTo(di, v);  // round toward 0
+  const auto int_f = ConvertTo(df, integer);
+
+  // Truncating a negative non-integer ends up larger; if so, subtract 1.
+  return integer +
+         VecFromMask(di, RebindMask(di, And(detail::UseInt(v), int_f > v)));
 }
 
 #else

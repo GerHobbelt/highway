@@ -2074,8 +2074,14 @@ HWY_NEON_DEF_FUNCTION_INTS_UINTS(SaturatedSub, vqsub, _, 2)
 // ------------------------------ Average
 
 // Returns (a + b + 1) / 2
-HWY_NEON_DEF_FUNCTION_UINT_8(AverageRound, vrhadd, _, 2)
-HWY_NEON_DEF_FUNCTION_UINT_16(AverageRound, vrhadd, _, 2)
+
+#ifdef HWY_NATIVE_AVERAGE_ROUND_UI32
+#undef HWY_NATIVE_AVERAGE_ROUND_UI32
+#else
+#define HWY_NATIVE_AVERAGE_ROUND_UI32
+#endif
+
+HWY_NEON_DEF_FUNCTION_UI_8_16_32(AverageRound, vrhadd, _, 2)
 
 // ------------------------------ Neg
 
@@ -2143,6 +2149,12 @@ HWY_API Vec128<int64_t> SaturatedNeg(const Vec128<int64_t> v) {
 
 // ------------------------------ ShiftLeft
 
+#ifdef HWY_NATIVE_ROUNDING_SHR
+#undef HWY_NATIVE_ROUNDING_SHR
+#else
+#define HWY_NATIVE_ROUNDING_SHR
+#endif
+
 // Customize HWY_NEON_DEF_FUNCTION to special-case count=0 (not supported).
 #pragma push_macro("HWY_NEON_DEF_FUNCTION")
 #undef HWY_NEON_DEF_FUNCTION
@@ -2158,6 +2170,8 @@ HWY_NEON_DEF_FUNCTION_INTS_UINTS(ShiftLeft, vshl, _n_, ignored)
 
 HWY_NEON_DEF_FUNCTION_UINTS(ShiftRight, vshr, _n_, ignored)
 HWY_NEON_DEF_FUNCTION_INTS(ShiftRight, vshr, _n_, ignored)
+HWY_NEON_DEF_FUNCTION_UINTS(RoundingShiftRight, vrshr, _n_, ignored)
+HWY_NEON_DEF_FUNCTION_INTS(RoundingShiftRight, vrshr, _n_, ignored)
 
 #pragma pop_macro("HWY_NEON_DEF_FUNCTION")
 
@@ -2334,6 +2348,95 @@ HWY_API Vec64<int64_t> operator>>(Vec64<int64_t> v, Vec64<int64_t> bits) {
   return Vec64<int64_t>(vshl_s64(v.raw, Neg(bits).raw));
 }
 
+// ------------------------------ RoundingShr (Neg)
+
+HWY_API Vec128<uint8_t> RoundingShr(Vec128<uint8_t> v, Vec128<uint8_t> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int8x16_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint8_t>(vrshlq_u8(v.raw, neg_bits));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(uint8_t, N, 8)>
+HWY_API Vec128<uint8_t, N> RoundingShr(Vec128<uint8_t, N> v,
+                                       Vec128<uint8_t, N> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int8x8_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint8_t, N>(vrshl_u8(v.raw, neg_bits));
+}
+
+HWY_API Vec128<uint16_t> RoundingShr(Vec128<uint16_t> v,
+                                     Vec128<uint16_t> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int16x8_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint16_t>(vrshlq_u16(v.raw, neg_bits));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(uint16_t, N, 8)>
+HWY_API Vec128<uint16_t, N> RoundingShr(Vec128<uint16_t, N> v,
+                                        Vec128<uint16_t, N> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int16x4_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint16_t, N>(vrshl_u16(v.raw, neg_bits));
+}
+
+HWY_API Vec128<uint32_t> RoundingShr(Vec128<uint32_t> v,
+                                     Vec128<uint32_t> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int32x4_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint32_t>(vrshlq_u32(v.raw, neg_bits));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(uint32_t, N, 8)>
+HWY_API Vec128<uint32_t, N> RoundingShr(Vec128<uint32_t, N> v,
+                                        Vec128<uint32_t, N> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int32x2_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint32_t, N>(vrshl_u32(v.raw, neg_bits));
+}
+
+HWY_API Vec128<uint64_t> RoundingShr(Vec128<uint64_t> v,
+                                     Vec128<uint64_t> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int64x2_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec128<uint64_t>(vrshlq_u64(v.raw, neg_bits));
+}
+HWY_API Vec64<uint64_t> RoundingShr(Vec64<uint64_t> v, Vec64<uint64_t> bits) {
+  const RebindToSigned<DFromV<decltype(v)>> di;
+  const int64x1_t neg_bits = Neg(BitCast(di, bits)).raw;
+  return Vec64<uint64_t>(vrshl_u64(v.raw, neg_bits));
+}
+
+HWY_API Vec128<int8_t> RoundingShr(Vec128<int8_t> v, Vec128<int8_t> bits) {
+  return Vec128<int8_t>(vrshlq_s8(v.raw, Neg(bits).raw));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(int8_t, N, 8)>
+HWY_API Vec128<int8_t, N> RoundingShr(Vec128<int8_t, N> v,
+                                      Vec128<int8_t, N> bits) {
+  return Vec128<int8_t, N>(vrshl_s8(v.raw, Neg(bits).raw));
+}
+
+HWY_API Vec128<int16_t> RoundingShr(Vec128<int16_t> v, Vec128<int16_t> bits) {
+  return Vec128<int16_t>(vrshlq_s16(v.raw, Neg(bits).raw));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(int16_t, N, 8)>
+HWY_API Vec128<int16_t, N> RoundingShr(Vec128<int16_t, N> v,
+                                       Vec128<int16_t, N> bits) {
+  return Vec128<int16_t, N>(vrshl_s16(v.raw, Neg(bits).raw));
+}
+
+HWY_API Vec128<int32_t> RoundingShr(Vec128<int32_t> v, Vec128<int32_t> bits) {
+  return Vec128<int32_t>(vrshlq_s32(v.raw, Neg(bits).raw));
+}
+template <size_t N, HWY_IF_V_SIZE_LE(int32_t, N, 8)>
+HWY_API Vec128<int32_t, N> RoundingShr(Vec128<int32_t, N> v,
+                                       Vec128<int32_t, N> bits) {
+  return Vec128<int32_t, N>(vrshl_s32(v.raw, Neg(bits).raw));
+}
+
+HWY_API Vec128<int64_t> RoundingShr(Vec128<int64_t> v, Vec128<int64_t> bits) {
+  return Vec128<int64_t>(vrshlq_s64(v.raw, Neg(bits).raw));
+}
+HWY_API Vec64<int64_t> RoundingShr(Vec64<int64_t> v, Vec64<int64_t> bits) {
+  return Vec64<int64_t>(vrshl_s64(v.raw, Neg(bits).raw));
+}
+
 // ------------------------------ ShiftLeftSame (Shl)
 
 template <typename T, size_t N>
@@ -2343,6 +2446,13 @@ HWY_API Vec128<T, N> ShiftLeftSame(const Vec128<T, N> v, int bits) {
 template <typename T, size_t N>
 HWY_API Vec128<T, N> ShiftRightSame(const Vec128<T, N> v, int bits) {
   return v >> Set(DFromV<decltype(v)>(), static_cast<T>(bits));
+}
+
+// ------------------------------ RoundingShiftRightSame (RoundingShr)
+
+template <typename T, size_t N>
+HWY_API Vec128<T, N> RoundingShiftRightSame(const Vec128<T, N> v, int bits) {
+  return RoundingShr(v, Set(DFromV<decltype(v)>(), static_cast<T>(bits)));
 }
 
 // ------------------------------ Int/float multiplication
@@ -5076,6 +5186,89 @@ HWY_API Vec128<float, N> Floor(const Vec128<float, N> v) {
 }
 
 #endif
+
+// ------------------------------ CeilInt/FloorInt
+#if HWY_ARCH_ARM_A64
+
+#ifdef HWY_NATIVE_CEIL_FLOOR_INT
+#undef HWY_NATIVE_CEIL_FLOOR_INT
+#else
+#define HWY_NATIVE_CEIL_FLOOR_INT
+#endif
+
+#if HWY_HAVE_FLOAT16
+HWY_API Vec128<int16_t> CeilInt(const Vec128<float16_t> v) {
+  return Vec128<int16_t>(vcvtpq_s16_f16(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(float16_t, N, 8)>
+HWY_API Vec128<int16_t, N> CeilInt(const Vec128<float16_t, N> v) {
+  return Vec128<int16_t, N>(vcvtp_s16_f16(v.raw));
+}
+
+HWY_API Vec128<int16_t> FloorInt(const Vec128<float16_t> v) {
+  return Vec128<int16_t>(vcvtmq_s16_f16(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(float16_t, N, 8)>
+HWY_API Vec128<int16_t, N> FloorInt(const Vec128<float16_t, N> v) {
+  return Vec128<int16_t, N>(vcvtm_s16_f16(v.raw));
+}
+#endif  // HWY_HAVE_FLOAT16
+
+HWY_API Vec128<int32_t> CeilInt(const Vec128<float> v) {
+  return Vec128<int32_t>(vcvtpq_s32_f32(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(float, N, 8)>
+HWY_API Vec128<int32_t, N> CeilInt(const Vec128<float, N> v) {
+  return Vec128<int32_t, N>(vcvtp_s32_f32(v.raw));
+}
+
+HWY_API Vec128<int64_t> CeilInt(const Vec128<double> v) {
+  return Vec128<int64_t>(vcvtpq_s64_f64(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(double, N, 8)>
+HWY_API Vec128<int64_t, N> CeilInt(const Vec128<double, N> v) {
+#if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 610
+  // Workaround for missing vcvtp_s64_f64 intrinsic
+  const DFromV<decltype(v)> d;
+  const RebindToSigned<decltype(d)> di;
+  const Twice<decltype(d)> dt;
+  return LowerHalf(di, CeilInt(Combine(dt, v, v)));
+#else
+  return Vec128<int64_t, N>(vcvtp_s64_f64(v.raw));
+#endif
+}
+
+HWY_API Vec128<int32_t> FloorInt(const Vec128<float> v) {
+  return Vec128<int32_t>(vcvtmq_s32_f32(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(float, N, 8)>
+HWY_API Vec128<int32_t, N> FloorInt(const Vec128<float, N> v) {
+  return Vec128<int32_t, N>(vcvtm_s32_f32(v.raw));
+}
+
+HWY_API Vec128<int64_t> FloorInt(const Vec128<double> v) {
+  return Vec128<int64_t>(vcvtmq_s64_f64(v.raw));
+}
+
+template <size_t N, HWY_IF_V_SIZE_LE(double, N, 8)>
+HWY_API Vec128<int64_t, N> FloorInt(const Vec128<double, N> v) {
+#if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 610
+  // Workaround for missing vcvtm_s64_f64 intrinsic
+  const DFromV<decltype(v)> d;
+  const RebindToSigned<decltype(d)> di;
+  const Twice<decltype(d)> dt;
+  return LowerHalf(di, FloorInt(Combine(dt, v, v)));
+#else
+  return Vec128<int64_t, N>(vcvtm_s64_f64(v.raw));
+#endif
+}
+
+#endif  // HWY_ARCH_ARM_A64
 
 // ------------------------------ NearestInt (Round)
 

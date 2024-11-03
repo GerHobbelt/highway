@@ -1113,6 +1113,50 @@ HWY_SVE_FOREACH_I(HWY_SVE_SHIFT, Shr, asr)
 
 #undef HWY_SVE_SHIFT
 
+// ------------------------------ RoundingShiftLeft[Same]/RoundingShr
+
+#if HWY_SVE_HAVE_2
+
+#ifdef HWY_NATIVE_ROUNDING_SHR
+#undef HWY_NATIVE_ROUNDING_SHR
+#else
+#define HWY_NATIVE_ROUNDING_SHR
+#endif
+
+#define HWY_SVE_ROUNDING_SHR_N(BASE, CHAR, BITS, HALF, NAME, OP)           \
+  template <int kBits>                                                     \
+  HWY_API HWY_SVE_V(BASE, BITS) NAME(HWY_SVE_V(BASE, BITS) v) {            \
+    HWY_IF_CONSTEXPR(kBits == 0) { return v; }                             \
+                                                                           \
+    return sv##OP##_##CHAR##BITS##_x(                                      \
+        HWY_SVE_PTRUE(BITS), v, static_cast<uint64_t>(HWY_MAX(kBits, 1))); \
+  }
+
+HWY_SVE_FOREACH_UI(HWY_SVE_ROUNDING_SHR_N, RoundingShiftRight, rshr_n)
+
+#undef HWY_SVE_ROUNDING_SHR_N
+
+#define HWY_SVE_ROUNDING_SHR(BASE, CHAR, BITS, HALF, NAME, OP)    \
+  HWY_API HWY_SVE_V(BASE, BITS)                                   \
+      NAME(HWY_SVE_V(BASE, BITS) v, HWY_SVE_V(BASE, BITS) bits) { \
+    const RebindToSigned<DFromV<decltype(v)>> di;                 \
+    return sv##OP##_##CHAR##BITS##_x(HWY_SVE_PTRUE(BITS), v,      \
+                                     Neg(BitCast(di, bits)));     \
+  }
+
+HWY_SVE_FOREACH_UI(HWY_SVE_ROUNDING_SHR, RoundingShr, rshl)
+
+#undef HWY_SVE_ROUNDING_SHR
+
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V RoundingShiftRightSame(V v, int bits) {
+  const DFromV<V> d;
+  using T = TFromD<decltype(d)>;
+  return RoundingShr(v, Set(d, static_cast<T>(bits)));
+}
+
+#endif  // HWY_SVE_HAVE_2
+
 // ------------------------------ Min/Max
 
 HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGPVV, Min, min)
@@ -4702,13 +4746,25 @@ HWY_API V IfNegativeThenElse(V v, V yes, V no) {
 
 // ------------------------------ AverageRound (ShiftRight)
 
-#if HWY_SVE_HAVE_2
-HWY_SVE_FOREACH_U08(HWY_SVE_RETV_ARGPVV, AverageRound, rhadd)
-HWY_SVE_FOREACH_U16(HWY_SVE_RETV_ARGPVV, AverageRound, rhadd)
+#ifdef HWY_NATIVE_AVERAGE_ROUND_UI32
+#undef HWY_NATIVE_AVERAGE_ROUND_UI32
 #else
-template <class V>
-V AverageRound(const V a, const V b) {
-  return ShiftRight<1>(detail::AddN(Add(a, b), 1));
+#define HWY_NATIVE_AVERAGE_ROUND_UI32
+#endif
+
+#ifdef HWY_NATIVE_AVERAGE_ROUND_UI64
+#undef HWY_NATIVE_AVERAGE_ROUND_UI64
+#else
+#define HWY_NATIVE_AVERAGE_ROUND_UI64
+#endif
+
+#if HWY_SVE_HAVE_2
+HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGPVV, AverageRound, rhadd)
+#else
+template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V AverageRound(const V a, const V b) {
+  return Add(Add(ShiftRight<1>(a), ShiftRight<1>(b)),
+             detail::AndN(Or(a, b), 1));
 }
 #endif  // HWY_SVE_HAVE_2
 

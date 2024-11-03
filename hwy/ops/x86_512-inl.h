@@ -1878,6 +1878,21 @@ HWY_API Vec512<double> operator*(Vec512<double> a, Vec512<double> b) {
 }
 
 #if HWY_HAVE_FLOAT16
+HWY_API Vec512<float16_t> MulByFloorPow2(Vec512<float16_t> a,
+                                         Vec512<float16_t> b) {
+  return Vec512<float16_t>{_mm512_scalef_ph(a.raw, b.raw)};
+}
+#endif
+
+HWY_API Vec512<float> MulByFloorPow2(Vec512<float> a, Vec512<float> b) {
+  return Vec512<float>{_mm512_scalef_ps(a.raw, b.raw)};
+}
+
+HWY_API Vec512<double> MulByFloorPow2(Vec512<double> a, Vec512<double> b) {
+  return Vec512<double>{_mm512_scalef_pd(a.raw, b.raw)};
+}
+
+#if HWY_HAVE_FLOAT16
 HWY_API Vec512<float16_t> operator/(Vec512<float16_t> a, Vec512<float16_t> b) {
   return Vec512<float16_t>{_mm512_div_ph(a.raw, b.raw)};
 }
@@ -7934,6 +7949,17 @@ HWY_API Vec512<int64_t> operator>>(const Vec512<int64_t> v,
 }
 
 // ------------------------------ WidenMulPairwiseAdd
+
+#if HWY_NATIVE_DOT_BF16
+template <class DF, HWY_IF_F32_D(DF), HWY_IF_V_SIZE_D(DF, 64),
+          class VBF = VFromD<Repartition<bfloat16_t, DF>>>
+HWY_API VFromD<DF> WidenMulPairwiseAdd(DF df, VBF a, VBF b) {
+  return VFromD<DF>{_mm512_dpbf16_ps(Zero(df).raw,
+                                     reinterpret_cast<__m512bh>(a.raw),
+                                     reinterpret_cast<__m512bh>(b.raw))};
+}
+#endif  // HWY_NATIVE_DOT_BF16
+
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_I32_D(D)>
 HWY_API VFromD<D> WidenMulPairwiseAdd(D /*d32*/, Vec512<int16_t> a,
                                       Vec512<int16_t> b) {
