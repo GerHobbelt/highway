@@ -678,6 +678,24 @@ is qNaN, and NaN if both are.
 
 *   <code>V **Max**(V a, V b)</code>: returns `max(a[i], b[i])`.
 
+*   <code>V **MinMagnitude**(V a, V b)</code>: returns the number with the
+    smaller magnitude if `a[i]` and `b[i]` are both non-NaN values.
+
+    If `a[i]` and `b[i]` are both non-NaN, `MinMagnitude(a, b)` returns
+    `(|a[i]| < |b[i]| || (|a[i]| == |b[i]| && a[i] < b[i])) ? a[i] : b[i]`.
+
+    Otherwise, the results of `MinMagnitude(a, b)` are implementation-defined
+    if `a[i]` is NaN or `b[i]` is NaN.
+
+*   <code>V **MaxMagnitude**(V a, V b)</code>: returns the number with the
+    larger magnitude if `a[i]` and `b[i]` are both non-NaN values.
+
+    If `a[i]` and `b[i]` are both non-NaN, `MaxMagnitude(a, b)` returns
+    `(|a[i]| < |b[i]| || (|a[i]| == |b[i]| && a[i] < b[i])) ? b[i] : a[i]`.
+
+    Otherwise, the results of `MaxMagnitude(a, b)` are implementation-defined
+    if `a[i]` is NaN or `b[i]` is NaN.
+
 All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 
 *   `V`: `u64` \
@@ -1761,6 +1779,9 @@ All functions except `Stream` are defined in cache_control.h.
     `DemoteToNearestInt(d, v)` is more efficient on some targets, including x86
     and RVV.
 
+*   <code>Vec&lt;D&gt; **MaskedConvertTo**(M m, D d, V v)</code>: returns `v[i]`
+    converted to `D` where m is active and returns zero otherwise.
+
 #### Single vector demotion
 
 These functions demote a full vector (or parts thereof) into a vector of half
@@ -1801,6 +1822,17 @@ obtain the `D` that describes the return type.
     <code>Vec&lt;D&gt; **DemoteTo**(D, V v)</code>: narrows float to half (for
     bf16, it is unspecified whether this truncates or rounds).
 
+*   `V`,`D`: (`f64,i32`), (`f32,f16`) \
+    <code>Vec&lt;D&gt; **DemoteCeilTo**(D, V v)</code>: Demotes a floating point
+    number to half-sized integral type with ceiling rounding.
+
+*   `V`,`D`: (`f64,i32`), (`f32,f16`) \
+    <code>Vec&lt;D&gt; **DemoteFloorTo**(D, V v)</code>: Demotes a floating
+    point number to half-sized integral type with floor rounding.
+
+*   <code>Vec&lt;D&gt; **MaskedDemoteTo**(M m, D d, V v)</code>: returns `v[i]`
+    demoted to `D` where m is active and returns zero otherwise.
+
 #### Single vector promotion
 
 These functions promote a half vector to a full vector. To obtain halves, use
@@ -1826,6 +1858,27 @@ These functions promote a half vector to a full vector. To obtain halves, use
     towards zero and converts the rounded value to a 64-bit signed or unsigned
     integer. Returns an implementation-defined value if the input exceeds the
     destination range.
+
+*   `V`: `f`, `D`:`{u,i,f}`\
+    <code>Vec&lt;D&gt; **PromoteCeilTo**(D, V part)</code>: rounds `part[i]`
+    up and converts the rounded value to a signed or unsigned integer.
+    Returns an implementation-defined value if the input exceeds the
+    destination range.
+
+*   `V`: `f`, `D`:`{u,i,f}`\
+    <code>Vec&lt;D&gt; **PromoteFloorTo**(D, V part)</code>: rounds `part[i]`
+    down and converts the rounded value to a signed or unsigned integer.
+    Returns an implementation-defined value if the input exceeds the
+    destination range.
+
+*   `V`: `f`, `D`:`{u,i,f}`\
+    <code>Vec&lt;D&gt; **PromoteToNearestInt **(D, V part)</code>: rounds
+    `part[i]` towards the nearest integer, with ties to even, and converts the
+    rounded value to a signed or unsigned integer. Returns an
+    implementation-defined value if the input exceeds the destination range.
+
+*   <code>Vec&lt;D&gt; **MaskedPromoteTo**(M m, D d, V v)</code>: returns `v[i]`
+    widened to `D` where m is active and returns zero otherwise.
 
 The following may be more convenient or efficient than also calling `LowerHalf`
 / `UpperHalf`:
@@ -2457,6 +2510,19 @@ Ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 
 *   `HWY_ALIGN_MAX`: as `HWY_ALIGN`, but independent of `HWY_TARGET` and may be
     used outside `HWY_NAMESPACE`.
+
+*   `HWY_RESTRICT`: use after a pointer, e.g. `T* HWY_RESTRICT p`, to indicate
+    the pointer is not aliased, i.e. it is the only way to access the data. This
+    may improve code generation by preventing unnecessary reloads.
+
+*   `HWY_LIKELY`: use `if (HWY_LIKELY(condition))` to signal to the compiler
+    that `condition` is likely to be true. This may improve performance by
+    influencing the layout of the generated code.
+
+*   `HWY_UNLIKELY`: like `HWY_LIKELY`, but for conditions likely to be false.
+
+*   `HWY_UNREACHABLE;`: signals to the compiler that control will never reach
+    this point, which may improve code generation.
 
 ## Advanced macros
 
