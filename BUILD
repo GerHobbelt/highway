@@ -199,6 +199,7 @@ cc_library(
         "hwy/ops/x86_128-inl.h",
         "hwy/ops/x86_256-inl.h",
         "hwy/ops/x86_512-inl.h",
+        "hwy/ops/x86_avx3-inl.h",
         # Select avoids recompiling native arch if only non-native changed
     ] + select({
         ":compiler_emscripten": [
@@ -252,6 +253,19 @@ cc_library(
     copts = COPTS,
     deps = [
         ":hwy",  # HWY_ASSERT
+    ],
+)
+
+cc_library(
+    name = "perf_counters",
+    srcs = ["hwy/perf_counters.cc"],
+    hdrs = ["hwy/perf_counters.h"],
+    compatible_with = [],
+    copts = COPTS,
+    deps = [
+        ":bit_set",
+        ":hwy",
+        ":nanobenchmark",
     ],
 )
 
@@ -485,6 +499,7 @@ HWY_TESTS = [
     ("hwy/", "bit_set_test"),
     ("hwy/", "highway_test"),
     ("hwy/", "nanobenchmark_test"),
+    ("hwy/", "perf_counters_test"),
     ("hwy/", "targets_test"),
     ("hwy/tests/", "arithmetic_test"),
     ("hwy/tests/", "bit_permute_test"),
@@ -513,6 +528,7 @@ HWY_TESTS = [
     ("hwy/tests/", "mask_combine_test"),
     ("hwy/tests/", "mask_convert_test"),
     ("hwy/tests/", "mask_mem_test"),
+    ("hwy/tests/", "mask_set_test"),
     ("hwy/tests/", "mask_slide_test"),
     ("hwy/tests/", "mask_test"),
     ("hwy/tests/", "masked_arithmetic_test"),
@@ -562,6 +578,7 @@ HWY_TEST_DEPS = [
     ":math",
     ":matvec",
     ":nanobenchmark",
+    ":perf_counters",
     ":random",
     ":skeleton",
     ":thread_pool",
