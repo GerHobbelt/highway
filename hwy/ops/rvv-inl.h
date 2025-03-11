@@ -3607,6 +3607,24 @@ HWY_API V SwapAdjacentBlocks(const V v) {
   return OddEvenBlocks(up, down);
 }
 
+// ------------------------------ InterleaveEvenBlocks
+// (SlideUpLanes, OddEvenBlocks)
+
+template <class D, class V = VFromD<D>>
+HWY_API V InterleaveEvenBlocks(D d, V a, V b) {
+  const size_t lpb = detail::LanesPerBlock(d);
+  return OddEvenBlocks(SlideUpLanes(d, b, lpb), a);
+}
+
+// ------------------------------ InterleaveOddBlocks
+// (SlideDownLanes, OddEvenBlocks)
+
+template <class D, class V = VFromD<D>>
+HWY_API V InterleaveOddBlocks(D d, V a, V b) {
+  const size_t lpb = detail::LanesPerBlock(d);
+  return OddEvenBlocks(b, SlideDownLanes(d, a, lpb));
+}
+
 // ------------------------------ TableLookupLanes
 
 template <class D, class VI>
@@ -4754,6 +4772,8 @@ HWY_API T ReduceMax(D d, const VFromD<D> v) {
 }
 
 #undef HWY_RVV_REDUCE
+
+// TODO: add MaskedReduceSum/Min/Max
 
 // ------------------------------ SumOfLanes
 

@@ -4748,6 +4748,18 @@ HWY_API Vec512<double> SwapAdjacentBlocks(Vec512<double> v) {
   return Vec512<double>{_mm512_shuffle_f64x2(v.raw, v.raw, _MM_PERM_CDAB)};
 }
 
+// ------------------------------ InterleaveEvenBlocks
+template <typename T>
+HWY_API Vec512<T> InterleaveEvenBlocks(Full512<T> d, Vec512<T> a, Vec512<T> b) {
+  return OddEvenBlocks(SlideUpBlocks<1>(d, b), a);
+}
+
+// ------------------------------ InterleaveOddBlocks (ConcatUpperUpper)
+template <typename T>
+HWY_API Vec512<T> InterleaveOddBlocks(Full512<T> d, Vec512<T> a, Vec512<T> b) {
+  return OddEvenBlocks(b, SlideDownBlocks<1>(d, a));
+}
+
 // ------------------------------ ReverseBlocks
 
 template <class D, HWY_IF_V_SIZE_D(D, 64), HWY_IF_NOT_FLOAT3264_D(D)>
@@ -7555,6 +7567,24 @@ HWY_API V BitShuffle(V v, VI idx) {
   return BitCast(d64, PromoteTo(du64, vu8_bit_shuf_result));
 }
 #endif  // HWY_TARGET <= HWY_AVX3_DL
+
+// ------------------------------ MultiShiftRight
+
+#if HWY_TARGET <= HWY_AVX3_DL
+
+#ifdef HWY_NATIVE_MULTIROTATERIGHT
+#undef HWY_NATIVE_MULTIROTATERIGHT
+#else
+#define HWY_NATIVE_MULTIROTATERIGHT
+#endif
+
+template <class V, class VI, HWY_IF_UI64(TFromV<V>), HWY_IF_UI8(TFromV<VI>),
+          HWY_IF_V_SIZE_V(V, 64), HWY_IF_V_SIZE_V(VI, HWY_MAX_LANES_V(V) * 8)>
+HWY_API V MultiRotateRight(V v, VI idx) {
+  return V{_mm512_multishift_epi64_epi8(idx.raw, v.raw)};
+}
+
+#endif
 
 // -------------------- LeadingZeroCount
 
