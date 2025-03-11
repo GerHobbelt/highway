@@ -429,6 +429,10 @@ for comparisons, for example `Lt` instead of `operator<`.
     the result, with `t0` in the least-significant (lowest-indexed) lane of each
     128-bit block and `tK` in the most-significant (highest-indexed) lane of
     each 128-bit block: `{t0, t1, ..., tK}`
+*   <code>V **MaskedSetOr**(V no, M m, T a)</code>: returns N-lane vector with lane
+    `i` equal to `a` if `m[i]` is true else `no[i]`.
+*   <code>V **MaskedSet**(D d, M m, T a)</code>: returns N-lane vector with lane
+    `i` equal to `a` if `m[i]` is true else 0.
 
 ### Getting/setting lanes
 
@@ -666,6 +670,14 @@ from left to right, of the arguments passed to `Create{2-4}`.
     <code>V **ApproximateReciprocal**(V a)</code>: returns an approximation of
     `1.0 / a[i]`.
 
+*   `V`: `{f}` \
+    <code>V **GetExponent**(V v)</code>: returns the exponent of `v[i]` as a floating point value.
+    Essentially calculates `floor(log2(x))`.
+
+*   `V`: `{f}`, `VU`: `Vec<RebindToUnsigned<DFromV<V>>>` \
+    <code>VU **GetBiasedExponent**(V v)</code>: returns the biased exponent of
+    `v[i]` as an unsigned integer value.
+
 #### Min/Max
 
 **Note**: Min/Max corner cases are target-specific and may change. If either
@@ -721,6 +733,10 @@ All other ops in this section are only available if `HWY_TARGET != HWY_SCALAR`:
 *   <code>V <b>operator*</b>(V a, V b)</code>: returns `r[i] = a[i] * b[i]`,
     truncating it to the lower half for integer inputs. Currently unavailable on
     SVE/RVV; use the equivalent `Mul` instead.
+
+*   `V`: `f`
+    <code>V **MulRound**(V a, V b)</code>: Multiplies `a[i]` by `b[i]` and rounds
+    the result to the nearest int with ties going to even.
 
 *   `V`: `f`, `VI`: `Vec<RebindToSigned<DFromV<V>>>` \
     <code>V **MulByPow2**(V a, VI b)</code>: Multiplies `a[i]` by `2^b[i]`.
@@ -864,6 +880,10 @@ variants are somewhat slower on Arm, and unavailable for integer inputs; if the
     c))` or `MulAddSub(a, b, OddEven(c, Neg(c))`, but `MulSub(a, b, c)` is more
     efficient on some targets (including AVX2/AVX3).
 
+*   <code>V **MulSubAdd**(V a, V b, V c)</code>: returns `a[i] * b[i] + c[i]` in
+    the even lanes and `a[i] * b[i] - c[i]` in the odd lanes. Essentially,
+    MulAddSub with `c[i]` negated.
+
 *   `V`: `bf16`, `D`: `RepartitionToWide<DFromV<V>>`, `VW`: `Vec<D>` \
     <code>VW **MulEvenAdd**(D d, V a, V b, VW c)</code>: equivalent to and
     potentially more efficient than `MulAdd(PromoteEvenTo(d, a),
@@ -881,6 +901,9 @@ exceptions for those lanes if that is supported by the ISA. When exceptions are
 not a concern, these are equivalent to, and potentially more efficient than,
 `IfThenElse(m, Add(a, b), no);` etc.
 
+*   `V`: `{f}` \
+    <code>V **MaskedSqrtOr**(V no, M m, V a)</code>: returns `sqrt(a[i])` or
+    `no[i]` if `m[i]` is false.
 *   <code>V **MaskedMinOr**(V no, M m, V a, V b)</code>: returns `Min(a, b)[i]`
     or `no[i]` if `m[i]` is false.
 *   <code>V **MaskedMaxOr**(V no, M m, V a, V b)</code>: returns `Max(a, b)[i]`
@@ -904,6 +927,23 @@ not a concern, these are equivalent to, and potentially more efficient than,
     <code>V **MaskedSatSubOr**(V no, M m, V a, V b)</code>: returns `a[i] +
     b[i]` saturated to the minimum/maximum representable value, or `no[i]` if
     `m[i]` is false.
+*   <code>V **MaskedMulAddOr**(V no, M m, V mul, V x, V add)</code>: returns
+    `mul[i] * x[i] + add[i]` or `no[i]` if `m[i]` is false.
+
+#### Zero masked arithmetic
+
+All ops in this section return `0` for `mask=false` lanes. These are equivalent
+to, and potentially more efficient than, `IfThenElseZero(m, Add(a, b));` etc.
+
+*   `V`: `{f}` \
+    <code>V **MaskedSqrt**(M m, V a)</code>: returns `sqrt(a[i])` where
+    m is true, and zero otherwise.
+*   `V`: `{f}` \
+    <code>V **MaskedApproximateReciprocalSqrt**(M m, V a)</code>: returns
+    the result of ApproximateReciprocalSqrt where m is true and zero otherwise.
+*   `V`: `{f}` \
+    <code>V **MaskedApproximateReciprocal**(M m, V a)</code>: returns the
+    result of ApproximateReciprocal where m is true and zero otherwise.
 
 #### Shifts
 
@@ -1022,6 +1062,15 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
     neither NaN nor infinity, i.e. normal, subnormal or zero. Equivalent to
     `Not(Or(IsNaN(v), IsInf(v)))`.
 
+#### Masked floating-point classification
+
+All ops in this section return `false` for `mask=false` lanes. These are
+equivalent to, and potentially more efficient than, `And(m, IsNaN(v));` etc.
+
+*   `V`: `{f}` \
+    <code>M **MaskedIsNaN**(M m, V v)</code>: returns mask indicating whether
+    `v[i]` is "not a number" (unordered) or `false` if `m[i]` is false.
+
 ### Logical
 
 *   `V`: `{u,i}` \
@@ -1032,6 +1081,10 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
     <code>V **LeadingZeroCount**(V a)</code>: returns the number of
     leading zeros in each lane. For any lanes where ```a[i]``` is zero,
     ```sizeof(TFromV<V>) * 8``` is returned in the corresponding result lanes.
+
+*   `V`: `{u,i}` \
+    <code>V **MaskedLeadingZeroCount**(M m, V a)</code>: returns the
+    result of LeadingZeroCount where `m[i]` is true, and zero otherwise.
 
 *   `V`: `{u,i}` \
     <code>V **TrailingZeroCount**(V a)</code>: returns the number of
@@ -1046,6 +1099,10 @@ Per-lane variable shifts (slow if SSSE3/SSE4, or 16-bit, or Shr i64 on AVX2):
     where ```a[i]``` is zero, an unspecified value that is greater than
     ```HighestValue<MakeSigned<TFromV<V>>>()``` is returned in the
     corresponding result lanes.
+
+*   <code>bool **AllBits1**(D, V v)</code>: returns whether all bits are set.
+
+*   <code>bool **AllBits0**(D, V v)</code>: returns whether all bits are clear.
 
 The following operate on individual bits within each lane. Note that the
 non-operator functions (`And` instead of `&`) must be used for floating-point
@@ -1067,6 +1124,9 @@ types, and on SVE/RVV.
     <code>V **Not**(V v)</code>: returns `~v[i]`.
 
 *   <code>V **AndNot**(V a, V b)</code>: returns `~a[i] & b[i]`.
+
+*   <code>V **MaskedOrOrZero**(M m, V a, V b)</code>: returns `a[i] || b[i]`
+    or `zero` if `m[i]` is false.
 
 The following three-argument functions may be more efficient than assembling
 them from 2-argument functions:
@@ -1500,6 +1560,29 @@ These return a mask (see above) indicating whether the condition is true.
     for comparing 64-bit keys alongside 64-bit values. Only available if
     `HWY_TARGET != HWY_SCALAR`.
 
+#### Masked comparison
+
+All ops in this section return `false` for `mask=false` lanes. These are
+equivalent to, and potentially more efficient than, `And(m, Eq(a, b));` etc.
+
+*   <code>M **MaskedEq**(M m, V a, V b)</code>: returns `a[i] == b[i]` or
+    `false` if `m[i]` is false.
+
+*   <code>M **MaskedNe**(M m, V a, V b)</code>: returns `a[i] != b[i]` or
+    `false` if `m[i]` is false.
+
+*   <code>M **MaskedLt**(M m, V a, V b)</code>: returns `a[i] < b[i]` or
+    `false` if `m[i]` is false.
+
+*   <code>M **MaskedGt**(M m, V a, V b)</code>: returns `a[i] > b[i]` or
+    `false` if `m[i]` is false.
+
+*   <code>M **MaskedLe**(M m, V a, V b)</code>: returns `a[i] <= b[i]` or
+    `false` if `m[i]` is false.
+
+*   <code>M **MaskedGe**(M m, V a, V b)</code>: returns `a[i] >= b[i]` or
+    `false` if `m[i]` is false.
+
 ### Memory
 
 Memory operands are little-endian, otherwise their order would depend on the
@@ -1561,6 +1644,10 @@ aligned memory at indices which are not a multiple of the vector length):
     lanes from `p` to the first (lowest-index) lanes of the result vector and
     fills the remaining lanes with `no`. Like LoadN, this does not fault.
 
+*   <code> Vec&lt;D&gt; **InsertIntoUpper**(D d, T* p, V v)</code>: Loads `Lanes(d)/2`
+    lanes from `p` into the upper lanes of the result vector and the lower half
+    of `v` into the lower lanes.
+
 #### Store
 
 *   <code>void **Store**(Vec&lt;D&gt; v, D, T* aligned)</code>: copies `v[i]`
@@ -1599,6 +1686,10 @@ aligned memory at indices which are not a multiple of the vector length):
 
     StoreN does not modify any memory past
     `p + HWY_MIN(Lanes(d), max_lanes_to_store) - 1`.
+
+*   <code>void **TruncateStore**(Vec&lt;D&gt; v, D d, T* HWY_RESTRICT p)</code>:
+    Truncates elements of `v` to type `T` and stores on `p`. It is similar to
+    performing `TruncateTo` followed by `StoreU`.
 
 #### Interleaved
 
@@ -1822,17 +1913,6 @@ obtain the `D` that describes the return type.
     <code>Vec&lt;D&gt; **DemoteTo**(D, V v)</code>: narrows float to half (for
     bf16, it is unspecified whether this truncates or rounds).
 
-*   `V`,`D`: (`f64,i32`), (`f32,f16`) \
-    <code>Vec&lt;D&gt; **DemoteCeilTo**(D, V v)</code>: Demotes a floating point
-    number to half-sized integral type with ceiling rounding.
-
-*   `V`,`D`: (`f64,i32`), (`f32,f16`) \
-    <code>Vec&lt;D&gt; **DemoteFloorTo**(D, V v)</code>: Demotes a floating
-    point number to half-sized integral type with floor rounding.
-
-*   <code>Vec&lt;D&gt; **MaskedDemoteTo**(M m, D d, V v)</code>: returns `v[i]`
-    demoted to `D` where m is active and returns zero otherwise.
-
 #### Single vector promotion
 
 These functions promote a half vector to a full vector. To obtain halves, use
@@ -1858,27 +1938,6 @@ These functions promote a half vector to a full vector. To obtain halves, use
     towards zero and converts the rounded value to a 64-bit signed or unsigned
     integer. Returns an implementation-defined value if the input exceeds the
     destination range.
-
-*   `V`: `f`, `D`:`{u,i,f}`\
-    <code>Vec&lt;D&gt; **PromoteCeilTo**(D, V part)</code>: rounds `part[i]`
-    up and converts the rounded value to a signed or unsigned integer.
-    Returns an implementation-defined value if the input exceeds the
-    destination range.
-
-*   `V`: `f`, `D`:`{u,i,f}`\
-    <code>Vec&lt;D&gt; **PromoteFloorTo**(D, V part)</code>: rounds `part[i]`
-    down and converts the rounded value to a signed or unsigned integer.
-    Returns an implementation-defined value if the input exceeds the
-    destination range.
-
-*   `V`: `f`, `D`:`{u,i,f}`\
-    <code>Vec&lt;D&gt; **PromoteToNearestInt **(D, V part)</code>: rounds
-    `part[i]` towards the nearest integer, with ties to even, and converts the
-    rounded value to a signed or unsigned integer. Returns an
-    implementation-defined value if the input exceeds the destination range.
-
-*   <code>Vec&lt;D&gt; **MaskedPromoteTo**(M m, D d, V v)</code>: returns `v[i]`
-    widened to `D` where m is active and returns zero otherwise.
 
 The following may be more convenient or efficient than also calling `LowerHalf`
 / `UpperHalf`:
@@ -2295,6 +2354,22 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
     must be in the range `[0, 2 * Lanes(d))` but need not be unique. The index
     type `TI` must be an integer of the same size as `TFromD<D>`.
 
+*   <code>V **TableLookupLanesOr**(M m, V a, V b, unspecified)</code> returns the
+    result of `TableLookupLanes(a, unspecified)` where `m[i]` is true, and returns
+    `b[i]` where `m[i]` is false.
+
+*   <code>V **TableLookupLanesOrZero**(M m, V a, unspecified)</code> returns
+    the result of `TableLookupLanes(a, unspecified)` where `m[i]` is true, and
+    returns zero where `m[i]` is false.
+
+*   <code>V **TwoTablesLookupLanesOr**(D d, M m, V a, V b, unspecified)</code>
+    returns the result of `TwoTablesLookupLanes(V a, V b, unspecified)` where
+    `m[i]` is true, and `a[i]` where `m[i]` is false.
+
+*   <code>V **TwoTablesLookupLanesOrZero**(D d, M m, V a, V b, unspecified)</code>
+    returns the result of `TwoTablesLookupLanes(V a, V b, unspecified)` where
+    `m[i]` is true, and zero where `m[i]` is false.
+
 *   <code>V **Per4LaneBlockShuffle**&lt;size_t kIdx3, size_t kIdx2, size_t
     kIdx1, size_t kIdx0&gt;(V v)</code> does a per 4-lane block shuffle of `v`
     if `Lanes(DFromV<V>())` is greater than or equal to 4 or a shuffle of the
@@ -2434,6 +2509,24 @@ more efficient on some targets.
 *   <code>T **ReduceSum**(D, V v)</code>: returns the sum of all lanes.
 *   <code>T **ReduceMin**(D, V v)</code>: returns the minimum of all lanes.
 *   <code>T **ReduceMax**(D, V v)</code>: returns the maximum of all lanes.
+
+### Masked reductions
+
+**Note**: Horizontal operations (across lanes of the same vector) such as
+reductions are slower than normal SIMD operations and are typically used outside
+critical loops.
+
+All ops in this section ignore lanes where `mask=false`. These are equivalent
+to, and potentially more efficient than, `GetLane(SumOfLanes(d,
+IfThenElseZero(m, v)))` etc. The result is implementation-defined when all mask
+elements are false.
+
+*   <code>T **MaskedReduceSum**(D, M m, V v)</code>: returns the sum of all lanes
+    where `m[i]` is `true`.
+*   <code>T **MaskedReduceMin**(D, M m, V v)</code>: returns the minimum of all
+    lanes where `m[i]` is `true`.
+*   <code>T **MaskedReduceMax**(D, M m, V v)</code>: returns the maximum of all
+    lanes where `m[i]` is `true`.
 
 ### Crypto
 

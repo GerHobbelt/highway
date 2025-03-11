@@ -1976,6 +1976,23 @@ HWY_API Vec128<T, N> Sqrt(Vec128<T, N> v) {
   return Vec128<T, N>{vec_sqrt(v.raw)};
 }
 
+// ------------------------------ GetBiasedExponent
+
+#if HWY_PPC_HAVE_9
+
+#ifdef HWY_NATIVE_GET_BIASED_EXPONENT
+#undef HWY_NATIVE_GET_BIASED_EXPONENT
+#else
+#define HWY_NATIVE_GET_BIASED_EXPONENT
+#endif
+
+template <class V, HWY_IF_FLOAT3264_V(V)>
+HWY_API VFromD<RebindToUnsigned<DFromV<V>>> GetBiasedExponent(V v) {
+  return VFromD<RebindToUnsigned<DFromV<V>>>{vec_extract_exp(v.raw)};
+}
+
+#endif  // HWY_PPC_HAVE_9
+
 // ------------------------------ Min (Gt, IfThenElse)
 
 template <typename T, size_t N, HWY_IF_NOT_SPECIAL_FLOAT(T)>
