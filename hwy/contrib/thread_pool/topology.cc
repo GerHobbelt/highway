@@ -261,7 +261,7 @@ using CpuSet = cpuset_t;
 // Helper functions reduce the number of #if in GetThreadAffinity.
 int GetAffinity(CpuSet* set) {
   // To specify the current thread, pass 0 on Linux/Android and -1 on FreeBSD.
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && __ANDROID_API__ < 12
   return syscall(__NR_sched_getaffinity, 0, sizeof(CpuSet), set);
 #elif HWY_OS_FREEBSD
   return cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, sizeof(CpuSet),
@@ -273,7 +273,7 @@ int GetAffinity(CpuSet* set) {
 
 int SetAffinity(CpuSet* set) {
   // To specify the current thread, pass 0 on Linux/Android and -1 on FreeBSD.
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && __ANDROID_API__ < 12
   return syscall(__NR_sched_setaffinity, 0, sizeof(CpuSet), set);
 #elif HWY_OS_FREEBSD
   return cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_TID, -1, sizeof(CpuSet),
@@ -994,8 +994,16 @@ bool InitCachesSysfs(Caches& caches) {
 
   // Require L1 and L2 cache.
   if (HWY_UNLIKELY(caches[1].size_kib == 0 || caches[2].size_kib == 0)) {
+// Don't complain on Android because this is known to happen there. We are
+// unaware of good alternatives: `getauxval(AT_L1D_CACHEGEOMETRY)` and
+// `sysconf(_SC_LEVEL1_DCACHE_SIZE)` are unreliable, detecting via timing seems
+// difficult to do reliably, and we do not want to maintain lists of known CPUs
+// and their properties. It's OK to return false; callers are responsible for
+// assuming reasonable defaults.
+#ifndef __ANDROID__
     HWY_WARN("sysfs detected L1=%u L2=%u, err %x\n", caches[1].size_kib,
              caches[2].size_kib, errno);
+#endif
     return false;
   }
 
@@ -1181,7 +1189,8 @@ HWY_MAYBE_UNUSED void ComputeSets(Cache& c) {
   if (c.sets == 0) {
     c.sets = static_cast<uint32_t>(sets);
   } else {
-    if (c.sets != sets) {
+    const size_t diff = c.sets - sets;
+    if (diff > 1) {
       HWY_ABORT("Inconsistent cache sets %u != %zu\n", c.sets, sets);
     }
   }

@@ -33,26 +33,8 @@ config_setting(
 )
 
 config_setting(
-    name = "compiler_msvc_actual",
-    flag_values = {"@bazel_tools//tools/cpp:compiler": "msvc"},
-)
-
-# The above is insufficient for Bazel on Windows, which does not seem to
-# detect/set a compiler flag. This workaround prevents compile errors due to
-# passing clang-only warning flags to MSVC.
-config_setting(
-    name = "compiler_msvc_cpu",
-    values = {
-        "cpu": "x64_windows",
-    },
-)
-
-selects.config_setting_group(
     name = "compiler_msvc",
-    match_any = [
-        ":compiler_msvc_actual",
-        ":compiler_msvc_cpu",
-    ],
+    flag_values = {"@bazel_tools//tools/cpp:compiler": "msvc-cl"},
 )
 
 config_setting(
@@ -91,6 +73,7 @@ CLANG_GCC_COPTS = [
     "-Wextra-semi",
     "-Wunreachable-code",
     "-Wshadow",
+    "-Wmissing-declarations",
 ]
 
 # Warnings supported by Clang and Clang-cl
@@ -216,35 +199,54 @@ cc_library(
 
 cc_library(
     name = "stats",
-    srcs = [
-        "hwy/stats.cc",
-    ],
-    hdrs = [
-        "hwy/stats.h",
-    ],
+    srcs = ["hwy/stats.cc"],
+    hdrs = ["hwy/stats.h"],
     compatible_with = [],
     copts = COPTS,
     deps = [":hwy"],
 )
 
 cc_library(
-    name = "nanobenchmark",
-    srcs = [
-        "hwy/nanobenchmark.cc",
-        "hwy/timer.cc",
+    name = "robust_statistics",
+    hdrs = ["hwy/robust_statistics.h"],
+    compatible_with = [],
+    copts = COPTS,
+    deps = [":hwy"],
+)
+
+cc_library(
+    name = "timer",
+    srcs = ["hwy/timer.cc"],
+    hdrs = ["hwy/timer.h"],
+    compatible_with = [],
+    copts = COPTS,
+    # Deprecated.
+    textual_hdrs = [
+        "hwy/timer-inl.h",
     ],
+    deps = [
+        ":hwy",
+        ":robust_statistics",
+    ],
+)
+
+# Previously provided timer.*, use :timer instead.
+cc_library(
+    name = "nanobenchmark",
+    srcs = ["hwy/nanobenchmark.cc"],
     hdrs = [
         "hwy/nanobenchmark.h",
-        "hwy/robust_statistics.h",
+        # TODO(janwas): remove after users depend on :timer.
         "hwy/timer.h",
     ],
     compatible_with = [],
     copts = COPTS,
     local_defines = ["hwy_EXPORTS"],
-    textual_hdrs = [
-        "hwy/timer-inl.h",
+    deps = [
+        ":hwy",
+        ":robust_statistics",
+        ":timer",
     ],
-    deps = [":hwy"],
 )
 
 cc_library(
@@ -266,7 +268,7 @@ cc_library(
     deps = [
         ":bit_set",
         ":hwy",
-        ":nanobenchmark",
+        ":timer",
     ],
 )
 
@@ -279,7 +281,7 @@ cc_library(
     copts = COPTS,
     deps = [
         ":hwy",
-        ":nanobenchmark",
+        ":timer",
         # "//hwy/contrib/sort:vqsort",
     ],
 )
@@ -290,8 +292,8 @@ cc_binary(
     copts = COPTS,
     deps = [
         ":hwy",
-        ":nanobenchmark",
         ":profiler",
+        ":timer",
     ],
 )
 
@@ -347,9 +349,6 @@ cc_library(
 
 cc_library(
     name = "thread_pool",
-    srcs = [
-        "hwy/contrib/thread_pool/spin.cc",
-    ],
     hdrs = [
         "hwy/contrib/thread_pool/futex.h",
         "hwy/contrib/thread_pool/spin.h",
@@ -358,10 +357,11 @@ cc_library(
     compatible_with = [],
     copts = COPTS,
     deps = [
+        ":bit_set",
         ":hwy",  # HWY_ASSERT
-        ":nanobenchmark",
         ":profiler",
         ":stats",
+        ":timer",
         ":topology",
     ],
 )
@@ -375,7 +375,6 @@ cc_library(
     ],
     deps = [
         ":hwy",
-        ":nanobenchmark",
         ":thread_pool",
     ],
 )
@@ -590,6 +589,7 @@ HWY_TEST_DEPS = [
     ":skeleton",
     ":thread_pool",
     ":topology",
+    ":timer",
     ":unroller",
     "//hwy/contrib/sort:vqsort",
 ] + select({
