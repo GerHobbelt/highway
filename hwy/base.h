@@ -321,12 +321,17 @@ HWY_DLLEXPORT HWY_NORETURN void HWY_FORMAT(3, 4)
 #define HWY_ATTR_NO_MSAN
 #endif
 
+#if HWY_IS_ASAN || HWY_IS_HWASAN || HWY_IS_MSAN || HWY_IS_TSAN || HWY_IS_UBSAN
+#define HWY_IS_SANITIZER 1
+#else
+#define HWY_IS_SANITIZER 0
+#endif
+
 // For enabling HWY_DASSERT and shortening tests in slower debug builds
 #if !defined(HWY_IS_DEBUG_BUILD)
 // Clang does not define NDEBUG, but it and GCC define __OPTIMIZE__, and recent
 // MSVC defines NDEBUG (if not, could instead check _DEBUG).
-#if (!defined(__OPTIMIZE__) && !defined(NDEBUG)) || HWY_IS_ASAN || \
-    HWY_IS_HWASAN || HWY_IS_MSAN || HWY_IS_TSAN || HWY_IS_UBSAN || \
+#if (!defined(__OPTIMIZE__) && !defined(NDEBUG)) || HWY_IS_SANITIZER || \
     defined(__clang_analyzer__)
 #define HWY_IS_DEBUG_BUILD 1
 #else
@@ -1125,7 +1130,8 @@ HWY_API HWY_BITCASTSCALAR_CONSTEXPR To BitCastScalar(const From& val) {
 
 #ifndef HWY_HAVE_SCALAR_F16_TYPE
 // Compiler supports _Float16, not necessarily with operators.
-#if HWY_NEON_HAVE_F16C || HWY_RVV_HAVE_F16_VEC || HWY_SSE2_HAVE_F16_TYPE
+#if HWY_NEON_HAVE_F16C || HWY_RVV_HAVE_F16_VEC || HWY_SSE2_HAVE_F16_TYPE || \
+     __SPIRV_DEVICE__
 #define HWY_HAVE_SCALAR_F16_TYPE 1
 #else
 #define HWY_HAVE_SCALAR_F16_TYPE 0
@@ -1177,7 +1183,7 @@ using NativeSpecialFloatToWrapper =
 // are generated regardless of F16 support; see #1684.
 struct alignas(2) float16_t {
 #if HWY_HAVE_SCALAR_F16_TYPE
-#if HWY_RVV_HAVE_F16_VEC || HWY_SSE2_HAVE_F16_TYPE
+#if HWY_RVV_HAVE_F16_VEC || HWY_SSE2_HAVE_F16_TYPE || __SPIRV_DEVICE__
   using Native = _Float16;
 #elif HWY_NEON_HAVE_F16C
   using Native = __fp16;
