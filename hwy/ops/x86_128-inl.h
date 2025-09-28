@@ -71,8 +71,9 @@ namespace detail {
 #endif
 
 #undef HWY_X86_HAVE_AVX10_2_OPS
-#if HWY_TARGET_IS_AVX10_2 && \
-    (HWY_COMPILER_GCC_ACTUAL >= 1501 || HWY_COMPILER3_CLANG >= 200103)
+#if HWY_TARGET_IS_AVX10_2 &&            \
+    (HWY_COMPILER_GCC_ACTUAL >= 1501 || \
+     (HWY_COMPILER3_CLANG >= 200103 && HWY_COMPILER_CLANG != 2100))
 #define HWY_X86_HAVE_AVX10_2_OPS 1
 #else
 #define HWY_X86_HAVE_AVX10_2_OPS 0
@@ -1002,6 +1003,23 @@ using MFromD = decltype(MaskFromVec(VFromD<D>()));
 template <class D>
 HWY_API MFromD<D> MaskFalse(D /*d*/) {
   return MFromD<D>{static_cast<decltype(MFromD<D>().raw)>(0)};
+}
+
+// ------------------------------ SetMask
+#ifdef HWY_NATIVE_SET_MASK
+#undef HWY_NATIVE_SET_MASK
+#else
+#define HWY_NATIVE_SET_MASK
+#endif
+
+template <class D>
+HWY_API MFromD<D> SetMask(D /*d*/, bool val) {
+  constexpr uint64_t kMask = (HWY_MAX_LANES_D(D) < 64)
+                                 ? ((1ULL << (HWY_MAX_LANES_D(D) & 63)) - 1ULL)
+                                 : LimitsMax<uint64_t>();
+
+  return MFromD<D>{static_cast<decltype(MFromD<D>().raw)>(
+      static_cast<uint64_t>(-static_cast<int64_t>(val)) & kMask)};
 }
 
 // ------------------------------ IsNegative (MFromD)
