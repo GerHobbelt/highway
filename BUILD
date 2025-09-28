@@ -502,7 +502,10 @@ cc_test(
     name = "list_targets",
     size = "small",
     srcs = ["hwy/tests/list_targets.cc"],
-    deps = [":hwy"],
+    deps = [
+        ":hwy",
+        ":timer",
+    ],
 )
 
 cc_test(
@@ -551,6 +554,21 @@ HWY_CONTRIB_TESTS = (
     (
         "hwy/contrib/math/",
         "math_test",
+        (":math",),
+    ),
+    (
+        "hwy/contrib/math/",
+        "math_hyper_test",
+        (":math",),
+    ),
+    (
+        "hwy/contrib/math/",
+        "math_tan_test",
+        (":math",),
+    ),
+    (
+        "hwy/contrib/math/",
+        "math_trig_test",
         (":math",),
     ),
     (
