@@ -1,8 +1,7 @@
 # Placeholder#1 for Guitar, do not remove
+# Placeholder for cc_test, do not remove
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_license//rules:license.bzl", "license")
-
-load("@rules_cc//cc:defs.bzl", "cc_test")
 # Placeholder#2 for Guitar, do not remove
 
 package(
@@ -734,11 +733,7 @@ HWY_TEST_DEPS = [
             local_defines = ["HWY_IS_TEST"],
             # Placeholder for malloc, do not remove
             # for test_suite.
-            tags = [
-                "hwy_ops_test",
-                # TODO(b/422564815): Re-enable MSAN once fixed.
-                "nomsan",
-            ],
+            tags = ["hwy_ops_test"],
             deps = HWY_TEST_DEPS + extra_deps + select({
                 ":compiler_emscripten": [":preamble.js.lds"],
                 "//conditions:default": [],

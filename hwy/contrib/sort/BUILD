@@ -1,3 +1,5 @@
+# Placeholder for cc_test, do not remove
+
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
