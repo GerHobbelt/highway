@@ -204,6 +204,29 @@ else()
   set (HWY_DISABLE_FUTEX ON CACHE BOOL "Disable futex for thread_pool" FORCE)
 endif()
 
+find_package(Threads)
+
+if (NOT Threads_FOUND AND HWY_ENABLE_CONTRIB)
+  message(FATAL_ERROR "Threads must be available if HWY_ENABLE_CONTRIB is ON")
+endif()
+
+if(Threads_FOUND)
+  if(THREADS_HAVE_PTHREAD_ARG)
+    set(HWY_THREAD_FLAGS "-pthread")
+  else()
+    set(HWY_THREAD_FLAGS "")
+  endif()
+
+  if(CMAKE_THREAD_LIBS_INIT)
+    set(HWY_THREAD_LIBS ${CMAKE_THREAD_LIBS_INIT})
+  else()
+    set(HWY_THREAD_LIBS "")
+  endif()
+else()
+  set(HWY_THREAD_FLAGS "")
+  set(HWY_THREAD_LIBS "")
+endif()
+
 if (HWY_RISCV OR CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "RISCV32|RISCV64|RISCV128" OR CMAKE_SYSTEM_PROCESSOR MATCHES "riscv32|riscv64|riscv128")
   include(CheckCSourceCompiles)
   check_c_source_compiles("
@@ -311,6 +334,7 @@ if (NOT HWY_CMAKE_HEADER_ONLY)
     hwy/per_target.cc
     hwy/perf_counters.cc
     hwy/print.cc
+    hwy/profiler.cc
     hwy/targets.cc
     hwy/timer.cc
   )
@@ -585,7 +609,7 @@ endif()
 if (HWY_ENABLE_CONTRIB)
 add_library(hwy_contrib ${HWY_LIBRARY_TYPE} ${HWY_CONTRIB_SOURCES})
 target_link_libraries(hwy_contrib PUBLIC hwy)
-target_compile_options(hwy_contrib PRIVATE ${HWY_FLAGS})
+target_compile_options(hwy_contrib PRIVATE ${HWY_FLAGS} ${HWY_THREAD_FLAGS})
 set_property(TARGET hwy_contrib PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_target_properties(hwy_contrib PROPERTIES VERSION ${LIBRARY_VERSION} SOVERSION ${LIBRARY_SOVERSION})
 target_include_directories(hwy_contrib PUBLIC
@@ -599,6 +623,9 @@ set_target_properties(hwy_contrib PROPERTIES
   LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hwy/hwy.version)
 # For GCC __atomic_store_8, see #887
 target_link_libraries(hwy_contrib PRIVATE ${ATOMICS_LIBRARIES})
+
+# Avoid linker errors if libpthread needs to be linked
+target_link_libraries(hwy_contrib PRIVATE ${HWY_THREAD_LIBS})
 
 if (WIN32 AND NOT MSVC AND NOT HWY_DISABLE_FUTEX)
 target_link_libraries(hwy_contrib PUBLIC synchronization)
@@ -764,10 +791,11 @@ if (HWY_ENABLE_CONTRIB)
 add_executable(hwy_profiler_example hwy/examples/profiler_example.cc)
 target_sources(hwy_profiler_example PRIVATE
     hwy/profiler.h)
-target_compile_options(hwy_profiler_example PRIVATE ${HWY_FLAGS})
+target_compile_options(hwy_profiler_example PRIVATE ${HWY_FLAGS} ${HWY_THREAD_FLAGS})
 target_compile_features(hwy_profiler_example PRIVATE ${HWY_CXX_STD_TGT_COMPILE_FEATURE})
 target_link_libraries(hwy_profiler_example PRIVATE hwy hwy_contrib)
 target_link_libraries(hwy_profiler_example PRIVATE ${ATOMICS_LIBRARIES})
+target_link_libraries(hwy_profiler_example PRIVATE ${HWY_THREAD_LIBS})
 set_target_properties(hwy_profiler_example
     PROPERTIES RUNTIME_OUTPUT_DIRECTORY "examples/")
 endif()  # HWY_ENABLE_CONTRIB
@@ -859,6 +887,7 @@ set(HWY_TEST_FILES
   hwy/tests/masked_minmax_test.cc
   hwy/tests/memory_test.cc
   hwy/tests/minmax_magnitude_test.cc
+  hwy/tests/minmax_number_test.cc
   hwy/tests/minmax_test.cc
   hwy/tests/minmax128_test.cc
   hwy/tests/mul_by_pow2_test.cc
@@ -930,7 +959,7 @@ foreach (TESTFILE IN LISTS HWY_TEST_FILES)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
   add_executable(${TESTNAME} ${TESTFILE})
-  target_compile_options(${TESTNAME} PRIVATE ${HWY_FLAGS})
+  target_compile_options(${TESTNAME} PRIVATE ${HWY_FLAGS} ${HWY_THREAD_FLAGS})
   # Test all targets, not just the best/baseline. This changes the default
   # policy to all-attainable; note that setting -DHWY_COMPILE_* directly can
   # cause compile errors because only one may be set, and other CMakeLists.txt
@@ -944,6 +973,10 @@ foreach (TESTFILE IN LISTS HWY_TEST_FILES)
   target_link_libraries(${TESTNAME} PRIVATE ${HWY_TEST_LIBS} ${HWY_GTEST_LIBS})
   # For GCC __atomic_store_8, see #887
   target_link_libraries(${TESTNAME} PRIVATE ${ATOMICS_LIBRARIES})
+
+  # Avoid linker errors if libpthread needs to be linked
+  target_link_libraries(${TESTNAME} PRIVATE ${HWY_THREAD_LIBS})
+
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "tests")
 

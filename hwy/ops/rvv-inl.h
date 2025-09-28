@@ -16,7 +16,20 @@
 // RISC-V V vectors (length not known at compile time).
 // External include guard in highway.h - see comment there.
 
+#pragma push_macro("__riscv_v_elen")
+
+// Workaround that ensures that all of the __riscv_vsetvl_* and
+// __riscv_vsetvlmax_* macros in riscv_vector.h are defined when compiling with
+// Clang 20 with dynamic dispatch and a baseline target of SCALAR or EMU128
+#if HWY_COMPILER_CLANG >= 2000 && HWY_COMPILER_CLANG < 2100 && \
+    (!defined(__riscv_v_elen) || __riscv_v_elen < 64)
+#undef __riscv_v_elen
+#define __riscv_v_elen 64
+#endif
+
 #include <riscv_vector.h>
+
+#pragma pop_macro("__riscv_v_elen")
 
 #include "hwy/ops/shared-inl.h"
 
@@ -1188,9 +1201,9 @@ HWY_RVV_FOREACH_I(HWY_RVV_RETV_ARGVV, SaturatedSub, ssub, _ALL)
 #if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1400
 #define HWY_RVV_AVOID_VXRM
 // Clang 16 with __riscv_v_intrinsic == 11000 may either require VXRM or avoid.
-// Assume earlier versions avoid.
+// Assume that Clang 16 and earlier avoid VXRM.
 #elif HWY_COMPILER_CLANG && \
-    (HWY_COMPILER_CLANG < 1600 || __riscv_v_intrinsic < 1000000)
+    (HWY_COMPILER_CLANG < 1700 || __riscv_v_intrinsic < 11000)
 #define HWY_RVV_AVOID_VXRM
 #endif
 

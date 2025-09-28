@@ -142,29 +142,6 @@ namespace detail {  // for code folding and Raw128
   HWY_NEON_DEF_FUNCTION(int64, 2, name, prefix##q, infix, s64, args) \
   HWY_NEON_DEF_FUNCTION(int64, 1, name, prefix, infix, s64, args)
 
-// Clang 17 crashes with bf16, see github.com/llvm/llvm-project/issues/64179.
-#undef HWY_NEON_HAVE_BFLOAT16
-#if HWY_HAVE_SCALAR_BF16_TYPE &&                              \
-    ((HWY_TARGET == HWY_NEON_BF16 &&                          \
-      (!HWY_COMPILER_CLANG || HWY_COMPILER_CLANG >= 1800)) || \
-     defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC))
-#define HWY_NEON_HAVE_BFLOAT16 1
-#else
-#define HWY_NEON_HAVE_BFLOAT16 0
-#endif
-
-// HWY_NEON_HAVE_F32_TO_BF16C is defined if NEON vcvt_bf16_f32 and
-// vbfdot_f32 are available, even if the __bf16 type is disabled due to
-// GCC/Clang bugs.
-#undef HWY_NEON_HAVE_F32_TO_BF16C
-#if HWY_NEON_HAVE_BFLOAT16 || HWY_TARGET == HWY_NEON_BF16 || \
-    (defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) &&        \
-     (HWY_COMPILER_GCC_ACTUAL >= 1000 || HWY_COMPILER_CLANG >= 1100))
-#define HWY_NEON_HAVE_F32_TO_BF16C 1
-#else
-#define HWY_NEON_HAVE_F32_TO_BF16C 0
-#endif
-
 // bfloat16_t
 #if HWY_NEON_HAVE_BFLOAT16
 #define HWY_NEON_DEF_FUNCTION_BFLOAT_16(name, prefix, infix, args)       \
@@ -3559,6 +3536,28 @@ HWY_API Vec128<double> Max(Vec128<double> a, Vec128<double> b) {
 // Armv7: NaN if any is NaN.
 HWY_NEON_DEF_FUNCTION_ALL_FLOATS(Max, vmax, _, 2)
 #endif  // HWY_ARCH_ARM_A64
+
+// ------------------------------ MinNumber and MaxNumber
+
+#if !HWY_ARCH_ARM_A64
+
+#ifdef HWY_NATIVE_FLOAT_MIN_MAX_NUMBER
+#undef HWY_NATIVE_FLOAT_MIN_MAX_NUMBER
+#else
+#define HWY_NATIVE_FLOAT_MIN_MAX_NUMBER
+#endif
+
+template <class V, HWY_IF_FLOAT_OR_SPECIAL_V(V)>
+HWY_API V MinNumber(V a, V b) {
+  return Min(IfThenElse(IsNaN(a), b, a), IfThenElse(IsNaN(b), a, b));
+}
+
+template <class V, HWY_IF_FLOAT_OR_SPECIAL_V(V)>
+HWY_API V MaxNumber(V a, V b) {
+  return Max(IfThenElse(IsNaN(a), b, a), IfThenElse(IsNaN(b), a, b));
+}
+
+#endif
 
 // ================================================== MEMORY
 

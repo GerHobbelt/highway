@@ -285,16 +285,15 @@ cc_library(
 
 cc_library(
     name = "profiler",
-    hdrs = [
-        "hwy/profiler.h",
-    ],
+    srcs = ["hwy/profiler.cc"],
+    hdrs = ["hwy/profiler.h"],
     compatible_with = [],
     copts = COPTS,
     deps = [
+        ":bit_set",
         ":hwy",
         ":robust_statistics",
         ":timer",
-        "//hwy/contrib/sort:vqsort",
     ],
 )
 
@@ -305,6 +304,7 @@ cc_binary(
     deps = [
         ":hwy",
         ":profiler",
+        ":thread_pool",
         ":timer",
     ],
 )
@@ -651,6 +651,7 @@ HWY_TESTS = HWY_CONTRIB_TESTS + (
     ("hwy/tests/", "masked_minmax_test", []),
     ("hwy/tests/", "memory_test", []),
     ("hwy/tests/", "minmax_magnitude_test", []),
+    ("hwy/tests/", "minmax_number_test", []),
     ("hwy/tests/", "minmax_test", []),
     ("hwy/tests/", "minmax128_test", []),
     ("hwy/tests/", "mul_by_pow2_test", []),
@@ -733,7 +734,11 @@ HWY_TEST_DEPS = [
             local_defines = ["HWY_IS_TEST"],
             # Placeholder for malloc, do not remove
             # for test_suite.
-            tags = ["hwy_ops_test"],
+            tags = [
+                "hwy_ops_test",
+                # TODO(b/422564815): Re-enable MSAN once fixed.
+                "nomsan",
+            ],
             deps = HWY_TEST_DEPS + extra_deps + select({
                 ":compiler_emscripten": [":preamble.js.lds"],
                 "//conditions:default": [],
