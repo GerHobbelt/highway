@@ -34,7 +34,7 @@
 #undef HWY_NAMESPACE
 #undef HWY_ALIGN
 #undef HWY_MAX_BYTES
-#undef HWY_LANES
+#undef HWY_MIN_BYTES
 
 #undef HWY_HAVE_SCALABLE
 #undef HWY_HAVE_TUPLE
@@ -44,8 +44,18 @@
 #undef HWY_MEM_OPS_MIGHT_FAULT
 #undef HWY_NATIVE_FMA
 #undef HWY_NATIVE_DOT_BF16
-#undef HWY_CAP_GE256
-#undef HWY_CAP_GE512
+#undef HWY_NATIVE_MASK
+
+#ifndef HWY_CAP_GE256
+#define HWY_CAP_GE256 (HWY_MIN_BYTES >= 32)
+#endif
+#ifndef HWY_CAP_GE512
+#define HWY_CAP_GE512 (HWY_MIN_BYTES >= 64)
+#endif
+
+// Almost all targets (except RVV and SCALAR) use this definition.
+#undef HWY_LANES
+#define HWY_LANES(T) (HWY_MAX_BYTES / sizeof(T))
 
 #undef HWY_TARGET_IS_SVE
 #if HWY_TARGET & HWY_ALL_SVE
@@ -242,7 +252,7 @@
 #define HWY_NAMESPACE N_SSE2
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -251,8 +261,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0  // a few actually are
 
 #define HWY_TARGET_STR HWY_TARGET_STR_SSE2
 //-----------------------------------------------------------------------------
@@ -262,7 +271,7 @@
 #define HWY_NAMESPACE N_SSSE3
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -271,8 +280,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0  // a few actually are
 
 #define HWY_TARGET_STR HWY_TARGET_STR_SSSE3
 
@@ -283,7 +291,7 @@
 #define HWY_NAMESPACE N_SSE4
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -292,8 +300,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0  // a few actually are
 
 #define HWY_TARGET_STR HWY_TARGET_STR_SSE4
 
@@ -304,7 +311,7 @@
 #define HWY_NAMESPACE N_AVX2
 #define HWY_ALIGN alignas(32)
 #define HWY_MAX_BYTES 32
-#define HWY_LANES(T) (32 / sizeof(T))
+#define HWY_MIN_BYTES 32
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -318,9 +325,7 @@
 #define HWY_NATIVE_FMA 1
 #endif
 #define HWY_NATIVE_DOT_BF16 0
-
-#define HWY_CAP_GE256 1
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0  // a few actually are
 
 #define HWY_TARGET_STR HWY_TARGET_STR_AVX2
 
@@ -330,7 +335,7 @@
 
 #define HWY_ALIGN alignas(64)
 #define HWY_MAX_BYTES 64
-#define HWY_LANES(T) (64 / sizeof(T))
+#define HWY_MIN_BYTES 64
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -349,13 +354,7 @@
 #else
 #define HWY_NATIVE_DOT_BF16 0
 #endif
-#define HWY_CAP_GE256 1
-
-#if HWY_MAX_BYTES >= 64
-#define HWY_CAP_GE512 1
-#else
-#define HWY_CAP_GE512 0
-#endif
+#define HWY_NATIVE_MASK 1
 
 #if HWY_TARGET == HWY_AVX3
 
@@ -392,7 +391,7 @@
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -401,8 +400,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 1
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #if HWY_TARGET == HWY_PPC8
 
@@ -429,7 +427,7 @@
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -438,8 +436,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 1
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #if HWY_TARGET == HWY_Z14
 
@@ -484,7 +481,7 @@
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -514,8 +511,7 @@
 #define HWY_NATIVE_DOT_BF16 0
 #endif
 
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #if HWY_TARGET == HWY_NEON_WITHOUT_AES
 #define HWY_NAMESPACE N_NEON_WITHOUT_AES
@@ -589,10 +585,6 @@
 // SVE only requires lane alignment, not natural alignment of the entire vector.
 #define HWY_ALIGN alignas(8)
 
-// Value ensures MaxLanes() is the tightest possible upper bound to reduce
-// overallocation.
-#define HWY_LANES(T) ((HWY_MAX_BYTES) / sizeof(T))
-
 #define HWY_HAVE_INTEGER64 1
 #define HWY_HAVE_FLOAT16 1
 #define HWY_HAVE_FLOAT64 1
@@ -603,24 +595,27 @@
 #else
 #define HWY_NATIVE_DOT_BF16 0
 #endif
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 1
 
 #if HWY_TARGET == HWY_SVE2
 #define HWY_NAMESPACE N_SVE2
 #define HWY_MAX_BYTES 256
+#define HWY_MIN_BYTES 16
 #define HWY_HAVE_SCALABLE 1
 #elif HWY_TARGET == HWY_SVE_256
 #define HWY_NAMESPACE N_SVE_256
 #define HWY_MAX_BYTES 32
+#define HWY_MIN_BYTES 32
 #define HWY_HAVE_SCALABLE 0
 #elif HWY_TARGET == HWY_SVE2_128
 #define HWY_NAMESPACE N_SVE2_128
 #define HWY_MAX_BYTES 16
+#define HWY_MIN_BYTES 16
 #define HWY_HAVE_SCALABLE 0
 #else
 #define HWY_NAMESPACE N_SVE
 #define HWY_MAX_BYTES 256
+#define HWY_MIN_BYTES 16
 #define HWY_HAVE_SCALABLE 1
 #endif
 
@@ -649,7 +644,7 @@
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -658,8 +653,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #define HWY_NAMESPACE N_WASM
 
@@ -671,7 +665,7 @@
 
 #define HWY_ALIGN alignas(32)
 #define HWY_MAX_BYTES 32
-#define HWY_LANES(T) (32 / sizeof(T))
+#define HWY_MIN_BYTES 32
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -680,8 +674,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 1
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #define HWY_NAMESPACE N_WASM_EMU256
 
@@ -697,9 +690,11 @@
 
 // The spec requires VLEN <= 2^16 bits, so the limit is 2^16 bytes (LMUL=8).
 #define HWY_MAX_BYTES 65536
+#define HWY_MIN_BYTES 16
 
 // = HWY_MAX_BYTES divided by max LMUL=8 because MaxLanes includes the actual
 // LMUL. This is the tightest possible upper bound.
+#undef HWY_LANES
 #define HWY_LANES(T) (8192 / sizeof(T))
 
 #define HWY_HAVE_SCALABLE 1
@@ -708,8 +703,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 0
 #define HWY_NATIVE_FMA 1
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 1
 
 #if HWY_RVV_HAVE_F16_VEC
 #define HWY_HAVE_FLOAT16 1
@@ -733,18 +727,18 @@
 #if HWY_TARGET == HWY_LSX
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
+#define HWY_MIN_BYTES 16
 #ifndef __loongarch_sx
 #define HWY_TARGET_STR "lsx"
 #endif
 #else
 #define HWY_ALIGN alignas(32)
 #define HWY_MAX_BYTES 32
+#define HWY_MIN_BYTES 32
 #ifndef __loongarch_asx
 #define HWY_TARGET_STR "lsx,lasx"
 #endif
 #endif
-
-#define HWY_LANES(T) (HWY_MAX_BYTES / sizeof(T))
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -753,14 +747,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 1
 #define HWY_NATIVE_DOT_BF16 0
-
-#if HWY_TARGET == HWY_LSX
-#define HWY_CAP_GE256 0
-#else
-#define HWY_CAP_GE256 1
-#endif
-
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #if HWY_TARGET == HWY_LSX
 #define HWY_NAMESPACE N_LSX
@@ -776,7 +763,7 @@
 
 #define HWY_ALIGN alignas(16)
 #define HWY_MAX_BYTES 16
-#define HWY_LANES(T) (16 / sizeof(T))
+#define HWY_MIN_BYTES 16
 
 #define HWY_HAVE_SCALABLE 0
 #define HWY_HAVE_INTEGER64 1
@@ -785,8 +772,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 1
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #define HWY_NAMESPACE N_EMU128
 
@@ -798,6 +784,8 @@
 
 #define HWY_ALIGN
 #define HWY_MAX_BYTES 8
+#define HWY_MIN_BYTES 8
+#undef HWY_LANES
 #define HWY_LANES(T) 1
 
 #define HWY_HAVE_SCALABLE 0
@@ -807,8 +795,7 @@
 #define HWY_MEM_OPS_MIGHT_FAULT 0
 #define HWY_NATIVE_FMA 0
 #define HWY_NATIVE_DOT_BF16 0
-#define HWY_CAP_GE256 0
-#define HWY_CAP_GE512 0
+#define HWY_NATIVE_MASK 0
 
 #define HWY_NAMESPACE N_SCALAR
 
@@ -834,7 +821,7 @@
 
 // Clang <9 requires this be invoked at file scope, before any namespace.
 #undef HWY_BEFORE_NAMESPACE
-#if defined(HWY_TARGET_STR)
+#if defined(HWY_TARGET_STR) && !defined(HWY_DISABLE_ATTR)
 #define HWY_BEFORE_NAMESPACE()        \
   HWY_PUSH_ATTRIBUTES(HWY_TARGET_STR) \
   static_assert(true, "For requiring trailing semicolon")
@@ -846,7 +833,7 @@
 
 // Clang <9 requires any namespaces be closed before this macro.
 #undef HWY_AFTER_NAMESPACE
-#if defined(HWY_TARGET_STR)
+#if defined(HWY_TARGET_STR) && !defined(HWY_DISABLE_ATTR)
 #define HWY_AFTER_NAMESPACE() \
   HWY_POP_ATTRIBUTES          \
   static_assert(true, "For requiring trailing semicolon")
@@ -857,7 +844,8 @@
 #endif
 
 #undef HWY_ATTR
-#if defined(HWY_TARGET_STR) && HWY_HAS_ATTRIBUTE(target)
+#if defined(HWY_TARGET_STR) && HWY_HAS_ATTRIBUTE(target) && \
+    !defined(HWY_DISABLE_ATTR)
 #define HWY_ATTR __attribute__((target(HWY_TARGET_STR)))
 #else
 #define HWY_ATTR

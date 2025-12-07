@@ -2801,15 +2801,13 @@ must test the macros of the target *we will call*, e.g. via `hwy::HaveFloat64()`
 instead of `HWY_HAVE_FLOAT64`, which describes the current target.
 
 *   `HWY_IDE` is 0 except when parsed by IDEs; adding it to conditions such as
-    `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.\
-    Note for clangd users: [there is no predefined macros in clangd](https://github.com/clangd/clangd/issues/581),
+    `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.
+    \
+    Note for clangd users:
+    [there are no predefined macros in clangd](https://github.com/clangd/clangd/issues/581),
     so you must manually add `__CLANGD__` macro so we can detect the presence of
-    clangd. This can be easily done by adding these two lines to your project's 
-    `.clangd` file:
-    ```
-    CompileFlags:
-      Add: [-D__CLANGD__]
-    ```
+    clangd. This can be easily done by adding these two lines to your project's
+    `.clangd` file: `CompileFlags: Add: [-D__CLANGD__]`
 
 The following indicate full support for certain lane types and expand to 1 or 0.
 
@@ -2859,12 +2857,20 @@ supported for the `HWY_SCALAR` target.
     corresponding mask element is false. This is the case on ASAN/MSAN builds,
     AMD x86 prior to AVX-512, and Arm NEON. If so, users can prevent faults by
     ensuring memory addresses are aligned to the vector size or at least padded
-    (allocation size increased by at least `Lanes(d)`).
+    (allocation size increased by at least `Lanes(d)`). Note that `LoadN` and
+    `StoreN` never fault, regardless of the value of this macro.
 
 *   `HWY_NATIVE_FMA` expands to 1 if the `MulAdd` etc. ops use native fused
     multiply-add for floating-point inputs. Otherwise, `MulAdd(f, m, a)` is
     implemented as `Add(Mul(f, m), a)`. Checking this can be useful for
     increasing the tolerance of expected results (around 1E-5 or 1E-6).
+
+*   `HWY_NATIVE_MASK` expands to 1 if the `Masked*` etc. ops use native masking.
+    If so, the masking is zero-cost, otherwise they typically involve an extra
+    AND operation.
+
+*   `HWY_NATIVE_DOT_BF16` expands to 1 if `ReorderWidenMulAccumulate` uses a
+    native instruction rather than masking and f32 `MulAdd`.
 
 *   `HWY_IS_LITTLE_ENDIAN` expands to 1 on little-endian targets and to 0 on
     big-endian targets.
@@ -2872,9 +2878,15 @@ supported for the `HWY_SCALAR` target.
 *   `HWY_IS_BIG_ENDIAN` expands to 1 on big-endian targets and to 0 on
     little-endian targets.
 
-The following were used to signal the maximum number of lanes for certain
-operations, but this is no longer necessary (nor possible on SVE/RVV), so they
-are DEPRECATED:
+*   `HWY_MAX_BYTES` is an upper bound on the size of a full vector, suitable for
+    use in `#if` expressions. Except for the `HWY_SCALAR` target, it is equal to
+    the vector size if `!HWY_HAVE_SCALABLE`.
+
+*   `HWY_MIN_BYTES` is a lower bound on the size of a full vector, suitable for
+    use in `#if` expressions. Except for the `HWY_SCALAR` target, it is equal to
+    the vector size if `!HWY_HAVE_SCALABLE`.
+
+The following are DEPRECATED in favor of `HWY_MIN_BYTES`:
 
 *   `HWY_CAP_GE256`: the current target supports vectors of >= 256 bits.
 *   `HWY_CAP_GE512`: the current target supports vectors of >= 512 bits.
@@ -2945,6 +2957,15 @@ may also be defined even if one of `HWY_COMPILE_ONLY_*` is, but will then be
 ignored because the flags are tested in the order listed. As an exception,
 `HWY_SKIP_NON_BEST_BASELINE` overrides the effect of
 `HWY_COMPILE_ALL_ATTAINABLE` and `HWY_IS_TEST`.
+
+As a workaround, you can define `HWY_DISABLE_ATTR` to prevent `HWY_ATTR` and
+`HWY_BEFORE_NAMESPACE` from attaching target attributes to functions. This is
+useful for older GCC on POWER targets. For example, the `-mcpu=power10` flag
+conflicts with our attributes. Unlike most other platforms, POWER has some
+'inverted' attributes that take away features rather than adding.
+`HWY_DISABLE_ATTR` prevents the resulting inlining error; GCC 13 also appears to
+fix the issue. When specifying this, you must also pass all `-m` compiler flags
+required for any targets that the above `HWY_COMPILE_*` policies enable.
 
 ## Compiler support
 
