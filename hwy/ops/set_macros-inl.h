@@ -141,7 +141,7 @@
 #define HWY_TARGET_STR_AVX2 \
   HWY_TARGET_STR_SSE4 ",avx,avx2" HWY_TARGET_STR_BMI2_FMA HWY_TARGET_STR_F16C
 
-#ifndef HWY_HAVE_EVEX512
+#ifndef HWY_HAVE_EVEX512  // allow override
 // evex512 has been removed from clang 22, see
 // https://github.com/llvm/llvm-project/pull/157034
 #if (1400 <= HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1600) || \
@@ -167,15 +167,21 @@
   ",vpclmulqdq,avx512vbmi,avx512vbmi2,vaes,avx512vnni,avx512bitalg," \
   "avx512vpopcntdq,gfni"
 
-// Force-disable for compilers that do not properly support avx512bf16.
-#if !defined(HWY_AVX3_DISABLE_AVX512BF16) &&                        \
+// Opt-out for compilers that do not properly support avx512bf16.
+#ifndef HWY_AVX3_ENABLE_AVX512BF16  // allow override
+// Default is to disable if the DISABLE macro is defined, or if old compiler.
+// clang-cl 21.1.4 reportedly works; feel free to define this to 1 there.
+#if defined(HWY_AVX3_DISABLE_AVX512BF16) ||                         \
     (HWY_COMPILER_CLANGCL ||                                        \
      (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1000) || \
      (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 900))
-#define HWY_AVX3_DISABLE_AVX512BF16
+#define HWY_AVX3_ENABLE_AVX512BF16 0
+#else
+#define HWY_AVX3_ENABLE_AVX512BF16 1
 #endif
+#endif  // HWY_AVX3_ENABLE_AVX512BF16
 
-#if !defined(HWY_AVX3_DISABLE_AVX512BF16)
+#if HWY_AVX3_ENABLE_AVX512BF16
 #define HWY_TARGET_STR_AVX3_ZEN4 HWY_TARGET_STR_AVX3_DL ",avx512bf16"
 #else
 #define HWY_TARGET_STR_AVX3_ZEN4 HWY_TARGET_STR_AVX3_DL
@@ -187,12 +193,13 @@
 #define HWY_TARGET_STR_AVX3_SPR HWY_TARGET_STR_AVX3_ZEN4
 #endif
 
-#if HWY_COMPILER_GCC_ACTUAL >= 1500 || HWY_COMPILER_CLANG >= 2200
-#if HWY_HAVE_EVEX512
+// Support for avx10.2-512 was removed between clang 22 and 23 without a
+// feature test macro.
+#if HWY_COMPILER_CLANG >= 2200 && HWY_HAVE_EVEX512
 #define HWY_TARGET_STR_AVX10_2 HWY_TARGET_STR_AVX3_SPR ",avx10.2-512"
-#else
+// Recent compilers drop the -512 suffix because 512 bits are always available.
+#elif HWY_COMPILER_GCC_ACTUAL >= 1500 || HWY_COMPILER_CLANG >= 2200
 #define HWY_TARGET_STR_AVX10_2 HWY_TARGET_STR_AVX3_SPR ",avx10.2"
-#endif  // HWY_HAVE_EVEX512
 #else
 #define HWY_TARGET_STR_AVX10_2 HWY_TARGET_STR_AVX3_SPR
 #endif
@@ -337,7 +344,7 @@
 #define HWY_HAVE_FLOAT64 1
 #define HWY_MEM_OPS_MIGHT_FAULT 0
 #define HWY_NATIVE_FMA 1
-#if (HWY_TARGET <= HWY_AVX3_ZEN4) && !defined(HWY_AVX3_DISABLE_AVX512BF16)
+#if (HWY_TARGET <= HWY_AVX3_ZEN4) && HWY_AVX3_ENABLE_AVX512BF16
 #define HWY_NATIVE_DOT_BF16 1
 #else
 #define HWY_NATIVE_DOT_BF16 0
@@ -552,6 +559,8 @@
 #define HWY_TARGET_STR_FP16 "+fp16"
 #endif
 
+#define HWY_TARGET_STR_I8MM "+i8mm"
+
 #if HWY_TARGET == HWY_NEON_WITHOUT_AES
 #if HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1400
 // Prevents inadvertent use of SVE by GCC 13.4 and earlier, see #2689.
@@ -562,7 +571,8 @@
 #elif HWY_TARGET == HWY_NEON
 #define HWY_TARGET_STR HWY_TARGET_STR_NEON
 #elif HWY_TARGET == HWY_NEON_BF16
-#define HWY_TARGET_STR HWY_TARGET_STR_FP16 "+bf16+dotprod" HWY_TARGET_STR_NEON
+#define HWY_TARGET_STR \
+  HWY_TARGET_STR_FP16 HWY_TARGET_STR_I8MM "+bf16+dotprod" HWY_TARGET_STR_NEON
 #else
 #error "Logic error, missing case"
 #endif  // HWY_TARGET
@@ -614,15 +624,17 @@
 #define HWY_HAVE_SCALABLE 1
 #endif
 
+#define HWY_TARGET_STR_I8MM "+i8mm"
+
 // Can use pragmas instead of -march compiler flag
 #if HWY_HAVE_RUNTIME_DISPATCH
 #if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 // Static dispatch with -march=armv8-a+sve2+aes, or no baseline, hence dynamic
 // dispatch, which checks for AES support at runtime.
 #if defined(__ARM_FEATURE_SVE2_AES) || (HWY_BASELINE_SVE2 == 0)
-#define HWY_TARGET_STR "+sve2+sve2-aes,+sve"
+#define HWY_TARGET_STR "+sve2+sve2-aes,+sve" HWY_TARGET_STR_I8MM
 #else  // SVE2 without AES
-#define HWY_TARGET_STR "+sve2,+sve"
+#define HWY_TARGET_STR "+sve2,+sve" HWY_TARGET_STR_I8MM
 #endif
 #else  // not SVE2 target
 #define HWY_TARGET_STR "+sve"

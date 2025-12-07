@@ -92,7 +92,7 @@
 #define HWY_SVE2 (1LL << 23)
 #define HWY_SVE (1LL << 24)
 // Bit 25 reserved for NEON
-#define HWY_NEON_BF16 (1LL << 26)  // fp16/dot/bf16 (e.g. Neoverse V2/N2/N3)
+#define HWY_NEON_BF16 (1LL << 26)  // fp16/dot/bf16/i8mm (e.g. Neoverse V2/N2)
 // Bit 27 reserved for NEON
 #define HWY_NEON (1LL << 28)  // Implies support for AES
 #define HWY_NEON_WITHOUT_AES (1LL << 29)
@@ -256,9 +256,10 @@
 #endif  // HWY_BROKEN_ARM7_WITHOUT_VFP4
 
 #ifndef HWY_BROKEN_NEON_BF16  // allow override
-// HWY_NEON_BF16 requires recent compilers.
+// Broken on older compilers:
 #if (HWY_COMPILER_CLANG != 0 && HWY_COMPILER_CLANG < 1700) || \
-    (HWY_COMPILER_GCC_ACTUAL != 0 && HWY_COMPILER_GCC_ACTUAL < 1302)
+    (HWY_COMPILER_GCC_ACTUAL != 0 && HWY_COMPILER_GCC_ACTUAL < 1302) || \
+    (defined(__apple_build_version__) && __apple_build_version__ <= 17000000)
 #define HWY_BROKEN_NEON_BF16 (HWY_NEON_BF16)
 #else
 #define HWY_BROKEN_NEON_BF16 0

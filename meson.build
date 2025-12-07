@@ -1,7 +1,7 @@
 project(
   'hwy',
   'cpp',
-  version: '1.2.0',
+  version: '1.3.0',
   meson_version: '>= 1.3.0',
   license: 'Apache-2.0 OR BSD-3-Clause',
   default_options: [
@@ -23,11 +23,14 @@ is_subproj = meson.is_subproject()
 tests_enabled = get_option('tests').disable_auto_if(is_subproj).allowed()
 examples_enabled = get_option('examples').disable_auto_if(is_subproj).allowed()
 
-hwy_nowarn_args = []
+cpp = meson.get_compiler('cpp')
+
+hwy_nowarn_args = cpp.get_supported_arguments([
+  '-Wno-gnu-zero-variadic-macro-arguments', # Disable gnu variadic macro warning.
+])
+
 hwy_cpp_args = []
 hwy_link_args = []
-
-cpp = meson.get_compiler('cpp')
 
 pkg = import('pkgconfig')
 
@@ -147,6 +150,7 @@ hwy_contrib_headers = files(
 hwy_contrib_sources = files(
     'hwy/contrib/image/image.cc',
     'hwy/contrib/sort/vqsort.cc',
+    'hwy/contrib/thread_pool/thread_pool.cc',
     'hwy/contrib/thread_pool/topology.cc',
     # plus all of the vqsort_*.cc....
     # note meson doesn't directly support glob (by design).
