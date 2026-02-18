@@ -171,7 +171,8 @@ upper 16 bits of an IEEE binary32 float) only support load, store, and
 conversion to/from `float32_t`. The behavior of infinity and NaN in `float16_t`
 is implementation-defined due to Armv7. To ensure binary compatibility, these
 types are always wrapper structs and cannot be initialized with values directly.
-You can initialize them via `BitCastScalar` or `ConvertScalarTo`.
+You can convert these values from/to float using `ConvertScalarTo`, or from/to
+their underlying bit representation using `BitCastScalar`.
 
 On RVV/SVE, vectors are sizeless and cannot be wrapped inside a class. The
 Highway API allows using built-in types as vectors because operations are
@@ -1304,6 +1305,9 @@ them from 2-argument functions:
 *   <code>V **Or3**(V o1, V o2, V o3)</code>: returns `o1[i] | o2[i] | o3[i]`.
     This is less efficient than `Xor3` on some targets; use that where possible.
 *   <code>V **OrAnd**(V o, V a1, V a2)</code>: returns `o[i] | (a1[i] & a2[i])`.
+*   <code>V **XorAndNot**(V x, V a1, V a2)</code>: returns `x[i] ^ (~a1[i] &
+    a2[i])`. This is useful for conditionally flipping bits.
+
 *   <code>V **BitwiseIfThenElse**(V mask, V yes, V no)</code>: returns
     `((mask[i] & yes[i]) | (~mask[i] & no[i]))`. `BitwiseIfThenElse` is
     equivalent to, but potentially more efficient than `Or(And(mask, yes),

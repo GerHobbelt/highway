@@ -1058,12 +1058,6 @@ HWY_API V AndNot(const V not_a, const V b) {
   return And(Not(not_a), b);
 }
 
-// ------------------------------ Xor3
-template <class V>
-HWY_API V Xor3(V x1, V x2, V x3) {
-  return Xor(x1, Xor(x2, x3));
-}
-
 // ------------------------------ Or3
 template <class V>
 HWY_API V Or3(V o1, V o2, V o3) {
@@ -6263,11 +6257,6 @@ HWY_API vuint32m8_t RearrangeToOddPlusEven(vuint32m8_t sum0, vuint32m8_t sum1) {
   const vuint32m4_t hi =
       RearrangeToOddPlusEven(LowerHalf(sum1), UpperHalf(dh, sum1));
   return Combine(d, hi, lo);
-}
-
-template <class VW, HWY_IF_FLOAT_V(VW)>  // vfloat*
-HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
-  return Add(sum0, sum1);  // invariant already holds
 }
 
 // ------------------------------ Lt128

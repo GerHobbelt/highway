@@ -1,4 +1,5 @@
 // Copyright 2021 Google LLC
+// Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
 // SPDX-License-Identifier: Apache-2.0
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,7 +93,7 @@
 #define HWY_SVE2 (1LL << 23)
 #define HWY_SVE (1LL << 24)
 // Bit 25 reserved for NEON
-#define HWY_NEON_BF16 (1LL << 26)  // fp16/dot/bf16/i8mm (e.g. Neoverse V2/N2)
+#define HWY_NEON_BF16 (1LL << 26)  // fp16/dot/bf16 (e.g. Neoverse V2/N2)
 // Bit 27 reserved for NEON
 #define HWY_NEON (1LL << 28)  // Implies support for AES
 #define HWY_NEON_WITHOUT_AES (1LL << 29)
@@ -285,11 +286,22 @@
 #if (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 2300) ||           \
     (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1000) || \
     HWY_OS_APPLE
-#define HWY_BROKEN_SVE2 (HWY_SVE2 | HWY_SVE2_128)
+#define HWY_BROKEN_SVE2 (HWY_SVE2)
 #else
 #define HWY_BROKEN_SVE2 0
 #endif
 #endif  // HWY_BROKEN_SVE2
+
+#ifndef HWY_BROKEN_SVE2_128  // allow override
+// GCC 10+. Clang 21 works for SVE2_128, but not for SVE2.
+#if (HWY_COMPILER_CLANG && HWY_COMPILER_CLANG < 2100) ||           \
+    (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1000) || \
+    HWY_OS_APPLE
+#define HWY_BROKEN_SVE2_128 (HWY_SVE2_128)
+#else
+#define HWY_BROKEN_SVE2_128 0
+#endif
+#endif  // HWY_BROKEN_SVE2_128
 
 #ifndef HWY_BROKEN_PPC10  // allow override
 #if (HWY_COMPILER_GCC_ACTUAL && HWY_COMPILER_GCC_ACTUAL < 1100)
@@ -375,13 +387,13 @@
 // Allow the user to override this without any guarantee of success.
 #ifndef HWY_BROKEN_TARGETS
 
-#define HWY_BROKEN_TARGETS                                              \
-  (HWY_BROKEN_CLANG6 | HWY_BROKEN_32BIT | HWY_BROKEN_MSVC |             \
-   HWY_BROKEN_AVX10_2 | HWY_BROKEN_AVX3_DL_ZEN4 | HWY_BROKEN_AVX3_SPR | \
-   HWY_BROKEN_ARM7_BIG_ENDIAN | HWY_BROKEN_ARM7_WITHOUT_VFP4 |          \
-   HWY_BROKEN_NEON_BF16 | HWY_BROKEN_SVE | HWY_BROKEN_SVE2 |            \
-   HWY_BROKEN_PPC10 | HWY_BROKEN_PPC_32BIT | HWY_BROKEN_RVV |           \
-   HWY_BROKEN_LOONGARCH | HWY_BROKEN_Z14)
+#define HWY_BROKEN_TARGETS                                                 \
+  (HWY_BROKEN_CLANG6 | HWY_BROKEN_32BIT | HWY_BROKEN_MSVC |                \
+   HWY_BROKEN_AVX10_2 | HWY_BROKEN_AVX3_DL_ZEN4 | HWY_BROKEN_AVX3_SPR |    \
+   HWY_BROKEN_ARM7_BIG_ENDIAN | HWY_BROKEN_ARM7_WITHOUT_VFP4 |             \
+   HWY_BROKEN_NEON_BF16 | HWY_BROKEN_SVE | HWY_BROKEN_SVE2 |               \
+   HWY_BROKEN_SVE2_128 | HWY_BROKEN_PPC10 | HWY_BROKEN_PPC_32BIT |         \
+   HWY_BROKEN_RVV | HWY_BROKEN_LOONGARCH | HWY_BROKEN_Z14)
 
 #endif  // HWY_BROKEN_TARGETS
 
@@ -818,6 +830,9 @@
 // Allow opting out, and without a guarantee of success, opting-in.
 #ifndef HWY_HAVE_RUNTIME_DISPATCH
 // Clang, GCC and MSVC allow OS-independent runtime dispatch on x86.
+// Wasm does not, because browsers reject a binary containing any SIMD
+// instructions when the browser does not support them. Typical practice there
+// is to build two binaries, one with the -msimd128 flag.
 #if HWY_ARCH_X86 || HWY_HAVE_RUNTIME_DISPATCH_RVV ||                          \
     HWY_HAVE_RUNTIME_DISPATCH_APPLE || HWY_HAVE_RUNTIME_DISPATCH_LOONGARCH || \
     HWY_HAVE_RUNTIME_DISPATCH_LINUX
