@@ -46,6 +46,7 @@
 #undef HWY_NATIVE_FMA
 #undef HWY_NATIVE_DOT_BF16
 #undef HWY_NATIVE_MASK
+#undef HWY_NATIVE_INTERLEAVE_WHOLE
 
 #ifndef HWY_CAP_GE256
 #define HWY_CAP_GE256 (HWY_MIN_BYTES >= 32)
@@ -846,4 +847,11 @@
 #define HWY_ATTR __attribute__((target(HWY_TARGET_STR)))
 #else
 #define HWY_ATTR
+#endif
+
+#if (HWY_MAX_BYTES <= 16) || HWY_TARGET_IS_SVE || (HWY_TARGET == HWY_RVV) || \
+    (HWY_TARGET == HWY_WASM_EMU256)
+#define HWY_NATIVE_INTERLEAVE_WHOLE 1
+#else
+#define HWY_NATIVE_INTERLEAVE_WHOLE 0
 #endif
