@@ -99,11 +99,13 @@ jobs:
             cxx_flags: -ftrapv
             cxx_standard: 20
 
-          - name: GCC-12
+          - name: GCC-12 (C++11)
             extra_deps: g++-12
             c_compiler: gcc-12
             cxx_compiler: g++-12
             cxx_flags: -ftrapv
+            # contrib/ requires C++17
+            extra_cmake_flags: -DHWY_ENABLE_CONTRIB=OFF
             cxx_standard: 11
 
           - name: GCC-12 (C++20)
@@ -124,7 +126,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -254,7 +256,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -275,7 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
