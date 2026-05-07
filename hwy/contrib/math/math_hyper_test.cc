@@ -95,6 +95,15 @@ HWY_NOINLINE void TestMath(const char* name, T (*fx1)(T),
     ranges[1][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(-0.0));
     ranges[1][1] = min_bits;
     range_count = 2;
+  } else {
+    // If not splitting, ensure we iterate from smaller uint to larger uint.
+    // For negative numbers, min (e.g. -1000) has larger uint representation
+    // than max (e.g. -1).
+    if (ranges[0][0] > ranges[0][1]) {
+      auto tmp = ranges[0][0];
+      ranges[0][0] = ranges[0][1];
+      ranges[0][1] = tmp;
+    }
   }
 
   uint64_t max_ulp = 0;
@@ -289,9 +298,9 @@ HWY_NOINLINE void TestMathRelative(const char* name, T (*fx1)(T),
 struct TestFastTanh {
   template <class T, class D>
   HWY_NOINLINE void operator()(T, D d) {
-    const double max_relative_error_float = 0.0009;
-    const double max_relative_error_double = 0.0009;
-    const double max_relative_error_small = 0.00005;
+    const double max_relative_error_float = 0.0003;
+    const double max_relative_error_double = 0.0003;
+    const double max_relative_error_small = 0.00004;
     const uint64_t samples = 1000000;
     const uint64_t samples_small = 10000;
     TestMathRelative<T, D>("FastTanh Small", std::tanh, CallFastTanh, d,

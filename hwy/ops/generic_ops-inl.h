@@ -22,6 +22,7 @@
 // the generic implementation here if native ops are already defined.
 
 #include "hwy/base.h"
+#include "hwy/detect_compiler_arch.h"
 
 // Define detail::Shuffle1230 etc, but only when viewing the current header;
 // normally this is included via highway.h, which includes ops/*.h.
@@ -852,8 +853,7 @@ HWY_API MFromD<D> MaskedIsNaN(const M m, const V v) {
 
 // ------------------------------ Xor3
 
-#if (defined(HWY_NATIVE_XOR3) == \
-     defined(HWY_TARGET_TOGGLE))
+#if (defined(HWY_NATIVE_XOR3) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_XOR3
 #undef HWY_NATIVE_XOR3
 #else
@@ -869,8 +869,7 @@ HWY_API V Xor3(V x1, V x2, V x3) {
 
 // ------------------------------ XorAndNot
 
-#if (defined(HWY_NATIVE_BCAX) == \
-     defined(HWY_TARGET_TOGGLE))
+#if (defined(HWY_NATIVE_BCAX) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_BCAX
 #undef HWY_NATIVE_BCAX
 #else
@@ -3193,8 +3192,8 @@ HWY_API VFromD<D> GatherIndexN(D d, const T* HWY_RESTRICT base,
 
 template <class D, typename T = TFromD<D>>
 HWY_API VFromD<D> GatherIndexNOr(VFromD<D> no, D d, const T* HWY_RESTRICT base,
-                               VFromD<RebindToSigned<D>> index,
-                               const size_t max_lanes_to_load) {
+                                 VFromD<RebindToSigned<D>> index,
+                                 const size_t max_lanes_to_load) {
   const RebindToSigned<D> di;
   using TI = TFromD<decltype(di)>;
   static_assert(sizeof(T) == sizeof(TI), "Index/lane size must match");
@@ -3215,8 +3214,8 @@ HWY_API VFromD<D> GatherIndexN(D d, const T* HWY_RESTRICT base,
 }
 template <class D, typename T = TFromD<D>>
 HWY_API VFromD<D> GatherIndexNOr(VFromD<D> no, D d, const T* HWY_RESTRICT base,
-                               VFromD<RebindToSigned<D>> index,
-                               const size_t max_lanes_to_load) {
+                                 VFromD<RebindToSigned<D>> index,
+                                 const size_t max_lanes_to_load) {
   return MaskedGatherIndexOr(no, FirstN(d, max_lanes_to_load), d, base, index);
 }
 #endif  // (defined(HWY_NATIVE_GATHER) == defined(HWY_TARGET_TOGGLE))
@@ -4594,7 +4593,7 @@ HWY_API V PopulationCount(V v) {
       ResizeBitCast(d, TableLookupLanes(lookup, ResizeBitCast(d_tbl, hi)));
   const auto lo_popcnt =
       ResizeBitCast(d, TableLookupLanes(lookup, ResizeBitCast(d_tbl, lo)));
-#else  // HWY_TARGET != HWY_RVV
+#else   // HWY_TARGET != HWY_RVV
   const auto hi_popcnt = TableLookupBytes(lookup, hi);
   const auto lo_popcnt = TableLookupBytes(lookup, lo);
 #endif  // HWY_TARGET == HWY_RVV
@@ -5363,14 +5362,13 @@ HWY_INLINE V IntDiv(V a, V b) {
 #endif  // HWY_HAVE_FLOAT64
 
 template <size_t kOrigLaneSize, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
-          HWY_IF_T_SIZE_ONE_OF_V(V, ((HWY_TARGET <= HWY_SSE2 ||
-                                      HWY_TARGET == HWY_WASM ||
-                                      HWY_TARGET == HWY_WASM_EMU256 ||
-                                      HWY_TARGET == HWY_LSX ||
-                                      HWY_TARGET == HWY_LASX)
-                                         ? 0
-                                         : (1 << 1)) |
-                                        (1 << 2) | (1 << 4) | (1 << 8))>
+          HWY_IF_T_SIZE_ONE_OF_V(
+              V, ((HWY_TARGET <= HWY_SSE2 || HWY_TARGET == HWY_WASM ||
+                   HWY_TARGET == HWY_WASM_EMU256 || HWY_TARGET == HWY_LSX ||
+                   HWY_TARGET == HWY_LASX)
+                      ? 0
+                      : (1 << 1)) |
+                     (1 << 2) | (1 << 4) | (1 << 8))>
 HWY_INLINE V IntMod(V a, V b) {
   return hwy::HWY_NAMESPACE::NegMulAdd(IntDiv<kOrigLaneSize>(a, b), b, a);
 }
@@ -5607,8 +5605,7 @@ HWY_API VW RearrangeToOddPlusEven(const VW sum0, const VW sum1) {
 #define HWY_NATIVE_WIDEN_MUL_ACCUMULATE
 #endif
 
-template<class D, HWY_IF_INTEGER(TFromD<D>),
-         class DN = RepartitionToNarrow<D>>
+template <class D, HWY_IF_INTEGER(TFromD<D>), class DN = RepartitionToNarrow<D>>
 HWY_API VFromD<D> WidenMulAccumulate(D d, VFromD<DN> mul, VFromD<DN> x,
                                      VFromD<D> low, VFromD<D>& high) {
   high = MulAdd(PromoteUpperTo(d, mul), PromoteUpperTo(d, x), high);
@@ -5987,7 +5984,7 @@ HWY_API size_t CompressBitsStore(V v, const uint8_t* HWY_RESTRICT bits, D d,
   Store(v, d, lanes);
 
   const Simd<T, HWY_MIN(MaxLanes(d), 8), 0> d8;
-  T* HWY_RESTRICT pos = unaligned;
+  T* pos = unaligned;
 
   HWY_ALIGN constexpr T table[2048] = {
       0, 1, 2, 3, 4, 5, 6, 7, /**/ 0, 1, 2, 3, 4, 5, 6, 7,  //
@@ -6119,15 +6116,40 @@ HWY_API size_t CompressBitsStore(V v, const uint8_t* HWY_RESTRICT bits, D d,
       2, 3, 4, 5, 6, 7, 0, 1, /**/ 0, 2, 3, 4, 5, 6, 7, 1,  //
       1, 2, 3, 4, 5, 6, 7, 0, /**/ 0, 1, 2, 3, 4, 5, 6, 7};
 
-  for (size_t i = 0; i < Lanes(d); i += 8) {
-    // Each byte worth of bits is the index of one of 256 8-byte ranges, and its
-    // population count determines how far to advance the write position.
-    const size_t bits8 = bits[i / 8];
-    const auto indices = Load(d8, table + bits8 * 8);
-    const auto compressed = TableLookupBytes(LoadU(d8, lanes + i), indices);
-    StoreU(compressed, d8, pos);
-    pos += PopCount(bits8);
+  size_t i = 0;
+  HWY_LANES_CONSTEXPR size_t N = Lanes(d);
+  constexpr bool kMaybeLt128 =
+      (HWY_TARGET == HWY_SCALAR) || !detail::IsFull(D());
+  // If less than 128 bit, we may not enter the main loop below, and even
+  // the remainder loop might not write anything if bits are not set.
+  // Ensure the output is initialized. GCC seems not to understand this is only
+  // necessary if kMaybeLt128.
+  HWY_IF_CONSTEXPR(kMaybeLt128 || HWY_COMPILER_GCC_ACTUAL) {
+    StoreU(v, d, unaligned);
   }
+  HWY_ASSUME(N >= 8 || kMaybeLt128);
+  if (N >= 8) {
+    for (; i <= N - 8; i += 8) {
+      // Each byte worth of bits is the index of one of 256 8-byte ranges, and
+      // its population count determines how far to advance the write position.
+      const size_t bits8 = bits[i / 8];
+      const auto indices = Load(d8, table + bits8 * 8);
+      const auto compressed = TableLookupBytes(LoadU(d8, lanes + i), indices);
+      StoreU(compressed, d8, pos);
+      pos += PopCount(bits8);
+    }
+  }
+  // Not required if we have full vectors of >= 128 bits, because they are
+  // multiples of 8 bytes. Inefficient loop is mainly required for safely
+  // handling compress_test).
+  HWY_IF_CONSTEXPR(kMaybeLt128) {
+    for (; i < N; ++i) {
+      if (bits[i / 8] & (1u << (i % 8))) {
+        *pos++ = lanes[i];
+      }
+    }
+  }
+
   return static_cast<size_t>(pos - unaligned);
 }
 
@@ -6842,6 +6864,72 @@ HWY_API VFromD<D> TwoTablesLookupLanes(D /*d*/, VFromD<D> a, VFromD<D> b,
   return TwoTablesLookupLanes(a, b, idx);
 }
 #endif
+
+// ------------------------------ Lookup8
+
+template <class D, typename T = TFromD<D>, class VI>
+HWY_INLINE Vec<D> Lookup8(D d, const T* HWY_RESTRICT table, VI indices) {
+  // `di` describes the indices given - same bits per lane, but `d` determines
+  // the actual lane count of the result and also of the table vectors, which
+  // is relevant for adjusting the index values, see below.
+  DFromV<VI> di;
+  static_assert(sizeof(T) == sizeof(TFromD<decltype(di)>),
+                "Index/vector must have same lane size");
+  HWY_IF_CONSTEXPR(HWY_IS_DEBUG_BUILD) {
+    // Asserting Lanes(di) >= 4 not needed since both d and di have the same
+    // number of Lanes()
+    HWY_DASSERT(Lanes(d) >= 4);
+    HWY_DASSERT(AllTrue(di, Lt(indices, Set(di, 8))));
+  }
+
+  HWY_IF_CONSTEXPR(!HWY_HAVE_SCALABLE) {
+    // Fixed-size vectors: we know they are >= 128 bit, so either one or two
+    // tables are sufficient.
+    HWY_IF_CONSTEXPR(MaxLanes(d) >= 8) {
+      const CappedTag<T, 8> d8;
+      // We want to perform one lookup per index, hence cast. This has no
+      // runtime cost; the upper lanes are unused.
+      const Vec<D> t0 = ResizeBitCast(d, Load(d8, table));
+      return TableLookupLanes(t0, IndicesFromVec(d, indices));
+    }
+    HWY_IF_CONSTEXPR(MaxLanes(d) < 8) {
+      // Exactly 4 lanes, because we ensured >= 4 above.
+      const Vec<D> t0 = Load(d, table);
+      const Vec<D> t1 = Load(d, table + 4);
+      return TwoTablesLookupLanes(d, t0, t1, IndicesFromVec(d, indices));
+    }
+  }
+  HWY_IF_CONSTEXPR(HWY_HAVE_SCALABLE) {
+    // Scalable: first we must load two halves of the table into two vectors,
+    // regardless of vector size. We always use two-vector lookups to avoid
+    // runtime branching.
+    const FixedTag<T, 4> d4;
+
+    // We want to use native lookup instructions (more efficient on SVE than two
+    // lookups plus a blend), hence cast. This has no runtime cost. No LoadU
+    // required because + 4 is still aligned relative to `d4`.
+    const Vec<D> t0 = ResizeBitCast(d, Load(d4, table));
+    const Vec<D> t1 = ResizeBitCast(d, Load(d4, table + 4));
+
+    // Now ensure indices for the second half of the table point to the second
+    // vector. Note that SVE2_128 and SVE_256 are handled by the fixed-size case
+    // above. The adjustment factor is 0 for 128-bit SIMD, which can happen with
+    // 128-bit SVE1 hardware, but we do not know that at compile time.
+    const VI adjust = Set(di, Lanes(d) - 4);
+    Mask<decltype(di)> ge_4;
+#if HWY_TARGET_IS_SVE
+    ge_4 = detail::GeN(indices, 4);
+#elif HWY_TARGET == HWY_RVV
+    ge_4 = detail::GtS(indices, 4 - 1);
+#else
+    ge_4 = Ge(indices, Set(di, 4));
+#endif
+
+    indices = MaskedAddOr(indices, ge_4, indices, adjust);
+
+    return TwoTablesLookupLanes(d, t0, t1, IndicesFromVec(d, indices));
+  }
+}
 
 // ------------------------------ Reverse2, Reverse4, Reverse8 (8-bit)
 

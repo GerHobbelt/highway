@@ -76,6 +76,7 @@ hwy_headers = files(
     'hwy/aligned_allocator.h',
     'hwy/auto_tune.h',
     'hwy/base.h',
+    'hwy/bit_set.h',
     'hwy/cache_control.h',
     'hwy/detect_compiler_arch.h',  # private
     'hwy/detect_targets.h',  # private
@@ -569,6 +570,7 @@ if tests_enabled
         'hwy/tests/blockwise_test.cc',
         'hwy/tests/cast_test.cc',
         'hwy/tests/combine_test.cc',
+        'hwy/tests/compare_128_test.cc',
         'hwy/tests/compare_test.cc',
         'hwy/tests/complex_arithmetic_test.cc',
         'hwy/tests/compress_test.cc',
@@ -594,6 +596,7 @@ if tests_enabled
         'hwy/tests/mask_slide_test.cc',
         'hwy/tests/mask_test.cc',
         'hwy/tests/masked_arithmetic_test.cc',
+        'hwy/tests/masked_compare_test.cc',
         'hwy/tests/masked_minmax_test.cc',
         'hwy/tests/memory_test.cc',
         'hwy/tests/minmax_magnitude_test.cc',

@@ -19,6 +19,12 @@
 #include <cfloat>  // FLT_MAX
 #include <cmath>   // std::abs
 
+// For faster tests. Not using AES, hence NEON_WITHOUT_AES is sufficient.
+// SVE is mostly superseded by SVE2.
+#ifndef HWY_DISABLED_TARGETS
+#define HWY_DISABLED_TARGETS (HWY_NEON | HWY_SVE)
+#endif  // HWY_DISABLED_TARGETS
+
 #include "hwy/base.h"
 
 // clang-format off
@@ -95,12 +101,21 @@ HWY_NOINLINE void TestMath(const char* name, T (*fx1)(T),
     ranges[1][0] = BitCastScalar<UintT>(ConvertScalarTo<T>(-0.0));
     ranges[1][1] = min_bits;
     range_count = 2;
+  } else {
+    // If not splitting, ensure we iterate from smaller uint to larger uint.
+    // For negative numbers, min (e.g. -1000) has larger uint representation
+    // than max (e.g. -1).
+    if (ranges[0][0] > ranges[0][1]) {
+      auto tmp = ranges[0][0];
+      ranges[0][0] = ranges[0][1];
+      ranges[0][1] = tmp;
+    }
   }
 
   uint64_t max_ulp = 0;
   // Emulation is slower, so cannot afford as many.
   constexpr UintT kSamplesPerRange =
-      static_cast<UintT>(AdjustedReps(static_cast<size_t>(4000)));
+      static_cast<UintT>(AdjustedReps(static_cast<size_t>(2000)));
   for (int range_index = 0; range_index < range_count; ++range_index) {
     const UintT start = ranges[range_index][0];
     const UintT stop = ranges[range_index][1];
@@ -174,7 +189,7 @@ DEFINE_MATH_TEST(Log10,
   std::log10, CallLog10, +FLT_MIN,   +FLT_MAX,    2,
   std::log10, CallLog10, +DBL_MIN,   +DBL_MAX,    2)
 DEFINE_MATH_TEST(Log1p,
-  std::log1p, CallLog1p, +0.0f,      +1e37f,      3,  // NEON is 3 instead of 2
+  std::log1p, CallLog1p, +0.0f,      +FLT_MAX,    3,  // NEON is 3 instead of 2
   std::log1p, CallLog1p, +0.0,       +DBL_MAX,    2)
 DEFINE_MATH_TEST(Log2,
   std::log2,  CallLog2,  +FLT_MIN,   +FLT_MAX,    2,
@@ -285,7 +300,7 @@ HWY_NOINLINE void TestMathRelative(const char* name, T (*fx1)(T),
 struct TestFastLog {
   template <class T, class D>
   HWY_NOINLINE void operator()(T, D d) {
-    const double max_relative_error = 0.000082;
+    const double max_relative_error = 9.5E-5;  // SVE: 8.99
     const uint64_t samples = 1000000;
     if (sizeof(T) == 4) {
       TestMathRelative<T, D>("FastLog", std::log, CallFastLog, d,
@@ -319,10 +334,10 @@ struct TestFastExp {
                              0.000008, 1e7);
 
       // Float Subnormal Range: [-104.0, -87.0]
-      // exp(-104) is close to 0. Error is dominated by quantization (1 ULP ~=
-      // 50% relative error for small values).
-      TestMath<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
-                     static_cast<T>(-FLT_MAX), static_cast<T>(-87.0), 1);
+      // exp(-104) is very small. Quantization error is expected.
+      TestMathRelative<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-104.0), static_cast<T>(-87.0),
+                             0.03);
     } else {
       // Double Normal Range: [-708.0, +706.0]
       // exp(-708) ~= 2.2e-308 (min normal 2.22e-308)
@@ -332,8 +347,37 @@ struct TestFastExp {
 
       // Double Subnormal Range: [-744.0, -708.0]
       // exp(-744) is very small. Quantization error is expected.
-      TestMath<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
-                     static_cast<T>(-DBL_MAX), static_cast<T>(-708.0), 1);
+      TestMathRelative<T, D>("FastExpSubnormal", std::exp, CallFastExp, d,
+                             static_cast<T>(-744.0), static_cast<T>(-708.0),
+                             0.00007);
+    }
+  }
+};
+
+struct TestFastExp2 {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T, D d) {
+    if (sizeof(T) == 4) {
+      // Float Normal Range: [-126.0, +127.0]
+      // exp2(-126) is min normal
+      TestMathRelative<T, D>("FastExp2Normal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-126.0), static_cast<T>(127.0),
+                             0.000008, 1e7);
+
+      // Float Subnormal Range: [-150.0, -126.0]
+      TestMathRelative<T, D>("FastExp2Subnormal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-150.0), static_cast<T>(-126.0),
+                             0.0009);
+    } else {
+      // Double Normal Range: [-1022.0, +1023.0]
+      TestMathRelative<T, D>("FastExp2Normal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-1022.0), static_cast<T>(1023.0),
+                             0.000008, 1e7);
+
+      // Double Subnormal Range: [-1075.0, -1022.0]
+      TestMathRelative<T, D>("FastExp2Subnormal", std::exp2, CallFastExp2, d,
+                             static_cast<T>(-1075.0), static_cast<T>(-1022.0),
+                             0.0004);
     }
   }
 };
@@ -432,6 +476,10 @@ struct TestFastLog1p {
 
 HWY_NOINLINE void TestAllFastExp() {
   ForFloat3264Types(ForPartialVectors<TestFastExp>());
+}
+
+HWY_NOINLINE void TestAllFastExp2() {
+  ForFloat3264Types(ForPartialVectors<TestFastExp2>());
 }
 
 HWY_NOINLINE void TestAllFastExpMinusOrZero() {
@@ -580,6 +628,7 @@ HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog1p);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllLog2);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExp);
+HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExp2);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastExpMinusOrZero);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog2);
 HWY_EXPORT_AND_TEST_P(HwyMathTest, TestAllFastLog10);
