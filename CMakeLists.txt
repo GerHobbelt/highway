@@ -36,7 +36,7 @@ if(POLICY CMP0128)
   cmake_policy(SET CMP0128 NEW)
 endif()
 
-project(hwy VERSION 1.3.0)  # Keep in sync with base.h version
+project(hwy VERSION 1.4.0)  # Keep in sync with base.h version
 # `hwy` is lowercase to handle find_package() in Config mode:
 set(namespace "${PROJECT_NAME}::")
 
@@ -976,6 +976,7 @@ endforeach ()
 
 # The skeleton test uses the skeleton library code.
 target_sources(skeleton_test PRIVATE hwy/examples/skeleton.cc)
+target_compile_definitions(skeleton_test PRIVATE hwy_EXPORTS)
 
 endif()  # BUILD_TESTING
 endif()  # HWY_ENABLE_TESTS
