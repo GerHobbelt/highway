@@ -192,19 +192,30 @@
 #define HWY_CXX_LANG __cplusplus
 #endif
 
-#if defined(__cpp_constexpr) && __cpp_constexpr >= 201603L
-#define HWY_CXX17_CONSTEXPR constexpr
-#else
-#define HWY_CXX17_CONSTEXPR
-#endif
-
+// Use instead of constexpr to avoid compiler errors for older compilers. This
+// macro is for when a constexpr function involves multiple statements and
+// loops, which is allowed in C++14 but not before. If the compiler does not
+// support C++14 constexpr, this evaluates to nothing.
 #if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
 #define HWY_CXX14_CONSTEXPR constexpr
 #else
 #define HWY_CXX14_CONSTEXPR
 #endif
 
-#if HWY_CXX_LANG >= 201703L
+// Same as above, but for C++17 constexpr, which adds support for lambdas, the
+// standard library, and capturing *this.
+// Note that C++17 constexpr still disallows allocating and virtual functions,
+// which are allowed in C++20, but we do not have a use case yet.
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201603L
+#define HWY_CXX17_CONSTEXPR constexpr
+#else
+#define HWY_CXX17_CONSTEXPR
+#endif
+
+// Use instead of `if constexpr` to avoid compiler errors for older compilers.
+// When compilers lack C++17 support, this evaluates to a normal if statement.
+#if HWY_CXX_LANG >= 201703L || \
+    (defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606L)
 #define HWY_IF_CONSTEXPR if constexpr
 #else
 #define HWY_IF_CONSTEXPR if
@@ -443,6 +454,22 @@
 
 #if (HWY_IS_LITTLE_ENDIAN + HWY_IS_BIG_ENDIAN) != 1
 #error "Must only detect one byte order"
+#endif
+
+//------------------------------------------------------------------------------
+// Features checked in set_macros-inl.h
+
+// Compiler supports ACLE __bf16, not necessarily with operators.
+//
+// Disable the __bf16 type on AArch64 with GCC 13 or earlier as there is a bug
+// in GCC 13 and earlier that sometimes causes BF16 constant values to be
+// incorrectly loaded on AArch64, and this GCC bug on AArch64 is
+// described at https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111867.
+#if HWY_ARCH_ARM_A64 && \
+    (HWY_COMPILER_CLANG >= 1700 || HWY_COMPILER_GCC_ACTUAL >= 1400)
+#define HWY_ARM_HAVE_SCALAR_BF16_TYPE 1
+#else
+#define HWY_ARM_HAVE_SCALAR_BF16_TYPE 0
 #endif
 
 #endif  // HIGHWAY_HWY_DETECT_COMPILER_ARCH_H_

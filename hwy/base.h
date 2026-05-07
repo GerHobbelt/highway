@@ -482,21 +482,22 @@ HWY_API void CopySameSize(const From* HWY_RESTRICT from, To* HWY_RESTRICT to) {
   CopyBytes<sizeof(From)>(from, to);
 }
 
-template <size_t kBytes, typename To>
-HWY_API void ZeroBytes(To* to) {
+// Sets each byte to `byte_value`, which must be between 0 and 255.
+HWY_API void FillBytes(void* to, int byte_value, size_t num_bytes) {
 #if HWY_COMPILER_MSVC
-  memset(to, 0, kBytes);
+  memset(to, byte_value, num_bytes);
 #else
-  __builtin_memset(to, 0, kBytes);
+  __builtin_memset(to, byte_value, num_bytes);
 #endif
 }
 
 HWY_API void ZeroBytes(void* to, size_t num_bytes) {
-#if HWY_COMPILER_MSVC
-  memset(to, 0, num_bytes);
-#else
-  __builtin_memset(to, 0, num_bytes);
-#endif
+  FillBytes(to, 0, num_bytes);
+}
+
+template <size_t kBytes, typename To>
+HWY_API void ZeroBytes(To* to) {
+  ZeroBytes(to, kBytes);
 }
 
 //------------------------------------------------------------------------------
@@ -1725,20 +1726,6 @@ HWY_F16_CONSTEXPR inline std::partial_ordering operator<=>(
 
 //------------------------------------------------------------------------------
 // BF16 lane type
-
-// Compiler supports ACLE __bf16, not necessarily with operators.
-
-// Disable the __bf16 type on AArch64 with GCC 13 or earlier as there is a bug
-// in GCC 13 and earlier that sometimes causes BF16 constant values to be
-// incorrectly loaded on AArch64, and this GCC bug on AArch64 is
-// described at https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111867.
-
-#if HWY_ARCH_ARM_A64 && \
-    (HWY_COMPILER_CLANG >= 1700 || HWY_COMPILER_GCC_ACTUAL >= 1400)
-#define HWY_ARM_HAVE_SCALAR_BF16_TYPE 1
-#else
-#define HWY_ARM_HAVE_SCALAR_BF16_TYPE 0
-#endif
 
 // x86 compiler supports __bf16, not necessarily with operators.
 // Disable in debug builds due to clang miscompiles as of 2025-07-22: casting

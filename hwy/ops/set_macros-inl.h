@@ -60,6 +60,15 @@
 #undef HWY_LANES
 #define HWY_LANES(T) (HWY_MAX_BYTES / sizeof(T))
 
+// If 1, both __bf16 and a limited set of *_bf16 SVE intrinsics are available:
+// create/get/set/dup, ld/st, sel, rev, trn, uzp, zip.
+// Consulted below, hence define here rather than in arm_sve-inl.h.
+#if HWY_ARM_HAVE_SCALAR_BF16_TYPE && defined(__ARM_FEATURE_SVE_BF16)
+#define HWY_SVE_HAVE_BF16_FEATURE 1
+#else
+#define HWY_SVE_HAVE_BF16_FEATURE 0
+#endif
+
 #undef HWY_TARGET_IS_SVE
 #if HWY_TARGET & HWY_ALL_SVE
 #define HWY_TARGET_IS_SVE 1
@@ -607,7 +616,7 @@
 #define HWY_HAVE_FLOAT64 1
 #define HWY_MEM_OPS_MIGHT_FAULT 0
 #define HWY_NATIVE_FMA 1
-#if HWY_SVE_HAVE_BF16_FEATURE
+#if HWY_SVE_HAVE_BF16_FEATURE || HWY_TARGET == HWY_SVE2_128
 #define HWY_NATIVE_DOT_BF16 1
 #else
 #define HWY_NATIVE_DOT_BF16 0
@@ -636,16 +645,31 @@
 #define HWY_HAVE_SCALABLE 1
 #endif
 
-// Can use pragmas instead of -march compiler flag
-#if HWY_HAVE_RUNTIME_DISPATCH
-#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
+// Note: -march strings are delimited by + and GCC actually requires + before
+// each pragma target, which are also comma-separated.
+
+#undef HWY_TARGET_STR_SVE2_AES
 // Static dispatch with -march=armv8-a+sve2+aes, or no baseline, hence dynamic
 // dispatch, which checks for AES support at runtime.
 #if defined(__ARM_FEATURE_SVE2_AES) || (HWY_BASELINE_SVE2 == 0)
-#define HWY_TARGET_STR "+sve2+sve2-aes,+sve"
+#define HWY_TARGET_STR_SVE2_AES ",+sve2-aes"
 #else  // SVE2 without AES
-#define HWY_TARGET_STR "+sve2,+sve"
+#define HWY_TARGET_STR_SVE2_AES ""
 #endif
+
+#undef HWY_TARGET_STR_SVE2_128
+// SVE2_128 implies/requires I8MM and BF16, see #2973.
+#if HWY_TARGET == HWY_SVE2_128
+#define HWY_TARGET_STR_SVE2_128 ",+i8mm,+bf16"
+#else
+#define HWY_TARGET_STR_SVE2_128 ""
+#endif
+
+// Can use pragmas instead of -march compiler flag
+#if HWY_HAVE_RUNTIME_DISPATCH
+#if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
+#define HWY_TARGET_STR \
+  "+sve,+sve2" HWY_TARGET_STR_SVE2_AES HWY_TARGET_STR_SVE2_128
 #else  // not SVE2 target
 #define HWY_TARGET_STR "+sve"
 #endif

@@ -22,7 +22,7 @@ concurrency:
 jobs:
   cmake:
     name: Build and test ${{ matrix.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-22.04-8core
     strategy:
       matrix:
         include:
@@ -126,7 +126,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -145,7 +145,7 @@ jobs:
 
   cmake_ubuntu_2404:
     name: Build and test ${{ matrix.name }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-8core
     strategy:
       matrix:
         include:
@@ -256,7 +256,7 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -274,10 +274,10 @@ jobs:
           ctest --test-dir out
 
   bazel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-4core
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@fe104658747b27e96e4f7e80cd0a94068e53901d # v2.16.1
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
         with:
           egress-policy: audit  # cannot be block - runner does git checkout
 
@@ -285,8 +285,12 @@ jobs:
 
       - uses: bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2 # v3.0.0
 
-      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/bazel
           key: bazel-${{ runner.os }}
+
+      - name: Verify Bazel Version
+        run: bazel info release
+
       - run: bazel build //...

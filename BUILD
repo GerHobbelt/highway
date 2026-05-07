@@ -315,6 +315,7 @@ cc_library(
     copts = COPTS,
     textual_hdrs = [
         "hwy/contrib/algo/copy-inl.h",
+        "hwy/contrib/algo/count-inl.h",
         "hwy/contrib/algo/find-inl.h",
         "hwy/contrib/algo/minmax-inl.h",
         "hwy/contrib/algo/transform-inl.h",
@@ -476,6 +477,26 @@ cc_binary(
     deps = [
         ":hwy",
         ":nanobenchmark",
+    ],
+)
+
+cc_binary(
+    name = "sum_array_simple",
+    srcs = ["hwy/examples/sum_array_simple.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+    ],
+)
+
+cc_binary(
+    name = "sum_array_advanced",
+    srcs = ["hwy/examples/sum_array_advanced.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+        ":nanobenchmark",
+        ":timer",
     ],
 )
 
