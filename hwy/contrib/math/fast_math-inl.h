@@ -503,14 +503,113 @@ HWY_INLINE V FastAtan2(const D d, V y, V x) {
   return IfThenElse(is_nan, NaN(d), CopySign(angle, y));
 }
 
+namespace impl {
+
+// Computes the index vector required for Lookup8 when the
+// intervals are uneven. Runs either an adder tree or a sequential add chain
+// depending on the number of registers.
+template <class D, class V>
+HWY_INLINE Vec<RebindToSigned<D>> ComputeIndices8Intervals(
+    D d, V y, const TFromD<D>* HWY_RESTRICT thresholds) {
+  using DI = RebindToSigned<D>;
+  auto idx_i = Zero(DI());
+  const auto one_i = Set(DI(), 1);
+
+  const auto t0 = Set(d, thresholds[0]);
+  const auto t1 = Set(d, thresholds[1]);
+  const auto t2 = Set(d, thresholds[2]);
+  const auto t3 = Set(d, thresholds[3]);
+  const auto t4 = Set(d, thresholds[4]);
+  const auto t5 = Set(d, thresholds[5]);
+  const auto t6 = Set(d, thresholds[6]);
+
+  const auto mask0 = RebindMask(DI(), Ge(y, t0));
+  const auto mask1 = RebindMask(DI(), Ge(y, t1));
+  const auto mask2 = RebindMask(DI(), Ge(y, t2));
+  const auto mask3 = RebindMask(DI(), Ge(y, t3));
+  const auto mask4 = RebindMask(DI(), Ge(y, t4));
+  const auto mask5 = RebindMask(DI(), Ge(y, t5));
+  const auto mask6 = RebindMask(DI(), Ge(y, t6));
+
+#ifdef HWY_NATIVE_MASK
+  if constexpr (HWY_REGISTERS >= 32) {
+    // Adder tree for native masks.
+    const auto sum0 = IfThenElseZero(mask0, one_i);
+    const auto sum01 = MaskedAddOr(sum0, mask1, sum0, one_i);
+
+    const auto sum2 = IfThenElseZero(mask2, one_i);
+    const auto sum23 = MaskedAddOr(sum2, mask3, sum2, one_i);
+
+    const auto sum4 = IfThenElseZero(mask4, one_i);
+    const auto sum45 = MaskedAddOr(sum4, mask5, sum4, one_i);
+
+    const auto sum6 = IfThenElseZero(mask6, one_i);
+
+    const auto sum03 = Add(sum01, sum23);
+    const auto sum46 = Add(sum45, sum6);
+
+    idx_i = Add(sum03, sum46);
+  } else {
+    // 2x unrolled sequential chain.
+    const auto sum0 = IfThenElseZero(mask0, one_i);
+    const auto sum02 = MaskedAddOr(sum0, mask2, sum0, one_i);
+    const auto sum024 = MaskedAddOr(sum02, mask4, sum02, one_i);
+    const auto sum0246 = MaskedAddOr(sum024, mask6, sum024, one_i);
+
+    const auto sum1 = IfThenElseZero(mask1, one_i);
+    const auto sum13 = MaskedAddOr(sum1, mask3, sum1, one_i);
+    const auto sum135 = MaskedAddOr(sum13, mask5, sum13, one_i);
+
+    idx_i = Add(sum0246, sum135);
+  }
+#else
+  (void)one_i;
+  if constexpr (HWY_REGISTERS >= 32) {
+    // Accummulate -1s in a tree to reduce latency
+    const auto m0 = VecFromMask(DI(), mask0);
+    const auto m1 = VecFromMask(DI(), mask1);
+    const auto m2 = VecFromMask(DI(), mask2);
+    const auto m3 = VecFromMask(DI(), mask3);
+    const auto m4 = VecFromMask(DI(), mask4);
+    const auto m5 = VecFromMask(DI(), mask5);
+    const auto m6 = VecFromMask(DI(), mask6);
+
+    const auto sum01 = Add(m0, m1);
+    const auto sum23 = Add(m2, m3);
+    const auto sum45 = Add(m4, m5);
+
+    const auto sum03 = Add(sum01, sum23);
+    const auto sum46 = Add(sum45, m6);
+
+    idx_i = Neg(Add(sum03, sum46));
+  } else {
+    // Subtract in a 2x unrolled chain
+    auto sum0246 = Sub(idx_i, VecFromMask(DI(), mask0));
+    sum0246 = Sub(sum0246, VecFromMask(DI(), mask2));
+    sum0246 = Sub(sum0246, VecFromMask(DI(), mask4));
+    sum0246 = Sub(sum0246, VecFromMask(DI(), mask6));
+
+    auto sum135 = Zero(DI());
+    sum135 = Sub(sum135, VecFromMask(DI(), mask1));
+    sum135 = Sub(sum135, VecFromMask(DI(), mask3));
+    sum135 = Sub(sum135, VecFromMask(DI(), mask5));
+
+    idx_i = Add(sum0246, sum135);
+  }
+#endif
+  return idx_i;
+}
+
+}  // namespace impl
+
 /**
  * Fast approximation of tanh(x).
  *
  * Valid Lane Types: float32, float64
  * Max Relative Error : 0.0006% for float32, 0.0006% for float64
- * Average Relative Error : 0.00002% for float32, 0.000003% for float64
+ * Average Relative Error : 0.00002% for float32, 3e-6% for float64
  * Max Relative Error for [-0.01, 0.01] : 0.00003%
- * Average Relative Error for [-0.01, 0.01] : 0.0000003%
+ * Average Relative Error for [-0.01, 0.01] : 3e-7%
  * Valid Range: float32: [-1e35, +1e35]
  *              float64: [-1e305, +1e305]
  *
@@ -525,94 +624,14 @@ HWY_INLINE V FastTanh(D d, V val) {
 
   V a, b, c, d_val, e, f;
 
-  const auto t0 = Set(d, static_cast<T>(0.168236118310606));
-  const auto t1 = Set(d, static_cast<T>(0.365443754271396));
-  const auto t2 = Set(d, static_cast<T>(0.549306144334055));
-  const auto t3 = Set(d, static_cast<T>(0.804718956217050));
-  const auto t4 = Set(d, static_cast<T>(1.203972804325936));
-  const auto t5 = Set(d, static_cast<T>(2.969315202883957));
-  const auto t6 = Set(d, static_cast<T>(4.734657601441978));
+  HWY_ALIGN static constexpr T thresholds[7] = {
+      static_cast<T>(0.168236118310606), static_cast<T>(0.365443754271396),
+      static_cast<T>(0.549306144334055), static_cast<T>(0.804718956217050),
+      static_cast<T>(1.203972804325936), static_cast<T>(2.969315202883957),
+      static_cast<T>(4.734657601441978)};
 
   if constexpr (CanLookup8(d)) {
-    using DI = RebindToSigned<D>;
-    auto idx_i = Zero(DI());
-    const auto one_i = Set(DI(), 1);
-
-    // Rebind masks to integer comparisons
-    const auto mask0 = RebindMask(DI(), Ge(y, t0));
-    const auto mask1 = RebindMask(DI(), Ge(y, t1));
-    const auto mask2 = RebindMask(DI(), Ge(y, t2));
-    const auto mask3 = RebindMask(DI(), Ge(y, t3));
-    const auto mask4 = RebindMask(DI(), Ge(y, t4));
-    const auto mask5 = RebindMask(DI(), Ge(y, t5));
-    const auto mask6 = RebindMask(DI(), Ge(y, t6));
-
-#ifdef HWY_NATIVE_MASK
-    if constexpr (HWY_REGISTERS >= 32) {
-      // Adder tree for native masks.
-      const auto sum0 = IfThenElseZero(mask0, one_i);
-      const auto sum01 = MaskedAddOr(sum0, mask1, sum0, one_i);
-
-      const auto sum2 = IfThenElseZero(mask2, one_i);
-      const auto sum23 = MaskedAddOr(sum2, mask3, sum2, one_i);
-
-      const auto sum4 = IfThenElseZero(mask4, one_i);
-      const auto sum45 = MaskedAddOr(sum4, mask5, sum4, one_i);
-
-      const auto sum6 = IfThenElseZero(mask6, one_i);
-
-      const auto sum03 = Add(sum01, sum23);
-      const auto sum46 = Add(sum45, sum6);
-
-      idx_i = Add(sum03, sum46);
-    } else {
-      // 2x unrolled sequential chain.
-      const auto sum0 = IfThenElseZero(mask0, one_i);
-      const auto sum02 = MaskedAddOr(sum0, mask2, sum0, one_i);
-      const auto sum024 = MaskedAddOr(sum02, mask4, sum02, one_i);
-      const auto sum0246 = MaskedAddOr(sum024, mask6, sum024, one_i);
-
-      const auto sum1 = IfThenElseZero(mask1, one_i);
-      const auto sum13 = MaskedAddOr(sum1, mask3, sum1, one_i);
-      const auto sum135 = MaskedAddOr(sum13, mask5, sum13, one_i);
-
-      idx_i = Add(sum0246, sum135);
-    }
-#else
-    (void)one_i;
-    if constexpr (HWY_REGISTERS >= 32) {
-      // Accummulate -1s in a tree to reduce latency
-      const auto m0 = VecFromMask(DI(), mask0);
-      const auto m1 = VecFromMask(DI(), mask1);
-      const auto m2 = VecFromMask(DI(), mask2);
-      const auto m3 = VecFromMask(DI(), mask3);
-      const auto m4 = VecFromMask(DI(), mask4);
-      const auto m5 = VecFromMask(DI(), mask5);
-      const auto m6 = VecFromMask(DI(), mask6);
-
-      const auto sum01 = Add(m0, m1);
-      const auto sum23 = Add(m2, m3);
-      const auto sum45 = Add(m4, m5);
-
-      const auto sum03 = Add(sum01, sum23);
-      const auto sum46 = Add(sum45, m6);
-
-      idx_i = Neg(Add(sum03, sum46));
-    } else {
-      // Subtract in a 2x unrolled chain
-      auto sum0246 = Sub(idx_i, VecFromMask(DI(), mask0));
-      sum0246 = Sub(sum0246, VecFromMask(DI(), mask2));
-      sum0246 = Sub(sum0246, VecFromMask(DI(), mask4));
-      sum0246 = Sub(sum0246, VecFromMask(DI(), mask6));
-
-      auto sum135 = Zero(DI());
-      sum135 = Sub(sum135, VecFromMask(DI(), mask1));
-      sum135 = Sub(sum135, VecFromMask(DI(), mask3));
-      sum135 = Sub(sum135, VecFromMask(DI(), mask5));
-
-      idx_i = Add(sum0246, sum135);
-    }
-#endif
+    auto idx_i = impl::ComputeIndices8Intervals(d, y, thresholds);
 
     HWY_ALIGN static constexpr T arr_a[8] = {
         static_cast<T>(0.124683326807972),
@@ -666,9 +685,6 @@ HWY_INLINE V FastTanh(D d, V val) {
         static_cast<T>(0.51454722991951),
         static_cast<T>(0.92584756176511)};
 
-    // Since Lookup8 is available for HWY_MIN_BYTES / sizeof(T) >= 4, this
-    // condition covers all cases we encounter inside the top level if block
-    // inside FastTanh
     a = Lookup8(d, arr_a, idx_i);
     b = Lookup8(d, arr_b, idx_i);
     c = Lookup8(d, arr_c, idx_i);
@@ -676,6 +692,13 @@ HWY_INLINE V FastTanh(D d, V val) {
     e = Lookup8(d, arr_e, idx_i);
     f = Lookup8(d, arr_f, idx_i);
   } else {
+    const auto t0 = Set(d, thresholds[0]);
+    const auto t1 = Set(d, thresholds[1]);
+    const auto t2 = Set(d, thresholds[2]);
+    const auto t3 = Set(d, thresholds[3]);
+    const auto t4 = Set(d, thresholds[4]);
+    const auto t5 = Set(d, thresholds[5]);
+    const auto t6 = Set(d, thresholds[6]);
     // --- FALLBACK PATH: Blend Chain ---
     if constexpr (HWY_REGISTERS >= 32) {
       // Split into two parallel chains to reduce dependency latency.
@@ -896,6 +919,141 @@ HWY_INLINE V FastTanh(D d, V val) {
   return CopySign(result, val);  // Restore sign
 }
 
+namespace impl {
+
+// Fallback path used when Lookup8 cannot be used. Computes 4 final coefficient
+// vectors by running a blend chain (either serially or in parallel depending
+// on the number of registers)
+template <class D, class V>
+HWY_INLINE void FallbackBlendChain4Coeff(
+    D d, V y, const TFromD<D>* HWY_RESTRICT thresholds,
+    const TFromD<D>* HWY_RESTRICT arr_a, const TFromD<D>* HWY_RESTRICT arr_b,
+    const TFromD<D>* HWY_RESTRICT arr_c, const TFromD<D>* HWY_RESTRICT arr_d,
+    V& a, V& b, V& c, V& d_val) {
+  const auto t0 = Set(d, thresholds[0]);
+  const auto t1 = Set(d, thresholds[1]);
+  const auto t2 = Set(d, thresholds[2]);
+  const auto t3 = Set(d, thresholds[3]);
+  const auto t4 = Set(d, thresholds[4]);
+  const auto t5 = Set(d, thresholds[5]);
+  const auto t6 = Set(d, thresholds[6]);
+
+  if constexpr (HWY_REGISTERS >= 32) {
+    // Split into two parallel chains to reduce dependency latency.
+    // -- Chain 1: Indices 0 to 3 (Evaluated starting from t3 down to t0)
+    auto a_low = Set(d, arr_a[3]);
+    auto b_low = Set(d, arr_b[3]);
+    auto c_low = Set(d, arr_c[3]);
+    auto d_low = Set(d, arr_d[3]);
+
+    auto mask = Lt(y, t2);
+    a_low = IfThenElse(mask, Set(d, arr_a[2]), a_low);
+    b_low = IfThenElse(mask, Set(d, arr_b[2]), b_low);
+    c_low = IfThenElse(mask, Set(d, arr_c[2]), c_low);
+    d_low = IfThenElse(mask, Set(d, arr_d[2]), d_low);
+
+    mask = Lt(y, t1);
+    a_low = IfThenElse(mask, Set(d, arr_a[1]), a_low);
+    b_low = IfThenElse(mask, Set(d, arr_b[1]), b_low);
+    c_low = IfThenElse(mask, Set(d, arr_c[1]), c_low);
+    d_low = IfThenElse(mask, Set(d, arr_d[1]), d_low);
+
+    mask = Lt(y, t0);
+    a_low = IfThenElse(mask, Set(d, arr_a[0]), a_low);
+    b_low = IfThenElse(mask, Set(d, arr_b[0]), b_low);
+    c_low = IfThenElse(mask, Set(d, arr_c[0]), c_low);
+    d_low = IfThenElse(mask, Set(d, arr_d[0]), d_low);
+
+    // -- Chain 2: Indices 4 to 7 (Evaluated starting from t6 down to t4)
+    auto a_high = Set(d, arr_a[7]);
+    auto b_high = Set(d, arr_b[7]);
+    auto c_high = Set(d, arr_c[7]);
+    auto d_high = Set(d, arr_d[7]);
+
+    mask = Lt(y, t6);
+    a_high = IfThenElse(mask, Set(d, arr_a[6]), a_high);
+    b_high = IfThenElse(mask, Set(d, arr_b[6]), b_high);
+    c_high = IfThenElse(mask, Set(d, arr_c[6]), c_high);
+    d_high = IfThenElse(mask, Set(d, arr_d[6]), d_high);
+
+    mask = Lt(y, t5);
+    a_high = IfThenElse(mask, Set(d, arr_a[5]), a_high);
+    b_high = IfThenElse(mask, Set(d, arr_b[5]), b_high);
+    c_high = IfThenElse(mask, Set(d, arr_c[5]), c_high);
+    d_high = IfThenElse(mask, Set(d, arr_d[5]), d_high);
+
+    mask = Lt(y, t4);
+    a_high = IfThenElse(mask, Set(d, arr_a[4]), a_high);
+    b_high = IfThenElse(mask, Set(d, arr_b[4]), b_high);
+    c_high = IfThenElse(mask, Set(d, arr_c[4]), c_high);
+    d_high = IfThenElse(mask, Set(d, arr_d[4]), d_high);
+
+    // -- Merge the two chains
+    auto merge_mask = Lt(y, t3);
+    a = IfThenElse(merge_mask, a_low, a_high);
+    b = IfThenElse(merge_mask, b_low, b_high);
+    c = IfThenElse(merge_mask, c_low, c_high);
+    d_val = IfThenElse(merge_mask, d_low, d_high);
+  } else {
+    // Start with highest index (7)
+    a = Set(d, arr_a[7]);
+    b = Set(d, arr_b[7]);
+    c = Set(d, arr_c[7]);
+    d_val = Set(d, arr_d[7]);
+
+    // If y < t6 (idx 6)
+    auto mask = Lt(y, t6);
+    a = IfThenElse(mask, Set(d, arr_a[6]), a);
+    b = IfThenElse(mask, Set(d, arr_b[6]), b);
+    c = IfThenElse(mask, Set(d, arr_c[6]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[6]), d_val);
+
+    // If y < t5 (idx 5)
+    mask = Lt(y, t5);
+    a = IfThenElse(mask, Set(d, arr_a[5]), a);
+    b = IfThenElse(mask, Set(d, arr_b[5]), b);
+    c = IfThenElse(mask, Set(d, arr_c[5]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[5]), d_val);
+
+    // If y < t4 (idx 4)
+    mask = Lt(y, t4);
+    a = IfThenElse(mask, Set(d, arr_a[4]), a);
+    b = IfThenElse(mask, Set(d, arr_b[4]), b);
+    c = IfThenElse(mask, Set(d, arr_c[4]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[4]), d_val);
+
+    // If y < t3 (idx 3)
+    mask = Lt(y, t3);
+    a = IfThenElse(mask, Set(d, arr_a[3]), a);
+    b = IfThenElse(mask, Set(d, arr_b[3]), b);
+    c = IfThenElse(mask, Set(d, arr_c[3]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[3]), d_val);
+
+    // If y < t2 (idx 2)
+    mask = Lt(y, t2);
+    a = IfThenElse(mask, Set(d, arr_a[2]), a);
+    b = IfThenElse(mask, Set(d, arr_b[2]), b);
+    c = IfThenElse(mask, Set(d, arr_c[2]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[2]), d_val);
+
+    // If y < t1 (idx 1)
+    mask = Lt(y, t1);
+    a = IfThenElse(mask, Set(d, arr_a[1]), a);
+    b = IfThenElse(mask, Set(d, arr_b[1]), b);
+    c = IfThenElse(mask, Set(d, arr_c[1]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[1]), d_val);
+
+    // If y < t0 (idx 0)
+    mask = Lt(y, t0);
+    a = IfThenElse(mask, Set(d, arr_a[0]), a);
+    b = IfThenElse(mask, Set(d, arr_b[0]), b);
+    c = IfThenElse(mask, Set(d, arr_c[0]), c);
+    d_val = IfThenElse(mask, Set(d, arr_d[0]), d_val);
+  }
+}
+
+}  // namespace impl
+
 /**
  * Fast approximation of log(x).
  *
@@ -923,6 +1081,38 @@ HWY_INLINE V FastLog(D d, V x) {
   // log(y) directly.
   const V z = Sub(y, Set(d, static_cast<T>(1.0)));
 
+  HWY_ALIGN static constexpr T arr_a[8] = {
+      static_cast<T>(0.78766119873962426), static_cast<T>(0.56395605885234767),
+      static_cast<T>(0.41755823888409732), static_cast<T>(0.31775546220809975),
+      static_cast<T>(0.24738922014476947), static_cast<T>(0.19635862241628779),
+      static_cast<T>(0.15845269802741027), static_cast<T>(0.12974944454997622)};
+
+  HWY_ALIGN static constexpr T arr_b[8] = {
+      static_cast<T>(-0.29967724727628686),
+      static_cast<T>(-0.43890059639104201),
+      static_cast<T>(-0.49106265092580692),
+      static_cast<T>(-0.50008637171949),
+      static_cast<T>(-0.48774751153444412),
+      static_cast<T>(-0.46524164863536055),
+      static_cast<T>(-0.43845622820596808),
+      static_cast<T>(-0.41055729878598496)};
+
+  HWY_ALIGN static constexpr T arr_c[8] = {
+      static_cast<T>(1.0358118335702087),  static_cast<T>(1.0067153345685411),
+      static_cast<T>(1.000379283174812),   static_cast<T>(1.0000110351938951),
+      static_cast<T>(0.99922180103707492), static_cast<T>(0.99586383428901692),
+      static_cast<T>(0.98951797571207256), static_cast<T>(0.98045123777070986)};
+
+  HWY_ALIGN static constexpr T arr_d[8] = {
+      static_cast<T>(0.0023082932745966296),
+      static_cast<T>(0.00026712584767189665),
+      static_cast<T>(5.4447452042709148e-06),
+      static_cast<T>(0),
+      static_cast<T>(1.8158320065986679e-05),
+      static_cast<T>(0.00018763480353754217),
+      static_cast<T>(0.0006917031865196592),
+      static_cast<T>(0.0016769113228540019)};
+
   if constexpr (CanLookup8(d)) {
     // --- Table Lookup ---
     const auto scale = Set(d, static_cast<T>(11.3137085));
@@ -936,205 +1126,18 @@ HWY_INLINE V FastLog(D d, V x) {
     // Clamp index to 7 to handle overshoots
     idx_i = Min(idx_i, Set(RebindToSigned<D>(), 7));
 
-    HWY_ALIGN static constexpr T arr_a[8] = {
-        static_cast<T>(0.78766119873962426),
-        static_cast<T>(0.56395605885234767),
-        static_cast<T>(0.41755823888409732),
-        static_cast<T>(0.31775546220809975),
-        static_cast<T>(0.24738922014476947),
-        static_cast<T>(0.19635862241628779),
-        static_cast<T>(0.15845269802741027),
-        static_cast<T>(0.12974944454997622)};
-
-    HWY_ALIGN static constexpr T arr_b[8] = {
-        static_cast<T>(-0.29967724727628686),
-        static_cast<T>(-0.43890059639104201),
-        static_cast<T>(-0.49106265092580692),
-        static_cast<T>(-0.50008637171949),
-        static_cast<T>(-0.48774751153444412),
-        static_cast<T>(-0.46524164863536055),
-        static_cast<T>(-0.43845622820596808),
-        static_cast<T>(-0.41055729878598496)};
-
-    HWY_ALIGN static constexpr T arr_c[8] = {
-        static_cast<T>(1.0358118335702087),
-        static_cast<T>(1.0067153345685411),
-        static_cast<T>(1.000379283174812),
-        static_cast<T>(1.0000110351938951),
-        static_cast<T>(0.99922180103707492),
-        static_cast<T>(0.99586383428901692),
-        static_cast<T>(0.98951797571207256),
-        static_cast<T>(0.98045123777070986)};
-
-    HWY_ALIGN static constexpr T arr_d[8] = {
-        static_cast<T>(0.0023082932745966296),
-        static_cast<T>(0.00026712584767189665),
-        static_cast<T>(5.4447452042709148e-06),
-        static_cast<T>(0),
-        static_cast<T>(1.8158320065986679e-05),
-        static_cast<T>(0.00018763480353754217),
-        static_cast<T>(0.0006917031865196592),
-        static_cast<T>(0.0016769113228540019)};
-
-    // Since Lookup8 is available for HWY_MIN_BYTES / sizeof(T) >= 4, this
-    // condition covers all cases we encounter inside the top level if block
-    // inside FastLog
     a = Lookup8(d, arr_a, idx_i);
     b = Lookup8(d, arr_b, idx_i);
     c = Lookup8(d, arr_c, idx_i);
     d_val = Lookup8(d, arr_d, idx_i);
   } else {
-    // --- FALLBACK PATH: Blend Chain ---
-    const auto t0 = Set(d, static_cast<T>(0.7954951287634819));
-    const auto t1 = Set(d, static_cast<T>(0.8838834764038688));
-    const auto t2 = Set(d, static_cast<T>(0.9722718240442556));
-    const auto t3 = Set(d, static_cast<T>(1.0606601716846424));
-    const auto t4 = Set(d, static_cast<T>(1.1490485193250295));
-    const auto t5 = Set(d, static_cast<T>(1.2374368669654163));
-    const auto t6 = Set(d, static_cast<T>(1.3258252146058032));
-
-    if constexpr (HWY_REGISTERS >= 32) {
-      // Split into two parallel chains to reduce dependency latency.
-      // -- Chain 1: Indices 0 to 3 (Evaluated starting from t3 down to t0)
-      auto a_low = Set(d, static_cast<T>(0.31775546220809975));
-      auto b_low = Set(d, static_cast<T>(-0.50008637171949));
-      auto c_low = Set(d, static_cast<T>(1.0000110351938951));
-      auto d_low = Set(d, static_cast<T>(0));
-
-      auto mask = Lt(y, t2);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.41755823888409732)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.49106265092580692)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.000379283174812)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(5.4447452042709148e-06)),
-                         d_low);
-
-      mask = Lt(y, t1);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.56395605885234767)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.43890059639104201)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.0067153345685411)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.00026712584767189665)),
-                         d_low);
-
-      mask = Lt(y, t0);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.78766119873962426)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.29967724727628686)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.0358118335702087)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.0023082932745966296)),
-                         d_low);
-
-      // -- Chain 2: Indices 4 to 7 (Evaluated starting from t6 down to t4)
-      auto a_high = Set(d, static_cast<T>(0.12974944454997622));
-      auto b_high = Set(d, static_cast<T>(-0.41055729878598496));
-      auto c_high = Set(d, static_cast<T>(0.98045123777070986));
-      auto d_high = Set(d, static_cast<T>(0.0016769113228540019));
-
-      mask = Lt(y, t6);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.15845269802741027)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.43845622820596808)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.98951797571207256)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(0.0006917031865196592)),
-                          d_high);
-
-      mask = Lt(y, t5);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.19635862241628779)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.46524164863536055)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.99586383428901692)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(0.00018763480353754217)),
-                          d_high);
-
-      mask = Lt(y, t4);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.24738922014476947)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.48774751153444412)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.99922180103707492)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(1.8158320065986679e-05)),
-                          d_high);
-
-      // -- Merge the two chains
-      auto merge_mask = Lt(y, t3);
-      a = IfThenElse(merge_mask, a_low, a_high);
-      b = IfThenElse(merge_mask, b_low, b_high);
-      c = IfThenElse(merge_mask, c_low, c_high);
-      d_val = IfThenElse(merge_mask, d_low, d_high);
-    } else {
-      // Start with highest index (7)
-      a = Set(d, static_cast<T>(0.12974944454997622));
-      b = Set(d, static_cast<T>(-0.41055729878598496));
-      c = Set(d, static_cast<T>(0.98045123777070986));
-      d_val = Set(d, static_cast<T>(0.0016769113228540019));
-
-      // If y < t6 (idx 6)
-      auto mask = Lt(y, t6);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.15845269802741027)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.43845622820596808)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.98951797571207256)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0006917031865196592)),
-                         d_val);
-
-      // If y < t5 (idx 5)
-      mask = Lt(y, t5);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.19635862241628779)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.46524164863536055)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.99586383428901692)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.00018763480353754217)),
-                         d_val);
-
-      // If y < t4 (idx 4)
-      mask = Lt(y, t4);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.24738922014476947)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.48774751153444412)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.99922180103707492)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(1.8158320065986679e-05)),
-                         d_val);
-
-      // If y < t3 (idx 3)
-      mask = Lt(y, t3);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.31775546220809975)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.50008637171949)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.0000110351938951)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0)), d_val);
-
-      // If y < t2 (idx 2)
-      mask = Lt(y, t2);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.41755823888409732)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.49106265092580692)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.000379283174812)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(5.4447452042709148e-06)),
-                         d_val);
-
-      // If y < t1 (idx 1)
-      mask = Lt(y, t1);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.56395605885234767)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.43890059639104201)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.0067153345685411)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.00026712584767189665)),
-                         d_val);
-
-      // If y < t0 (idx 0)
-      mask = Lt(y, t0);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.78766119873962426)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.29967724727628686)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.0358118335702087)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0023082932745966296)),
-                         d_val);
-    }
+    HWY_ALIGN static constexpr T thresholds[7] = {
+        static_cast<T>(0.7954951287634819), static_cast<T>(0.8838834764038688),
+        static_cast<T>(0.9722718240442556), static_cast<T>(1.0606601716846424),
+        static_cast<T>(1.1490485193250295), static_cast<T>(1.2374368669654163),
+        static_cast<T>(1.3258252146058032)};
+    impl::FallbackBlendChain4Coeff(d, y, thresholds, arr_a, arr_b, arr_c, arr_d,
+                                   a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
   const auto z2 = Mul(z, z);
@@ -1392,6 +1395,37 @@ HWY_INLINE V FastLog2(D d, V x) {
   // log(y) directly.
   const V z = Sub(y, Set(d, static_cast<T>(1.0)));
 
+  HWY_ALIGN static constexpr T arr_a[8] = {
+      static_cast<T>(1.136354905322312),   static_cast<T>(0.8136166093855663),
+      static_cast<T>(0.6024092005204164),  static_cast<T>(0.45842422954300593),
+      static_cast<T>(0.35690720107224694), static_cast<T>(0.28328561079576686),
+      static_cast<T>(0.22859892165962123), static_cast<T>(0.18718888021034824)};
+
+  HWY_ALIGN static constexpr T arr_b[8] = {static_cast<T>(-0.43234287851275466),
+                                           static_cast<T>(-0.6331997138565648),
+                                           static_cast<T>(-0.7084536512564498),
+                                           static_cast<T>(-0.721472128495863),
+                                           static_cast<T>(-0.703670916096675),
+                                           static_cast<T>(-0.6712018193012402),
+                                           static_cast<T>(-0.6325586260796298),
+                                           static_cast<T>(-0.5923089789593089)};
+
+  HWY_ALIGN static constexpr T arr_c[8] = {
+      static_cast<T>(1.4943605955858443), static_cast<T>(1.4523832207689078),
+      static_cast<T>(1.4432422308443573), static_cast<T>(1.4427109613084712),
+      static_cast<T>(1.4415723371043265), static_cast<T>(1.4367278151294332),
+      static_cast<T>(1.4275726764302927), static_cast<T>(1.4144921385652491)};
+
+  HWY_ALIGN static constexpr T arr_d[8] = {
+      static_cast<T>(0.0033301632601779037),
+      static_cast<T>(0.00038538113572950594),
+      static_cast<T>(7.855106905105614e-06),
+      static_cast<T>(0.0),
+      static_cast<T>(2.6196918310073536e-05),
+      static_cast<T>(0.000270699800561787),
+      static_cast<T>(0.000997916756959006),
+      static_cast<T>(0.00241927164949202)};
+
   if constexpr (CanLookup8(d)) {
     // --- Table Lookup ---
     const auto scale = Set(d, static_cast<T>(11.3137085));
@@ -1400,198 +1434,18 @@ HWY_INLINE V FastLog2(D d, V x) {
 
     idx_i = Min(idx_i, Set(RebindToSigned<D>(), 7));
 
-    HWY_ALIGN static constexpr T arr_a[8] = {
-        static_cast<T>(1.136354905322312),
-        static_cast<T>(0.8136166093855663),
-        static_cast<T>(0.6024092005204164),
-        static_cast<T>(0.45842422954300593),
-        static_cast<T>(0.35690720107224694),
-        static_cast<T>(0.28328561079576686),
-        static_cast<T>(0.22859892165962123),
-        static_cast<T>(0.18718888021034824)};
-
-    HWY_ALIGN static constexpr T arr_b[8] = {
-        static_cast<T>(-0.43234287851275466),
-        static_cast<T>(-0.6331997138565648),
-        static_cast<T>(-0.7084536512564498),
-        static_cast<T>(-0.721472128495863),
-        static_cast<T>(-0.703670916096675),
-        static_cast<T>(-0.6712018193012402),
-        static_cast<T>(-0.6325586260796298),
-        static_cast<T>(-0.5923089789593089)};
-
-    HWY_ALIGN static constexpr T arr_c[8] = {
-        static_cast<T>(1.4943605955858443), static_cast<T>(1.4523832207689078),
-        static_cast<T>(1.4432422308443573), static_cast<T>(1.4427109613084712),
-        static_cast<T>(1.4415723371043265), static_cast<T>(1.4367278151294332),
-        static_cast<T>(1.4275726764302927), static_cast<T>(1.4144921385652491)};
-
-    HWY_ALIGN static constexpr T arr_d[8] = {
-        static_cast<T>(0.0033301632601779037),
-        static_cast<T>(0.00038538113572950594),
-        static_cast<T>(7.855106905105614e-06),
-        static_cast<T>(0.0),
-        static_cast<T>(2.6196918310073536e-05),
-        static_cast<T>(0.000270699800561787),
-        static_cast<T>(0.000997916756959006),
-        static_cast<T>(0.00241927164949202)};
-
     a = Lookup8(d, arr_a, idx_i);
     b = Lookup8(d, arr_b, idx_i);
     c = Lookup8(d, arr_c, idx_i);
     d_val = Lookup8(d, arr_d, idx_i);
   } else {
-    // --- FALLBACK PATH: Blend Chain ---
-    const auto t0 = Set(d, static_cast<T>(0.7954951287634819));
-    const auto t1 = Set(d, static_cast<T>(0.8838834764038688));
-    const auto t2 = Set(d, static_cast<T>(0.9722718240442556));
-    const auto t3 = Set(d, static_cast<T>(1.0606601716846424));
-    const auto t4 = Set(d, static_cast<T>(1.1490485193250295));
-    const auto t5 = Set(d, static_cast<T>(1.2374368669654163));
-    const auto t6 = Set(d, static_cast<T>(1.3258252146058032));
-
-    if constexpr (HWY_REGISTERS >= 32) {
-      // Split into two parallel chains to reduce dependency latency.
-      // -- Chain 1: Indices 0 to 3 (Evaluated starting from t3 down to t0)
-      auto a_low = Set(d, static_cast<T>(0.45842422954300593));
-      auto b_low = Set(d, static_cast<T>(-0.721472128495863));
-      auto c_low = Set(d, static_cast<T>(1.4427109613084712));
-      auto d_low = Set(d, static_cast<T>(0.0));
-
-      auto mask = Lt(y, t2);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.6024092005204164)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.7084536512564498)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4432422308443573)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(7.855106905105614e-06)),
-                         d_low);
-
-      mask = Lt(y, t1);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.8136166093855663)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.6331997138565648)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4523832207689078)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.00038538113572950594)),
-                         d_low);
-
-      mask = Lt(y, t0);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.136354905322312)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.43234287851275466)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4943605955858443)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.0033301632601779037)),
-                         d_low);
-
-      // -- Chain 2: Indices 4 to 7 (Evaluated starting from t6 down to t4)
-      auto a_high = Set(d, static_cast<T>(0.18718888021034824));
-      auto b_high = Set(d, static_cast<T>(-0.5923089789593089));
-      auto c_high = Set(d, static_cast<T>(1.4144921385652491));
-      auto d_high = Set(d, static_cast<T>(0.00241927164949202));
-
-      mask = Lt(y, t6);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.22859892165962123)), a_high);
-      b_high =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.6325586260796298)), b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4275726764302927)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(0.000997916756959006)),
-                          d_high);
-
-      mask = Lt(y, t5);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.28328561079576686)), a_high);
-      b_high =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.6712018193012402)), b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4367278151294332)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(0.000270699800561787)),
-                          d_high);
-
-      mask = Lt(y, t4);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.35690720107224694)), a_high);
-      b_high =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.703670916096675)), b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(1.4415723371043265)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(2.6196918310073536e-05)),
-                          d_high);
-
-      // -- Merge the two chains
-      auto merge_mask = Lt(y, t3);
-      a = IfThenElse(merge_mask, a_low, a_high);
-      b = IfThenElse(merge_mask, b_low, b_high);
-      c = IfThenElse(merge_mask, c_low, c_high);
-      d_val = IfThenElse(merge_mask, d_low, d_high);
-    } else {
-      // Start with highest index (7)
-      a = Set(d, static_cast<T>(0.18718888021034824));
-      b = Set(d, static_cast<T>(-0.5923089789593089));
-      c = Set(d, static_cast<T>(1.4144921385652491));
-      d_val = Set(d, static_cast<T>(0.00241927164949202));
-
-      // If y < t6 (idx 6)
-      auto mask = Lt(y, t6);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.22859892165962123)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.6325586260796298)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4275726764302927)), c);
-      d_val =
-          IfThenElse(mask, Set(d, static_cast<T>(0.000997916756959006)), d_val);
-
-      // If y < t5 (idx 5)
-      mask = Lt(y, t5);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.28328561079576686)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.6712018193012402)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4367278151294332)), c);
-      d_val =
-          IfThenElse(mask, Set(d, static_cast<T>(0.000270699800561787)), d_val);
-
-      // If y < t4 (idx 4)
-      mask = Lt(y, t4);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.35690720107224694)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.703670916096675)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4415723371043265)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(2.6196918310073536e-05)),
-                         d_val);
-
-      // If y < t3 (idx 3)
-      mask = Lt(y, t3);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.45842422954300593)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.721472128495863)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4427109613084712)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0)), d_val);
-
-      // If y < t2 (idx 2)
-      mask = Lt(y, t2);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.6024092005204164)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.7084536512564498)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4432422308443573)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(7.855106905105614e-06)),
-                         d_val);
-
-      // If y < t1 (idx 1)
-      mask = Lt(y, t1);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.8136166093855663)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.6331997138565648)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4523832207689078)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.00038538113572950594)),
-                         d_val);
-
-      // If y < t0 (idx 0)
-      mask = Lt(y, t0);
-      a = IfThenElse(mask, Set(d, static_cast<T>(1.136354905322312)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.43234287851275466)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(1.4943605955858443)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0033301632601779037)),
-                         d_val);
-    }
+    HWY_ALIGN static constexpr T thresholds[7] = {
+        static_cast<T>(0.7954951287634819), static_cast<T>(0.8838834764038688),
+        static_cast<T>(0.9722718240442556), static_cast<T>(1.0606601716846424),
+        static_cast<T>(1.1490485193250295), static_cast<T>(1.2374368669654163),
+        static_cast<T>(1.3258252146058032)};
+    impl::FallbackBlendChain4Coeff(d, y, thresholds, arr_a, arr_b, arr_c, arr_d,
+                                   a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
   const auto z2 = Mul(z, z);
@@ -1628,6 +1482,38 @@ HWY_INLINE V FastLog10(D d, V x) {
   // log(y) directly.
   const V z = Sub(y, Set(d, static_cast<T>(1.0)));
 
+  HWY_ALIGN static constexpr T arr_a[8] = {
+      static_cast<T>(0.3420769122219194),  static_cast<T>(0.24492300439548012),
+      static_cast<T>(0.18134323902060331), static_cast<T>(0.137999443831595),
+      static_cast<T>(0.10743977319122217), static_cast<T>(0.08527746618951795),
+      static_cast<T>(0.06881513239598655), static_cast<T>(0.05634946779806663)};
+
+  HWY_ALIGN static constexpr T arr_b[8] = {
+      static_cast<T>(-0.1301481748440477),
+      static_cast<T>(-0.1906121071166758),
+      static_cast<T>(-0.21326579956586073),
+      static_cast<T>(-0.21718475171279292),
+      static_cast<T>(-0.21182605282145175),
+      static_cast<T>(-0.20205188075390862),
+      static_cast<T>(-0.19041912046596485),
+      static_cast<T>(-0.17830276936785788)};
+
+  HWY_ALIGN static constexpr T arr_c[8] = {
+      static_cast<T>(0.44984736360963107), static_cast<T>(0.4372109146505034),
+      static_cast<T>(0.4344592024931514),  static_cast<T>(0.4342992744270672),
+      static_cast<T>(0.4339565143878306),  static_cast<T>(0.4324981679587344),
+      static_cast<T>(0.4297421965958291),  static_cast<T>(0.4258045623390324)};
+
+  HWY_ALIGN static constexpr T arr_d[8] = {
+      static_cast<T>(0.0010024790317717039),
+      static_cast<T>(0.00011601128161763332),
+      static_cast<T>(2.364622797584052e-06),
+      static_cast<T>(0.0),
+      static_cast<T>(7.886058205291105e-06),
+      static_cast<T>(8.148875978935532e-05),
+      static_cast<T>(0.00030040287702038374),
+      static_cast<T>(0.0007282733341565754)};
+
   if constexpr (CanLookup8(d)) {
     // --- Table Lookup ---
     const auto scale = Set(d, static_cast<T>(11.3137085));
@@ -1636,202 +1522,18 @@ HWY_INLINE V FastLog10(D d, V x) {
 
     idx_i = Min(idx_i, Set(RebindToSigned<D>(), 7));
 
-    HWY_ALIGN static constexpr T arr_a[8] = {
-        static_cast<T>(0.3420769122219194),
-        static_cast<T>(0.24492300439548012),
-        static_cast<T>(0.18134323902060331),
-        static_cast<T>(0.137999443831595),
-        static_cast<T>(0.10743977319122217),
-        static_cast<T>(0.08527746618951795),
-        static_cast<T>(0.06881513239598655),
-        static_cast<T>(0.05634946779806663)};
-
-    HWY_ALIGN static constexpr T arr_b[8] = {
-        static_cast<T>(-0.1301481748440477),
-        static_cast<T>(-0.1906121071166758),
-        static_cast<T>(-0.21326579956586073),
-        static_cast<T>(-0.21718475171279292),
-        static_cast<T>(-0.21182605282145175),
-        static_cast<T>(-0.20205188075390862),
-        static_cast<T>(-0.19041912046596485),
-        static_cast<T>(-0.17830276936785788)};
-
-    HWY_ALIGN static constexpr T arr_c[8] = {
-        static_cast<T>(0.44984736360963107),
-        static_cast<T>(0.4372109146505034),
-        static_cast<T>(0.4344592024931514),
-        static_cast<T>(0.4342992744270672),
-        static_cast<T>(0.4339565143878306),
-        static_cast<T>(0.4324981679587344),
-        static_cast<T>(0.4297421965958291),
-        static_cast<T>(0.4258045623390324)};
-
-    HWY_ALIGN static constexpr T arr_d[8] = {
-        static_cast<T>(0.0010024790317717039),
-        static_cast<T>(0.00011601128161763332),
-        static_cast<T>(2.364622797584052e-06),
-        static_cast<T>(0.0),
-        static_cast<T>(7.886058205291105e-06),
-        static_cast<T>(8.148875978935532e-05),
-        static_cast<T>(0.00030040287702038374),
-        static_cast<T>(0.0007282733341565754)};
-
     a = Lookup8(d, arr_a, idx_i);
     b = Lookup8(d, arr_b, idx_i);
     c = Lookup8(d, arr_c, idx_i);
     d_val = Lookup8(d, arr_d, idx_i);
   } else {
-    // --- FALLBACK PATH: Blend Chain ---
-    const auto t0 = Set(d, static_cast<T>(0.7954951287634819));
-    const auto t1 = Set(d, static_cast<T>(0.8838834764038688));
-    const auto t2 = Set(d, static_cast<T>(0.9722718240442556));
-    const auto t3 = Set(d, static_cast<T>(1.0606601716846424));
-    const auto t4 = Set(d, static_cast<T>(1.1490485193250295));
-    const auto t5 = Set(d, static_cast<T>(1.2374368669654163));
-    const auto t6 = Set(d, static_cast<T>(1.3258252146058032));
-
-    if constexpr (HWY_REGISTERS >= 32) {
-      // Split into two parallel chains to reduce dependency latency.
-      // -- Chain 1: Indices 0 to 3 (Evaluated starting from t3 down to t0)
-      auto a_low = Set(d, static_cast<T>(0.137999443831595));
-      auto b_low = Set(d, static_cast<T>(-0.21718475171279292));
-      auto c_low = Set(d, static_cast<T>(0.4342992744270672));
-      auto d_low = Set(d, static_cast<T>(0.0));
-
-      auto mask = Lt(y, t2);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.18134323902060331)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.21326579956586073)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.4344592024931514)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(2.364622797584052e-06)),
-                         d_low);
-
-      mask = Lt(y, t1);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.24492300439548012)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.1906121071166758)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.4372109146505034)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.00011601128161763332)),
-                         d_low);
-
-      mask = Lt(y, t0);
-      a_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.3420769122219194)), a_low);
-      b_low =
-          IfThenElse(mask, Set(d, static_cast<T>(-0.1301481748440477)), b_low);
-      c_low =
-          IfThenElse(mask, Set(d, static_cast<T>(0.44984736360963107)), c_low);
-      d_low = IfThenElse(mask, Set(d, static_cast<T>(0.0010024790317717039)),
-                         d_low);
-
-      // -- Chain 2: Indices 4 to 7 (Evaluated starting from t6 down to t4)
-      auto a_high = Set(d, static_cast<T>(0.05634946779806663));
-      auto b_high = Set(d, static_cast<T>(-0.17830276936785788));
-      auto c_high = Set(d, static_cast<T>(0.4258045623390324));
-      auto d_high = Set(d, static_cast<T>(0.0007282733341565754));
-
-      mask = Lt(y, t6);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.06881513239598655)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.19041912046596485)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.4297421965958291)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(0.00030040287702038374)),
-                          d_high);
-
-      mask = Lt(y, t5);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.08527746618951795)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.20205188075390862)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.4324981679587344)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(8.148875978935532e-05)),
-                          d_high);
-
-      mask = Lt(y, t4);
-      a_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.10743977319122217)), a_high);
-      b_high = IfThenElse(mask, Set(d, static_cast<T>(-0.21182605282145175)),
-                          b_high);
-      c_high =
-          IfThenElse(mask, Set(d, static_cast<T>(0.4339565143878306)), c_high);
-      d_high = IfThenElse(mask, Set(d, static_cast<T>(7.886058205291105e-06)),
-                          d_high);
-
-      // -- Merge the two chains
-      auto merge_mask = Lt(y, t3);
-      a = IfThenElse(merge_mask, a_low, a_high);
-      b = IfThenElse(merge_mask, b_low, b_high);
-      c = IfThenElse(merge_mask, c_low, c_high);
-      d_val = IfThenElse(merge_mask, d_low, d_high);
-    } else {
-      // Start with highest index (7)
-      a = Set(d, static_cast<T>(0.05634946779806663));
-      b = Set(d, static_cast<T>(-0.17830276936785788));
-      c = Set(d, static_cast<T>(0.4258045623390324));
-      d_val = Set(d, static_cast<T>(0.0007282733341565754));
-
-      // If y < t6 (idx 6)
-      auto mask = Lt(y, t6);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.06881513239598655)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.19041912046596485)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4297421965958291)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.00030040287702038374)),
-                         d_val);
-
-      // If y < t5 (idx 5)
-      mask = Lt(y, t5);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.08527746618951795)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.20205188075390862)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4324981679587344)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(8.148875978935532e-05)),
-                         d_val);
-
-      // If y < t4 (idx 4)
-      mask = Lt(y, t4);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.10743977319122217)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.21182605282145175)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4339565143878306)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(7.886058205291105e-06)),
-                         d_val);
-
-      // If y < t3 (idx 3)
-      mask = Lt(y, t3);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.137999443831595)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.21718475171279292)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4342992744270672)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0)), d_val);
-
-      // If y < t2 (idx 2)
-      mask = Lt(y, t2);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.18134323902060331)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.21326579956586073)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4344592024931514)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(2.364622797584052e-06)),
-                         d_val);
-
-      // If y < t1 (idx 1)
-      mask = Lt(y, t1);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.24492300439548012)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.1906121071166758)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.4372109146505034)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.00011601128161763332)),
-                         d_val);
-
-      // If y < t0 (idx 0)
-      mask = Lt(y, t0);
-      a = IfThenElse(mask, Set(d, static_cast<T>(0.3420769122219194)), a);
-      b = IfThenElse(mask, Set(d, static_cast<T>(-0.1301481748440477)), b);
-      c = IfThenElse(mask, Set(d, static_cast<T>(0.44984736360963107)), c);
-      d_val = IfThenElse(mask, Set(d, static_cast<T>(0.0010024790317717039)),
-                         d_val);
-    }
+    HWY_ALIGN static constexpr T thresholds[7] = {
+        static_cast<T>(0.7954951287634819), static_cast<T>(0.8838834764038688),
+        static_cast<T>(0.9722718240442556), static_cast<T>(1.0606601716846424),
+        static_cast<T>(1.1490485193250295), static_cast<T>(1.2374368669654163),
+        static_cast<T>(1.3258252146058032)};
+    impl::FallbackBlendChain4Coeff(d, y, thresholds, arr_a, arr_b, arr_c, arr_d,
+                                   a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
   const auto z2 = Mul(z, z);
@@ -1882,7 +1584,7 @@ HWY_INLINE V FastLog1p(const D d, V x) {
  * Valid Lane Types: float32, float64
  * Valid Range: float32: base in (0, +FLT_MAX], exp * log(base) in [-25.0,
  * +25.0] float64: base in (0, +DBL_MAX], exp * log(base) in [-25.0, +25.0] Max
- * Relative Error for Valid Range: float32 : 0.27%, float64 : 0.22%
+ * Relative Error for Valid Range: float32 : 0.03%, float64 : 0.03%
  * @return base^exp
  */
 // If false, subnormals are treated as zero.

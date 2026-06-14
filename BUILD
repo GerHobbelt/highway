@@ -503,6 +503,34 @@ cc_binary(
 )
 
 cc_binary(
+    name = "masks_and_logic",
+    srcs = ["hwy/examples/masks_and_logic.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+    ],
+)
+
+cc_binary(
+    name = "ctf_aes",
+    srcs = ["hwy/examples/ctf_aes.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+        ":timer",
+    ],
+)
+
+cc_binary(
+    name = "matrix_transpose_scatter_gather",
+    srcs = ["hwy/examples/matrix_transpose_scatter_gather.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+    ],
+)
+
+cc_binary(
     name = "dot_product_unroll",
     srcs = ["hwy/examples/dot_product_unroll.cc"],
     copts = COPTS,
