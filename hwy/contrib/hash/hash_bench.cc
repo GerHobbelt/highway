@@ -65,27 +65,6 @@ HWY_NOINLINE void TestLatency(const IHash& hash) {
 
 // Each Hash* only provides TwoVec. This adapter avoids duplicating a loop for
 // each hash function.
-template <class Hash>
-static void HashArray(const Hash& hash, uint32_t* HWY_RESTRICT inout,
-                      size_t count) {
-  const ScalableTag<uint32_t> du32;
-  using VU32 = Vec<decltype(du32)>;
-  HWY_LANES_CONSTEXPR size_t N = Lanes(du32);
-
-  HWY_DASSERT(count % (4 * N) == 0);
-  for (size_t i = 0; i < count; i += 4 * N) {
-    VU32 v0 = Load(du32, inout + i + 0 * N);
-    VU32 v1 = Load(du32, inout + i + 1 * N);
-    VU32 v2 = Load(du32, inout + i + 2 * N);
-    VU32 v3 = Load(du32, inout + i + 3 * N);
-    hash.TwoVec(du32, v0, v1);
-    hash.TwoVec(du32, v2, v3);
-    Store(v0, du32, inout + i + 0 * N);
-    Store(v1, du32, inout + i + 1 * N);
-    Store(v2, du32, inout + i + 2 * N);
-    Store(v3, du32, inout + i + 3 * N);
-  }
-}
 
 template <class IHash>
 HWY_NOINLINE void TestThroughput(const IHash& hash) {

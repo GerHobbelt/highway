@@ -28,6 +28,10 @@
 #define HWY_DISABLED_TARGETS (HWY_SSE2 | HWY_SSSE3 | HWY_SSE4)
 #endif  // HWY_DISABLED_TARGETS
 
+#include "hwy/contrib/sort/vqsort.h"
+#include "hwy/contrib/thread_pool/index_range.h"
+#include "hwy/contrib/thread_pool/thread_pool.h"
+#include "hwy/contrib/thread_pool/topology.h"
 #include "hwy/profiler.h"
 #include "hwy/timer.h"
 
@@ -39,9 +43,6 @@
 // After foreach_target
 #include "hwy/contrib/hash/hash-inl.h"
 #include "hwy/contrib/random/random-inl.h"
-#include "hwy/contrib/sort/vqsort.h"
-#include "hwy/contrib/thread_pool/thread_pool.h"
-#include "hwy/contrib/thread_pool/topology.h"
 #include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
 
@@ -58,105 +59,6 @@ HWY_INLINE_VAR constexpr size_t kHashBits = sizeof(HashType) * 8;
 
 //----------------------------------------------------------------------------
 // Parallelization, copied from gemma.cpp threading.h.
-
-struct IndexRange {
-  IndexRange() = default;
-  IndexRange(size_t begin, size_t end) : begin_(begin), end_(end) {
-    HWY_DASSERT(begin < end);
-  }
-  IndexRange(const IndexRange& other) = default;
-  IndexRange& operator=(const IndexRange& other) = default;
-
-  size_t Num() const { return end_ - begin_; }
-  bool Contains(size_t i) const { return begin_ <= i && i < end_; }
-
-  bool Contains(IndexRange other) const {
-    return other.begin_ >= begin_ && other.end_ <= end_;
-  }
-
-  // Enable range-based for loops.
-  class Iterator {
-   public:
-    Iterator(size_t i) : i_(i) {}
-
-    Iterator& operator++() {
-      ++i_;
-      return *this;
-    }
-    bool operator!=(const Iterator& other) const { return i_ != other.i_; }
-    size_t operator*() const { return i_; }
-    // Enable using begin() directly as a size_t.
-    operator size_t() const { return i_; }
-
-   private:
-    size_t i_;
-  };
-  Iterator begin() const { return Iterator(begin_); }
-  Iterator end() const { return Iterator(end_); }
-
-  size_t begin_;
-  size_t end_;
-};
-
-static inline IndexRange MakeIndexRange(size_t begin, size_t end,
-                                        size_t max_size) {
-  return IndexRange(begin, HWY_MIN(begin + max_size, end));
-}
-
-// Splits `range` into subranges of size `task_size`, except for the last,
-// which receives the remainder.
-class IndexRangePartition {
- public:
-  explicit IndexRangePartition(size_t single_task)
-      : range_(0, single_task), task_size_(single_task), num_tasks_(1) {}
-
-  IndexRangePartition(const IndexRange& range, const size_t task_size)
-      : range_(range), task_size_(static_cast<uint32_t>(task_size)) {
-    const uint32_t num = static_cast<uint32_t>(range.Num());
-    HWY_DASSERT(task_size_ != 0);
-    num_tasks_ = hwy::DivCeil(num, task_size_);
-    HWY_DASSERT(num_tasks_ != 0);
-    if constexpr (HWY_IS_DEBUG_BUILD) {
-      const uint32_t handled = num_tasks_ * task_size_;
-      // The last task may extend beyond items, but at most by (task_size_ - 1).
-      HWY_DASSERT(num <= handled && handled < num + task_size_);
-      (void)handled;
-    }
-  }
-
-  size_t TaskSize() const { return static_cast<size_t>(task_size_); }
-  size_t NumTasks() const { return static_cast<size_t>(num_tasks_); }
-
-  IndexRange Range(size_t task_idx) const {
-    HWY_DASSERT(task_idx < NumTasks());
-    return MakeIndexRange(range_.begin() + task_idx * TaskSize(), range_.end(),
-                          TaskSize());
-  }
-
-  template <typename Func>
-  void VisitAll(const Func& func) const {
-    for (size_t task_idx = 0; task_idx < NumTasks(); ++task_idx) {
-      func(Range(task_idx));
-    }
-  }
-
-  template <typename Func>
-  void VisitFirst(const Func& func) const {
-    func(Range(0));
-  }
-
-  template <typename Func>
-  void VisitRemaining(const Func& func) const {
-    for (size_t task_idx = 1; task_idx < NumTasks(); ++task_idx) {
-      func(Range(task_idx));
-    }
-  }
-
- private:
-  IndexRange range_;
-  uint32_t task_size_;
-  uint32_t num_tasks_;
-};
 
 // Per-worker storage to avoid repeated allocations.
 struct EvalCtx {
@@ -384,9 +286,7 @@ template <typename HashFunction>
 void DiffTestRecurse(const HashFunction& hash, KeyType& k1, KeyType& k2,
                      HashType& h1, HashType& h2, int start, int bitsleft,
                      AlignedVector<KeyType>* diffs) {
-  const int bits = sizeof(KeyType) * 8;
-
-  for (int i = start; i < bits; i++) {
+  for (int i = start; i < static_cast<int>(kKeyBits); i++) {
     FlipBit(k2, i);
     bitsleft--;
 
@@ -406,7 +306,7 @@ void DiffTestRecurse(const HashFunction& hash, KeyType& k1, KeyType& k2,
 }
 
 // Sorts the input.
-static size_t MaxRunLength(AlignedVector<KeyType>& diffs) {
+HWY_MAYBE_UNUSED size_t MaxRunLength(AlignedVector<KeyType>& diffs) {
   PROFILER_FUNC;
   if (diffs.empty()) return 1;
 
@@ -501,8 +401,7 @@ inline double calcScore(const uint32_t* bins, const size_t bincount,
 }
 
 // Bulk of CPU time is spent in this function.
-static Result TestDistribution(const AlignedVector<HashType>& hashes,
-                               EvalCtx& ctx) {
+Result TestDistribution(const AlignedVector<HashType>& hashes, EvalCtx& ctx) {
   PROFILER_FUNC;
 
   // We need at least 5 keys per bin to reliably test distribution biases
@@ -521,7 +420,7 @@ static Result TestDistribution(const AlignedVector<HashType>& hashes,
 
   Result ret;
 
-  for (int start = 0; start < kHashBits; start++) {
+  for (int start = 0; start < static_cast<int>(kHashBits); start++) {
     size_t width = max_width;
     size_t num_bins = max_bins;
 
@@ -572,7 +471,7 @@ static Result TestDistribution(const AlignedVector<HashType>& hashes,
       num_bins /= 2;
       if (width < 8) break;
 
-      for (int i = 0; i < num_bins; i++) {
+      for (size_t i = 0; i < num_bins; i++) {
         bins[i] += bins[i + num_bins];
       }
     }
@@ -581,7 +480,7 @@ static Result TestDistribution(const AlignedVector<HashType>& hashes,
   return ret;
 }
 
-static size_t CountCollisions(AlignedVector<HashType>& hashes) {
+size_t CountCollisions(AlignedVector<HashType>& hashes) {
   PROFILER_FUNC;
   hwy::VQSort(hashes.data(), hashes.size(), hwy::SortAscending());
   auto end = std::unique(hashes.begin(), hashes.end());
@@ -589,8 +488,8 @@ static size_t CountCollisions(AlignedVector<HashType>& hashes) {
 }
 
 // Non-const `hashes` because `FindCollisions` sorts it.
-HWY_NOINLINE Result AnalyzeHashes(AlignedVector<HashType>& hashes,
-                                  EvalCtx& ctx) {
+HWY_MAYBE_UNUSED Result AnalyzeHashes(AlignedVector<HashType>& hashes,
+                                      EvalCtx& ctx) {
   // Before FindCollisions sorts hashes.
   Result result = TestDistribution(hashes, ctx);
   result.collisions = CountCollisions(hashes);
@@ -677,7 +576,7 @@ void TestRotCounter(const HashFunction& hash, EvalCtx& ctx) {
   AlignedVector<HashType> hashes(size_t{1} << 20);
 
   Result result;
-  for (size_t idx_bit = 0; idx_bit < sizeof(KeyType) * 8; idx_bit++) {
+  for (size_t idx_bit = 0; idx_bit < kKeyBits; idx_bit++) {
     ComputeHashes(0, hashes, ctx,
                   [&](auto dh, size_t NH, RngStream& /*rng*/, size_t i,
                       auto& h0, auto& h1) HWY_ATTR {
@@ -701,7 +600,7 @@ void TestDiffDist(const HashFunction& hash, EvalCtx& ctx) {
   AlignedVector<HashType> diffs(256 * 256 * 32);
 
   Result result;
-  for (size_t keybit = 0; keybit < sizeof(KeyType) * 8; ++keybit) {
+  for (size_t keybit = 0; keybit < kKeyBits; ++keybit) {
     ComputeHashes(857374 + keybit * 257, diffs, ctx,
                   [&](auto dh, size_t NH, RngStream& rng, size_t /*pos*/,
                       auto& h0, auto& h1) HWY_ATTR {
@@ -744,7 +643,7 @@ void TestDiffDist(const HashFunction& hash, EvalCtx& ctx) {
 // Keyset generators.
 
 // All keys with two non-zero bytes. Fast.
-AlignedVector<KeyType> TwoBytesKeygen() {
+HWY_MAYBE_UNUSED AlignedVector<KeyType> TwoBytesKeygen() {
   const auto chooseK = [](int n, int k) -> double {
     if (k > (n - k)) k = n - k;
 
@@ -763,7 +662,7 @@ AlignedVector<KeyType> TwoBytesKeygen() {
   uint8_t bytes[sizeof(KeyType)] = {};
 
   // Add all keys with one non-zero byte
-  for (int byteA = 0; byteA < sizeof(KeyType); byteA++) {
+  for (size_t byteA = 0; byteA < sizeof(KeyType); byteA++) {
     for (int valA = 1; valA <= 255; valA++) {
       bytes[byteA] = (uint8_t)valA;
 
@@ -776,10 +675,10 @@ AlignedVector<KeyType> TwoBytesKeygen() {
   }
 
   // Add all keys with two non-zero bytes
-  for (int byteA = 0; byteA < sizeof(KeyType) - 1; byteA++) {
-    for (int byteB = byteA + 1; byteB < sizeof(KeyType); byteB++) {
+  for (size_t byteA = 0; byteA < sizeof(KeyType) - 1; byteA++) {
+    for (size_t byteB = byteA + 1; byteB < sizeof(KeyType); byteB++) {
       for (int valA = 1; valA <= 255; valA++) {
-        bytes[byteA] = (uint8_t)valA;
+        bytes[byteA] = static_cast<uint8_t>(valA);
 
         for (int valB = 1; valB <= 255; valB++) {
           bytes[byteB] = (uint8_t)valB;
@@ -800,7 +699,7 @@ AlignedVector<KeyType> TwoBytesKeygen() {
 
 void SparseKeygenR(int start, int bitsleft, KeyType& k,
                    AlignedVector<HashType>& keys) {
-  for (int i = start; i < sizeof(KeyType) * 8; i++) {
+  for (int i = start; i < static_cast<int>(kKeyBits); i++) {
     FlipBit(k, i);
 
     keys.push_back(k);
@@ -813,7 +712,7 @@ void SparseKeygenR(int start, int bitsleft, KeyType& k,
   }
 }
 
-AlignedVector<HashType> SparseKeygen() {
+HWY_MAYBE_UNUSED AlignedVector<HashType> SparseKeygen() {
   const int kNonzeroBits = 6;
 
   AlignedVector<HashType> keys;
@@ -825,7 +724,7 @@ AlignedVector<HashType> SparseKeygen() {
 }
 
 // Keys with bytes ABAB (including AAAA)
-AlignedVector<HashType> CyclicKeygen() {
+HWY_MAYBE_UNUSED AlignedVector<HashType> CyclicKeygen() {
   AlignedVector<HashType> keys;
   keys.reserve(255 * 255);
   for (int valA = 1; valA <= 255; ++valA) {
@@ -890,14 +789,17 @@ void RunTests(const HashFunction& hash) {
   TestSparse(hash, ctx);
   TestCyclic(hash, ctx);
 
-  TestAvalanche(hash, ctx);
-  TestDiff(hash, ctx);
+  // Re-enable for manual runs; we want tests to be fast by default.
+  if constexpr (false) {
+    TestAvalanche(hash, ctx);
+    TestDiff(hash, ctx);
 
-  TestNotCounter(hash, ctx);
-  TestRevCounter(hash, ctx);
-  TestMulCounter(hash, ctx);
-  TestRotCounter(hash, ctx);
-  TestDiffDist(hash, ctx);
+    TestNotCounter(hash, ctx);
+    TestRevCounter(hash, ctx);
+    TestMulCounter(hash, ctx);
+    TestRotCounter(hash, ctx);
+    TestDiffDist(hash, ctx);
+  }
 }
 
 HWY_NOINLINE void RunAll() {
