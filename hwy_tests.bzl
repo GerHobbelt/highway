@@ -54,6 +54,11 @@ HWY_CONTRIB_TESTS = (
     ),
     (
         "hwy/contrib/math/",
+        "fast_math_test",
+        [":math"],
+    ),
+    (
+        "hwy/contrib/math/",
         "math_hyper_test",
         [":math"],
     ),
@@ -129,8 +134,10 @@ HWY_CONTRIB_TESTS = (
             ":hash",
             ":profiler",
             ":random",
+            ":robust_statistics",
             ":thread_pool",
             ":topology",
+            # Placeholder for flat_hash_set, do not remove
         ],
     ),
     (
@@ -225,6 +232,7 @@ HWY_TESTS = HWY_CONTRIB_TESTS + (
     ("hwy/tests/", "masked_arithmetic_test", []),
     ("hwy/tests/", "masked_compare_test", []),
     ("hwy/tests/", "masked_minmax_test", []),
+    ("hwy/tests/", "matmul_op_test", []),
     ("hwy/tests/", "memory_test", []),
     ("hwy/tests/", "minmax_magnitude_test", []),
     ("hwy/tests/", "minmax_number_test", []),

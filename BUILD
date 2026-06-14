@@ -443,6 +443,12 @@ cc_library(
 
 cc_library(
     name = "hash",
+    srcs = [
+        "hwy/contrib/hash/phast.cc",
+    ],
+    hdrs = [
+        "hwy/contrib/hash/phast.h",
+    ],
     compatible_with = [],
     copts = COPTS,
     textual_hdrs = [
@@ -450,9 +456,13 @@ cc_library(
         "hwy/contrib/hash/phast-inl.h",
     ],
     deps = [
+        ":algo",
         ":hwy",
         ":profiler",
+        ":random",
         ":stats",
+        ":thread_pool",
+        "//hwy/contrib/sort:vqsort",
     ],
 )
 
@@ -479,6 +489,7 @@ cc_library(
     textual_hdrs = [
         "hwy/tests/test_util-inl.h",
         "hwy/tests/hwy_gtest.h",
+        "hwy/contrib/math/math_test-inl.h",
     ],
     # Must not depend on a gtest variant, which can conflict with the
     # GUNIT_INTERNAL_BUILD_MODE defined by the test.

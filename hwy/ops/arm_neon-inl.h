@@ -7834,8 +7834,8 @@ HWY_API VFromD<DU32> SumOfMulQuadAccumulate(
 #define HWY_NATIVE_U8_I8_SUMOFMULQUADACCUMULATE
 #endif
 
-#if defined(__ARM_FEATURE_MATMUL_INT8) ||                               \
-    (HWY_TARGET == HWY_NEON_BF16 && HWY_OS_APPLE && HWY_ARCH_ARM_A64 && \
+#if defined(__ARM_FEATURE_MATMUL_INT8) ||           \
+    (HWY_TARGET == HWY_NEON_BF16 && HWY_OS_APPLE && \
      HWY_HAVE_RUNTIME_DISPATCH)
 
 template <class DI32, HWY_IF_I32_D(DI32), HWY_IF_V_SIZE_LE_D(DI32, 8)>
@@ -8539,6 +8539,184 @@ HWY_API VFromD<D> OrderedDemote2To(D dbf16, VFromD<Repartition<float, D>> a,
   return ReorderDemote2To(dbf16, a, b);
 }
 #endif  // HWY_NEON_HAVE_F32_TO_BF16C
+
+// ------------------------------ ReorderShiftRightAndDemote2To (vqshrn, vqshrun)
+// ------------------------------ OrderedShiftRightAndDemote2To (ReorderDemote2To)
+
+#ifdef HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2
+#undef HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2
+#else
+#define HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2
+#endif
+
+// TODO: also override on SVE2/RVV/LSX/LASX.
+
+// Macro args: `intrinsic` is the vqshrn/vqshrun family prefix; `op_suffix` is
+// its trailing token (e.g. `_n_s16`); `shift` is `ShiftRight` (non-rounding) or
+// `RoundingShiftRight` (rounding). The intrinsic requires the immediate in
+// [1, sizeof(to_t) * 8]; outside that range we fall back to
+// ReorderDemote2To(d, shift<k>(a), shift<k>(b)), and the HWY_MIN/HWY_MAX clamp
+// keeps the not-taken intrinsic call well-formed. On AArch64 we fuse the second
+// input into the high half with the `_high` form, matching ReorderDemote2To.
+#if HWY_ARCH_ARM_A64
+#define HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(intrinsic, name, shift,  \
+                                                     from_t, to_t, op_suffix) \
+  template <int kShiftAmt, class D, HWY_IF_T_SIZE_D(D, sizeof(to_t)),         \
+            hwy::EnableIf<IsSame<TFromD<D>, to_t>()>* = nullptr>              \
+  HWY_API Vec128<to_t> name(D d, Vec128<from_t> a, Vec128<from_t> b) {        \
+    static_assert(0 <= kShiftAmt &&                                           \
+                      kShiftAmt <= static_cast<int>(sizeof(from_t) * 8 - 1),  \
+                  "kShiftAmt is out of range");                               \
+    return (0 < kShiftAmt && kShiftAmt <= static_cast<int>(sizeof(to_t) * 8)) \
+               ? Vec128<to_t>(intrinsic##_high##op_suffix(                    \
+                     intrinsic##op_suffix(                                    \
+                         a.raw, HWY_MIN(HWY_MAX(1, kShiftAmt),                \
+                                        static_cast<int>(sizeof(to_t) * 8))), \
+                     b.raw,                                                   \
+                     HWY_MIN(HWY_MAX(1, kShiftAmt),                           \
+                             static_cast<int>(sizeof(to_t) * 8))))            \
+               : ReorderDemote2To(d, shift<kShiftAmt>(a),                     \
+                                  shift<kShiftAmt>(b));                       \
+  }
+#else
+#define HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(intrinsic, name, shift,   \
+                                                     from_t, to_t, op_suffix)  \
+  template <int kShiftAmt, class D, HWY_IF_T_SIZE_D(D, sizeof(to_t)),          \
+            hwy::EnableIf<IsSame<TFromD<D>, to_t>()>* = nullptr>               \
+  HWY_API Vec128<to_t> name(D d, Vec128<from_t> a, Vec128<from_t> b) {         \
+    static_assert(0 <= kShiftAmt &&                                            \
+                      kShiftAmt <= static_cast<int>(sizeof(from_t) * 8 - 1),   \
+                  "kShiftAmt is out of range");                                \
+    return (0 < kShiftAmt && kShiftAmt <= static_cast<int>(sizeof(to_t) * 8))  \
+               ? Combine(                                                      \
+                     d,                                                        \
+                     Vec64<to_t>(intrinsic##op_suffix(                         \
+                         b.raw, HWY_MIN(HWY_MAX(1, kShiftAmt),                 \
+                                        static_cast<int>(sizeof(to_t) * 8)))), \
+                     Vec64<to_t>(intrinsic##op_suffix(                         \
+                         a.raw, HWY_MIN(HWY_MAX(1, kShiftAmt),                 \
+                                        static_cast<int>(sizeof(to_t) * 8))))) \
+               : ReorderDemote2To(d, shift<kShiftAmt>(a),                      \
+                                  shift<kShiftAmt>(b));                        \
+  }
+#endif
+
+// Saturating narrow with right shift (signed -> signed).
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int16_t, int8_t,
+                                             _n_s16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int32_t, int16_t,
+                                             _n_s32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int64_t, int32_t,
+                                             _n_s64)
+
+// Saturating narrow with right shift (unsigned -> unsigned).
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, uint16_t, uint8_t,
+                                             _n_u16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, uint32_t, uint16_t,
+                                             _n_u32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrn,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, uint64_t, uint32_t,
+                                             _n_u64)
+
+// Saturating narrow with right shift (signed -> unsigned).
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrun,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int16_t, uint8_t,
+                                             _n_s16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrun,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int32_t, uint16_t,
+                                             _n_s32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(vqshrun,
+                                             ReorderShiftRightAndDemote2To,
+                                             ShiftRight, int64_t, uint32_t,
+                                             _n_s64)
+
+// Rounding variants.
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight, int16_t,
+    int8_t, _n_s16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight, int32_t,
+    int16_t, _n_s32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight, int64_t,
+    int32_t, _n_s64)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    uint16_t, uint8_t, _n_u16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    uint32_t, uint16_t, _n_u32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrn, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    uint64_t, uint32_t, _n_u64)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrun, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    int16_t, uint8_t, _n_s16)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrun, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    int32_t, uint16_t, _n_s32)
+HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2(
+    vqrshrun, ReorderRoundingShiftRightAndDemote2To, RoundingShiftRight,
+    int64_t, uint32_t, _n_s64)
+
+#undef HWY_NEON_DEF_SHIFT_RIGHT_AND_REORDER_DEMOTE2
+
+// Catch-all fallback for combinations without a fused intrinsic, e.g. uint16
+// to int8 or two-step narrowing such as i32 to i8, and for partial vectors.
+// The bodies match the generic_ops-inl.h templates of the same name; we
+// duplicate here because HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2 suppresses
+// those on NEON.
+template <int kShiftAmt, class DN, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DN),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          hwy::EnableIf<(sizeof(TFromD<DN>) < sizeof(TFromV<V>))>* = nullptr>
+HWY_API VFromD<DN> ReorderShiftRightAndDemote2To(DN dn, V a, V b) {
+  using T = TFromV<V>;
+  static_assert(
+      0 <= kShiftAmt && kShiftAmt <= static_cast<int>(sizeof(T) * 8 - 1),
+      "kShiftAmt is out of range");
+  return ReorderDemote2To(dn, ShiftRight<kShiftAmt>(a),
+                          ShiftRight<kShiftAmt>(b));
+}
+
+template <int kShiftAmt, class DN, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DN),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          hwy::EnableIf<(sizeof(TFromD<DN>) < sizeof(TFromV<V>))>* = nullptr>
+HWY_API VFromD<DN> ReorderRoundingShiftRightAndDemote2To(DN dn, V a, V b) {
+  using T = TFromV<V>;
+  static_assert(
+      0 <= kShiftAmt && kShiftAmt <= static_cast<int>(sizeof(T) * 8 - 1),
+      "kShiftAmt is out of range");
+  return ReorderDemote2To(dn, RoundingShiftRight<kShiftAmt>(a),
+                          RoundingShiftRight<kShiftAmt>(b));
+}
+
+// Ordered forwards to Reorder because ReorderDemote2To is ordered on NEON.
+template <int kShiftAmt, class DN, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DN),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          hwy::EnableIf<(sizeof(TFromD<DN>) < sizeof(TFromV<V>))>* = nullptr>
+HWY_API VFromD<DN> OrderedShiftRightAndDemote2To(DN dn, V a, V b) {
+  return ReorderShiftRightAndDemote2To<kShiftAmt>(dn, a, b);
+}
+
+template <int kShiftAmt, class DN, class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_D(DN),
+          HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V),
+          hwy::EnableIf<(sizeof(TFromD<DN>) < sizeof(TFromV<V>))>* = nullptr>
+HWY_API VFromD<DN> OrderedRoundingShiftRightAndDemote2To(DN dn, V a, V b) {
+  return ReorderRoundingShiftRightAndDemote2To<kShiftAmt>(dn, a, b);
+}
 
 // ================================================== CRYPTO
 
@@ -10779,6 +10957,31 @@ namespace detail {  // for code folding
 #undef HWY_NEON_IF_EMULATED_D
 #undef HWY_NEON_IF_NOT_EMULATED_D
 }  // namespace detail
+
+// ------------------------------ PerBlock2x2MatMul (Neon hardware overrides)
+#if defined(__ARM_FEATURE_MATMUL_INT8) ||           \
+    (HWY_TARGET == HWY_NEON_BF16 && HWY_OS_APPLE && \
+     HWY_HAVE_RUNTIME_DISPATCH)
+template <size_t N>
+HWY_API Vec128<int32_t, N> PerBlock2x2MatMul(
+    Simd<int32_t, N, 0> /* d */,
+    Vec128<int8_t, N * 4> a,
+    Vec128<int8_t, N * 4> b,
+    Vec128<int32_t, N> c) {
+  return Vec128<int32_t, N>{vmmlaq_s32(c.raw, a.raw, b.raw)};
+}
+#endif
+
+#if defined(__ARM_FEATURE_BF16_VECTOR_ARITHMETIC) || HWY_TARGET == HWY_NEON_BF16
+template <size_t N>
+HWY_API Vec128<float, N> PerBlock2x2MatMul(
+    Simd<float, N, 0> /* d */,
+    Vec128<hwy::bfloat16_t, N * 2> a,
+    Vec128<hwy::bfloat16_t, N * 2> b,
+    Vec128<float, N> c) {
+  return Vec128<float, N>{vbfmmlaq_f32(c.raw, a.raw, b.raw)};
+}
+#endif
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
