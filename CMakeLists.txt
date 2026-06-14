@@ -219,6 +219,10 @@ file(GLOB HWY_CONTRIB_SOURCES "hwy/contrib/sort/vqsort_*.cc")
 list(APPEND HWY_CONTRIB_SOURCES
     hwy/contrib/bit_pack/bit_pack-inl.h
     hwy/contrib/dot/dot-inl.h
+    hwy/contrib/hash/hash-inl.h
+    hwy/contrib/hash/phast.cc
+    hwy/contrib/hash/phast.h
+    hwy/contrib/hash/phast-inl.h
     hwy/contrib/image/image.cc
     hwy/contrib/image/image.h
     hwy/contrib/math/fast_math-inl.h
@@ -243,6 +247,7 @@ list(APPEND HWY_CONTRIB_SOURCES
     hwy/contrib/algo/copy-inl.h
     hwy/contrib/algo/count-inl.h
     hwy/contrib/algo/find-inl.h
+    hwy/contrib/algo/is_sorted-inl.h
     hwy/contrib/algo/minmax-inl.h
     hwy/contrib/algo/transform-inl.h
     hwy/contrib/unroller/unroller-inl.h
@@ -464,7 +469,7 @@ else()
       -mfpu=neon-vfpv4
       -mfloat-abi=hard  # must match the toolchain specified as CXX=
       -DHWY_HAVE_SCALAR_F16_TYPE=0  # See #2625
-      -DHWY_NEON_HAVE_F16C=0
+      -DHWY_ARM_HAVE_FP16=0
     )
     if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
       # using GCC
@@ -907,6 +912,7 @@ set(HWY_TEST_FILES
   hwy/tests/masked_arithmetic_test.cc
   hwy/tests/masked_compare_test.cc
   hwy/tests/masked_minmax_test.cc
+  hwy/tests/matmul_op_test.cc
   hwy/tests/memory_test.cc
   hwy/tests/minmax_magnitude_test.cc
   hwy/tests/minmax_number_test.cc
@@ -945,6 +951,7 @@ list(APPEND HWY_TEST_FILES
   hwy/contrib/algo/copy_test.cc
   hwy/contrib/algo/count_value_test.cc
   hwy/contrib/algo/find_test.cc
+  hwy/contrib/algo/is_sorted_test.cc
   hwy/contrib/algo/minmax_value_test.cc
   hwy/contrib/algo/transform_test.cc
   hwy/contrib/bit_pack/bit_pack_test.cc
