@@ -222,6 +222,7 @@ list(APPEND HWY_CONTRIB_SOURCES
     hwy/contrib/image/image.cc
     hwy/contrib/image/image.h
     hwy/contrib/math/fast_math-inl.h
+    hwy/contrib/intdiv/intdiv-inl.h
     hwy/contrib/math/math-inl.h
     hwy/contrib/matvec/matvec-inl.h
     hwy/contrib/random/random-inl.h
@@ -284,6 +285,7 @@ set(HWY_SOURCES
     hwy/print.h
     hwy/profiler.h
     hwy/robust_statistics.h
+    hwy/stats.h
     hwy/targets.h
     hwy/timer-inl.h
     hwy/timer.h
@@ -299,6 +301,7 @@ if (NOT HWY_CMAKE_HEADER_ONLY)
     hwy/perf_counters.cc
     hwy/print.cc
     hwy/profiler.cc
+    hwy/stats.cc
     hwy/targets.cc
     hwy/timer.cc
   )
@@ -916,6 +919,7 @@ list(APPEND HWY_TEST_FILES
   hwy/contrib/bit_pack/bit_pack_test.cc
   hwy/contrib/dot/dot_test.cc
   hwy/contrib/matvec/matvec_test.cc
+  hwy/contrib/intdiv/intdiv_test.cc
   hwy/contrib/image/image_test.cc
   # Disabled due to SIGILL in clang7 debug build during gtest discovery phase,
   # not reproducible locally. Still tested via bazel build.
