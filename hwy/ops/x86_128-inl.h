@@ -9270,7 +9270,7 @@ HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
 #else
   const RebindToSigned<decltype(d)> di;
   const auto sel_hi_mask =
-      RebindMask(d, BitCast(di, idx_vec) > Set(di, int8_t{15}));
+      (RebindMask(d, BitCast(di, idx_vec) > Set(di, int8_t{15})));
 #endif
 
   const auto lo_lookup_result = TableLookupBytes(a, idx_vec);

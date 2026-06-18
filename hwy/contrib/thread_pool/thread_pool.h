@@ -1396,7 +1396,7 @@ class alignas(HWY_ALIGNMENT) ThreadPool {
   // For printing which is in use.
   pool::Config config() const { return workers_[0].NextConfig(); }
 
-  bool AutoTuneComplete() const { return AutoTuner().Best(); }
+  bool AutoTuneComplete() const { return !!AutoTuner().Best(); }
   Span<CostDistribution> AutoTuneCosts() { return AutoTuner().Costs(); }
 
   static pool::Caller AddCaller(const char* name) {
