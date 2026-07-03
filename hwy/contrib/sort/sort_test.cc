@@ -479,6 +479,86 @@ void TestSelectWithNaN() {
 #endif
 }
 
+// Exercises the already-sorted no-op fast path (and its reject cases) added for
+// narrow-vector targets: already-sorted input must produce a correct result via
+// the no-op, and reverse-of-order / duplicate-heavy input (which the check must
+// reject or accept correctly) must still be correct. Sizes span the vectorized
+// scan and its per-key remainder.
+template <typename T, class Order>
+void TestSortedInputForType(Order order) {
+  constexpr bool asc = hwy::IsSame<Order, hwy::SortAscending>();
+  for (const size_t num : {size_t{1}, size_t{2}, size_t{33}, size_t{257},
+                           size_t{4096}, AdjustedReps(70000)}) {
+    if (num < 1) continue;
+    // shape 0: sorted per order; 1: reverse of order; 2: sorted with duplicates
+    for (int shape = 0; shape < 3; ++shape) {
+      std::vector<T> input(num);
+      for (size_t i = 0; i < num; ++i) {
+        size_t v = (shape == 2) ? (i / 2) : i;  // duplicates: 0,0,1,1,2,2,...
+        if (shape == 1) v = num - 1 - v;         // reverse
+        if (!asc) v = (num - 1) - v;             // build in `order`
+        input[i] = ConvertScalarTo<T>(static_cast<float>(v % 30000));
+      }
+      // multiset reference
+      std::vector<float> ref(num);
+      for (size_t i = 0; i < num; ++i) ref[i] = ConvertScalarTo<float>(input[i]);
+      std::sort(ref.begin(), ref.end(), [](float a, float b) {
+        return asc ? (a < b) : (a > b);
+      });
+
+      for (const size_t k : {size_t{0}, num / 2, num - 1}) {
+        if (k >= num) continue;
+        // Select: keys[k] is the k-th in `order` and the array is partitioned.
+        {
+          std::vector<T> keys = input;
+          hwy::VQSelect(keys.data(), num, k, order);
+          const float pk = ConvertScalarTo<float>(keys[k]);
+          if (pk != ref[k]) HWY_ABORT("Select kth wrong: num=%zu k=%zu shape=%d "
+                                      "sizeof=%zu asc=%d\n", num, k, shape,
+                                      sizeof(T), int(asc));
+          for (size_t i = 0; i < num; ++i) {
+            const float v = ConvertScalarTo<float>(keys[i]);
+            const bool bad = (i < k) ? (asc ? v > pk : v < pk)
+                           : (i > k) ? (asc ? v < pk : v > pk) : false;
+            if (bad) HWY_ABORT("Select not partitioned: num=%zu k=%zu i=%zu "
+                               "shape=%d sizeof=%zu\n", num, k, i, shape, sizeof(T));
+          }
+        }
+        // PartialSort: keys[0,k) are the sorted first k in `order`.
+        {
+          std::vector<T> keys = input;
+          hwy::VQPartialSort(keys.data(), num, k, order);
+          for (size_t i = 0; i < k; ++i) {
+            const float v = ConvertScalarTo<float>(keys[i]);
+            if (v != ref[i]) HWY_ABORT("PartialSort prefix wrong: num=%zu k=%zu "
+                                       "i=%zu shape=%d sizeof=%zu\n", num, k, i,
+                                       shape, sizeof(T));
+          }
+        }
+      }
+    }
+  }
+}
+
+template <typename T>
+void TestSortedInputForOrders() {
+  TestSortedInputForType<T>(hwy::SortAscending());
+  TestSortedInputForType<T>(hwy::SortDescending());
+}
+
+void TestSortedInput() {
+#if HWY_HAVE_FLOAT16
+  if (hwy::HaveFloat16()) TestSortedInputForOrders<float16_t>();
+#endif
+  TestSortedInputForOrders<float>();
+  TestSortedInputForOrders<int16_t>();
+  TestSortedInputForOrders<int32_t>();
+  if (hwy::HaveInteger64()) TestSortedInputForOrders<int64_t>();
+#if HWY_HAVE_FLOAT64
+  if (hwy::HaveFloat64()) TestSortedInputForOrders<double>();
+#endif
+}
+
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
@@ -496,6 +576,7 @@ HWY_EXPORT_AND_TEST_P(SortTest, TestAllPartialSort);
 HWY_EXPORT_AND_TEST_P(SortTest, TestPartialSortKEqualsN);
 HWY_EXPORT_AND_TEST_P(SortTest, TestPartialSortKEqualsZero);
 HWY_EXPORT_AND_TEST_P(SortTest, TestSelectWithNaN);
+HWY_EXPORT_AND_TEST_P(SortTest, TestSortedInput);
 HWY_AFTER_TEST();
 }  // namespace
 }  // namespace hwy

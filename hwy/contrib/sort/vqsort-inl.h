@@ -1996,6 +1996,36 @@ HWY_INLINE size_t PartitionNaNToBack(D, Traits, T* HWY_RESTRICT, size_t) {
   return 0;
 }
 
+// True if `keys[0, num)` is already in sorted order per `st` (hence already
+// partitioned around any k, so Select/PartialSort can return without work).
+// Compares each key to its predecessor N lanes at a time and early-exits on the
+// first inversion, so unsorted input costs O(1); only genuinely sorted input
+// pays a full scan -- which then avoids the whole (on NEON, compress-emulated
+// and slower-than-scalar) partition. Used only on narrow-vector targets.
+template <class D, class Traits, typename T>
+HWY_INLINE bool IsSortedForOrder(D d, Traits st, const T* HWY_RESTRICT keys,
+                                 size_t num) {
+  constexpr size_t N1 = st.LanesPerKey();
+  const size_t N = Lanes(d);
+  size_t i = N1;
+  // Bulk: `cur` = keys[i..], `prev` = the same keys shifted back one key. An
+  // inversion is a lane where cur sorts before prev.
+  for (; i + N <= num; i += N) {
+    const Vec<D> cur = LoadU(d, keys + i);
+    const Vec<D> prev = LoadU(d, keys + i - N1);
+    if (HWY_UNLIKELY(!AllFalse(d, st.Compare(d, cur, prev)))) return false;
+  }
+  // Per-key remainder.
+  const FixedTag<T, N1> d1;
+  for (; i < num; i += N1) {
+    if (HWY_UNLIKELY(AllTrue(d1, st.Compare(d1, st.SetKey(d1, keys + i),
+                                            st.SetKey(d1, keys + i - N1))))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace detail
 
 // Old interface with user-specified buffer, retained for compatibility. Called
@@ -2064,6 +2094,12 @@ void PartialSort(D d, Traits st, T* HWY_RESTRICT keys, size_t num, size_t k,
   const size_t k_valid = (k < num_valid) ? k : num_valid;
   if (num_valid == 0) return;
 
+#if HWY_MIN_BYTES <= 16
+  // See Select: on narrow-vector targets, skip the compress-emulated partition
+  // when the input is already sorted (the first k are then already in place).
+  if (HWY_UNLIKELY(detail::IsSortedForOrder(d, st, keys, num_valid))) return;
+#endif
+
 #if VQSORT_ENABLED || HWY_IDE
   if (!detail::HandleSpecialCases(d, st, keys, num_valid, buf)) {  // TODO
     uint64_t* HWY_RESTRICT state = hwy::detail::GetGeneratorStateStatic();
@@ -2109,6 +2145,13 @@ void Select(D d, Traits st, T* HWY_RESTRICT keys, const size_t num,
   // NaN region the postcondition already holds (non-NaN all precede NaN).
   const size_t num_valid = num - detail::PartitionNaNToBack(d, st, keys, num);
   if (k >= num_valid) return;
+
+#if HWY_MIN_BYTES <= 16
+  // Narrow-vector targets (e.g. NEON) have no hardware compress, so the vector
+  // partition is slower than a scalar one on already-sorted input. Detect that
+  // cheaply -- a sorted array is already partitioned around k -- and skip it.
+  if (HWY_UNLIKELY(detail::IsSortedForOrder(d, st, keys, num_valid))) return;
+#endif
 
 #if VQSORT_ENABLED || HWY_IDE
   if (!detail::HandleSpecialCases(d, st, keys, num_valid, buf)) {  // TODO
