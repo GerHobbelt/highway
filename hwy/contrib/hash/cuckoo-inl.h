@@ -315,12 +315,16 @@ class CuckooTableT {
     if constexpr (kPrefetchMode == PrefetchMode::kGather) {
       const RebindToSigned<decltype(du32)> di32;
       VU32 g0 = GatherIndex(du32, base_slots, BitCast(di32, b_pri));
+#if HWY_COMPILER_GCC_ACTUAL >= 700 && !HWY_IS_DEBUG_BUILD
 #if defined(HWY_X86_GCC_INLINE_ASM_VEC_CONSTRAINT)
-      asm volatile(
+      __asm__(
           ""
           : "+" HWY_X86_GCC_INLINE_ASM_VEC_CONSTRAINT(GetRaw(g0, 0))::"memory");
 #elif HWY_COMPILER_GCC || HWY_COMPILER_CLANG
-      asm volatile("" : : "g"(GetRaw(g0, 0)) : "memory");
+      __asm__("" : : "g"(GetRaw(g0, 0)) : "memory");
+#endif
+#else
+      (void)GetRaw(g0, 0);
 #endif
     }
     if constexpr (kPrefetchMode == PrefetchMode::kPrefetch) {
