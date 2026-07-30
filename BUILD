@@ -422,6 +422,7 @@ cc_library(
     textual_hdrs = [
         "hwy/contrib/math/math-inl.h",
         "hwy/contrib/math/fast_math-inl.h",
+        "hwy/contrib/math/fp_arith-inl.h",
     ],
     deps = [
         ":hwy",
@@ -550,6 +551,17 @@ cc_test(
 cc_test(
     name = "sum_array_advanced",
     srcs = ["hwy/examples/sum_array_advanced.cc"],
+    copts = COPTS,
+    deps = [
+        ":hwy",
+        ":nanobenchmark",
+        ":timer",
+    ],
+)
+
+cc_test(
+    name = "sum_hex",
+    srcs = ["hwy/examples/sum_hex.cc"],
     copts = COPTS,
     deps = [
         ":hwy",
