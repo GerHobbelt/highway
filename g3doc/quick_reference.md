@@ -913,9 +913,11 @@ variants are somewhat slower on Arm, and unavailable for integer inputs; if the
 
 *   <code>V **NegMulAdd**(V a, V b, V c)</code>: returns `-a[i] * b[i] + c[i]`.
 
-*   <code>V **MulSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]`.
+*   <code>V **MulSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]`. Note
+    that this requires two instructions for integers.
 
 *   <code>V **NegMulSub**(V a, V b, V c)</code>: returns `-a[i] * b[i] - c[i]`.
+    Note that this requires two or three instructions for integers.
 
 *   <code>V **MulAddSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]` in
     the even lanes and `a[i] * b[i] + c[i]` in the odd lanes.
@@ -938,7 +940,7 @@ variants are somewhat slower on Arm, and unavailable for integer inputs; if the
     potentially more efficient than `MulAdd(PromoteOddTo(d, a), PromoteOddTo(d,
     b), c)`.
 
-#### Masked arithmetic
+#### Merge-masked arithmetic
 
 All ops in this section return `no` for `mask=false` lanes, and suppress any
 exceptions for those lanes if that is supported by the ISA. When exceptions are
@@ -971,14 +973,24 @@ not a concern, these are equivalent to, and potentially more efficient than,
     <code>V **MaskedSatSubOr**(V no, M m, V a, V b)</code>: returns `a[i] +
     b[i]` saturated to the minimum/maximum representable value, or `no[i]` if
     `m[i]` is false.
-*   <code>V **MaskedMulAddOr**(V no, M m, V mul, V x, V add)</code>: returns
-    `mul[i] * x[i] + add[i]` or `no[i]` if `m[i]` is false.
-
 *   `V`: `{i,f}` \
     <code>V **MaskedAbsOr**(V no, M m, V a)</code>: returns the absolute value
     of `a[i]` where m is active and returns `no[i]` otherwise.
 
-#### Zero masked arithmetic
+The following are not natively supported on any target (that would require 5
+input ports, which no architecture has), but can still be more energy-efficient
+than emulating via `IfThenElse` because they use zero-masking where supported.
+
+*   <code>V **MaskedMulAddOr**(V no, M m, V mul, V x, V add)</code>: returns
+    `mul[i] * x[i] + add[i]` or `no[i]` if `m[i]` is false.
+*   <code>V **MaskedMulSubOr**(V no, M m, V mul, V x, V sub)</code>: returns
+    `mul[i] * x[i] - sub[i]` or `no[i]` if `m[i]` is false.
+*   <code>V **MaskedNegMulAddOr**(V no, M m, V mul, V x, V add)</code>: returns
+    `-mul[i] * x[i] + add[i]` or `no[i]` if `m[i]` is false.
+*   <code>V **MaskedNegMulSubOr**(V no, M m, V mul, V x, V add)</code>: returns
+    `-mul[i] * x[i] - sub[i]` or `no[i]` if `m[i]` is false.
+
+#### Zero-masked arithmetic
 
 All ops in this section return `0` for `mask=false` lanes. These are equivalent
 to, and potentially more efficient than, `IfThenElseZero(m, Add(a, b));` etc.
@@ -1020,8 +1032,14 @@ to, and potentially more efficient than, `IfThenElseZero(m, Add(a, b));` etc.
 *   <code>V **MaskedMulAdd**(M m, V a, V b, V c)</code>: returns `a[i] * b[i] +
     c[i]` or `0` if `m[i]` is false.
 
+*   <code>V **MaskedMulSub**(M m, V a, V b, V c)</code>: returns `a[i] * b[i] -
+    c[i]` or `0` if `m[i]` is false.
+
 *   <code>V **MaskedNegMulAdd**(M m, V a, V b, V c)</code>: returns `-a[i] *
     b[i] + c[i]` or `0` if `m[i]` is false.
+
+*   <code>V **MaskedNegMulSub**(M m, V a, V b, V c)</code>: returns `-a[i] *
+    b[i] - c[i]` or `0` if `m[i]` is false.
 
 *   `V`: `{bf,u,i}16`, `D`: `RepartitionToWide<DFromV<V>>` \
     <code>Vec&lt;D&gt; **MaskedWidenMulPairwiseAdd**(D d, M m, V a, V b)</code>:
@@ -2296,27 +2314,27 @@ or `ConcatOdd` followed by `PromoteLowerTo`:
     `TFromD<D>` integer \
     <code>Vec&lt;D&gt; **ReorderShiftRightAndDemote2To**&lt;int kShiftAmt&gt;(D, V
     a, V b)</code>: equivalent to `ReorderDemote2To(D, ShiftRight<kShiftAmt>(a),
-    ShiftRight<kShiftAmt>(b))`. TODO: implement on SVE2/RVV/LSX/LASX.
+    ShiftRight<kShiftAmt>(b))`. TODO: implement on SVE2/LSX/LASX.
 
 *   `V`,`D`: any `(V, D)` accepted by `ReorderDemote2To`, with `V` and
     `TFromD<D>` integer \
     <code>Vec&lt;D&gt; **ReorderRoundingShiftRightAndDemote2To**&lt;int
     kShiftAmt&gt;(D, V a, V b)</code>: equivalent to `ReorderDemote2To(D,
     RoundingShiftRight<kShiftAmt>(a), RoundingShiftRight<kShiftAmt>(b))`. TODO:
-    implement on SVE2/RVV/LSX/LASX.
+    implement on SVE2/LSX/LASX.
 
 *   `V`,`D`: any `(V, D)` accepted by `OrderedDemote2To`, with `V` and
     `TFromD<D>` integer \
     <code>Vec&lt;D&gt; **OrderedShiftRightAndDemote2To**&lt;int kShiftAmt&gt;(D, V
     a, V b)</code>: equivalent to `OrderedDemote2To(D, ShiftRight<kShiftAmt>(a),
-    ShiftRight<kShiftAmt>(b))`. TODO: implement on SVE2/RVV/LSX/LASX.
+    ShiftRight<kShiftAmt>(b))`. TODO: implement on SVE2/LSX/LASX.
 
 *   `V`,`D`: any `(V, D)` accepted by `OrderedDemote2To`, with `V` and
     `TFromD<D>` integer \
     <code>Vec&lt;D&gt; **OrderedRoundingShiftRightAndDemote2To**&lt;int
     kShiftAmt&gt;(D, V a, V b)</code>: equivalent to `OrderedDemote2To(D,
     RoundingShiftRight<kShiftAmt>(a), RoundingShiftRight<kShiftAmt>(b))`. TODO:
-    implement on SVE2/RVV/LSX/LASX.
+    implement on SVE2/LSX/LASX.
 
 *   `V`,`D`: (`u16,u8`), (`u32,u16`), (`u64,u32`), \
     <code>Vec&lt;D&gt; **OrderedTruncate2To**(D d, V a, V b)</code>: as above,
@@ -2626,27 +2644,27 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
     `TwoTablesLookupLanes(a, b, indices)` on RVV/SVE if `Lanes(d) <
     Lanes(DFromV<V>())`.
 
-*   `D`: {u,i,f}{16,32,64} \
-    <code>Vec&lt;D&gt; **Lookup8**(D, const TFromD<D>* tbl, VI indices)</code>:
-    returns `GatherIndex(D(), tbl, indices)`, but much more efficient, and
-    limited to 8 elements. Results are undefined if any indices are >= 8. This
-    is implemented using `TableLookupLanes` or `TwoTablesLookupLanes`. Let `T`
-    denote `TFromD<D>`. This op is guaranteed to work if `D` is a full vector,
-    `HWY_TARGET != HWY_SCALAR` and `HWY_MIN_BYTES / sizeof(T) >= 4`. Use the
-    constexpr function `CanLookup8(D())` to verify this. Even if it returns
-    false, this op is still safe to call if `Lanes(D())` >= 4. Note that `tbl`
-    must be 8-element aligned!
+Each of the `Lookup8`, `Lookup16`, `Lookup32` (let $X denote the 8/16/32) ops
+below return `GatherIndex(D(), tbl, indices)`, but are much more efficient, and
+are limited to $X elements. Results are undefined if any indices are >= $X. They
+are implemented using `TableLookupLanes` or `TwoTablesLookupLanes`. Let `T`
+denote `TFromD<D>`. These ops are guaranteed to work if `D` is a full vector,
+`HWY_TARGET != HWY_SCALAR` and `HWY_MIN_BYTES / sizeof(T) >= $X/2`. Use the
+constexpr function `CanLookup$X(D())` to verify this. Even if it returns false,
+the ops are still safe to call if `Lanes(D())` >= $X/2. Note that `tbl` must be
+$X-element aligned!
 
 *   `D`: {u,i,f}{16,32,64} \
-    <code>Vec&lt;D&gt; **Lookup16**(D, const TFromD<D>* tbl, VI indices)</code>:
-    returns `GatherIndex(D(), tbl, indices)`, but much more efficient, and
-    limited to 16 elements. Results are undefined if any indices are >= 16. This
-    is implemented using `TableLookupLanes` or `TwoTablesLookupLanes`. Let `T`
-    denote `TFromD<D>`. This op is guaranteed to work if `D` is a full vector,
-    `HWY_TARGET != HWY_SCALAR` and `HWY_MIN_BYTES / sizeof(T) >= 8`. Use the
-    constexpr function `CanLookup16(D())` to verify this. Even if it returns
-    false, this op is still safe to call if `Lanes(D())` >= 8. Note that `tbl`
-    must be 16-element aligned!
+    <code>Vec&lt;D&gt; **Lookup8**(D, const TFromD&lt;D&gt;* tbl, VI
+    indices)</code>: as above, with $X = 8.
+
+*   `D`: {u,i,f}{16,32,64} \
+    <code>Vec&lt;D&gt; **Lookup16**(D, const TFromD&lt;D&gt;* tbl, VI
+    indices)</code>: as above, with $X = 16.
+
+*   `D`: {u,i}{8} \
+    <code>Vec&lt;D&gt; **Lookup32**(D, const TFromD&lt;D&gt;* tbl, VI
+    indices)</code>: as above, with $X = 32.
 
 *   <code>unspecified **IndicesFromVec**(D d, V idx)</code> prepares for
     `TableLookupLanes` or `TwoTablesLookupLanes` with integer indices in `idx`,
@@ -2696,6 +2714,13 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
     v[Lanes(d)-1-N]`.
 
     The result of SlideUpLanes is implementation-defined if `N >= Lanes(d)`.
+
+*   <code>V **SlideUpLanesOr**(V lo, D d, V hi, size_t N)</code>: slides up `hi`
+    by `N` lanes and returns `lo[i]` in the lower `N` lanes.
+
+    `SlideUpLanesOr(lo, d, hi, N)` is equivalent to
+    `IfThenElse(FirstN(d, N), lo, SlideUpLanes(d, hi, N))`, but SlideUpLanesOr
+    is more efficient on some targets, including SVE and RVV.
 
 *   <code>V **SlideDownLanes**(D d, V v, size_t N)</code>: slides down `v` by
     `N` lanes
@@ -3009,9 +3034,9 @@ supported for the `HWY_SCALAR` target.
     implemented as `Add(Mul(f, m), a)`. Checking this can be useful for
     increasing the tolerance of expected results (around 1E-5 or 1E-6).
 
-*   `HWY_NATIVE_MASK` expands to 1 if the `Masked*` etc. ops use native masking.
-    If so, the masking is zero-cost, otherwise they typically involve an extra
-    AND operation.
+*   `HWY_NATIVE_MASK` expands to 1 if the `Masked*` etc. ops use native (zero-
+    or merge-)masking. If so, such masking is zero-cost, otherwise they
+    typically involve an extra AND operation.
 
 *   `HWY_NATIVE_DOT_BF16` expands to 1 if `ReorderWidenMulAccumulate` uses a
     native instruction rather than masking and f32 `MulAdd`.

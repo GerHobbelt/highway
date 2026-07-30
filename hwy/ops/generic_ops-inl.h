@@ -790,8 +790,18 @@ HWY_API V MaskedMulAdd(M m, V mul, V x, V add) {
 }
 
 template <class V, class M>
+HWY_API V MaskedMulSub(M m, V mul, V x, V sub) {
+  return IfThenElseZero(m, MulSub(mul, x, sub));
+}
+
+template <class V, class M>
 HWY_API V MaskedNegMulAdd(M m, V mul, V x, V add) {
   return IfThenElseZero(m, NegMulAdd(mul, x, add));
+}
+
+template <class V, class M>
+HWY_API V MaskedNegMulSub(M m, V mul, V x, V sub) {
+  return IfThenElseZero(m, NegMulSub(mul, x, sub));
 }
 
 template <class D, class M, HWY_IF_UI32_D(D),
@@ -1057,6 +1067,14 @@ HWY_API V SaturatedAbs(V v) {
 #endif
 
 // ------------------------------ MaskedAbsOr
+
+#if (defined(HWY_NATIVE_MASKED_ABS) == defined(HWY_TARGET_TOGGLE))
+#ifdef HWY_NATIVE_MASKED_ABS
+#undef HWY_NATIVE_MASKED_ABS
+#else
+#define HWY_NATIVE_MASKED_ABS
+#endif
+
 template <class V, HWY_IF_SIGNED_V(V), class M>
 HWY_API V MaskedAbsOr(V no, M m, V v) {
   return IfThenElse(m, Abs(v), no);
@@ -1067,6 +1085,7 @@ template <class V, HWY_IF_SIGNED_V(V), class M>
 HWY_API V MaskedAbs(M m, V v) {
   return IfThenElseZero(m, Abs(v));
 }
+#endif  // HWY_NATIVE_MASKED_ABS
 
 // ------------------------------ Reductions
 
@@ -4793,19 +4812,13 @@ HWY_API V MulRound(V a, V b) {
   return Round(Mul(a, b));
 }
 
-// ------------------------------ MulAdd / NegMulAdd
+// ------------------------------ Integer [Neg]MulAdd
 
 #if (defined(HWY_NATIVE_INT_FMA) == defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_INT_FMA
 #undef HWY_NATIVE_INT_FMA
 #else
 #define HWY_NATIVE_INT_FMA
-#endif
-
-#ifdef HWY_NATIVE_INT_FMSUB
-#undef HWY_NATIVE_INT_FMSUB
-#else
-#define HWY_NATIVE_INT_FMSUB
 #endif
 
 template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
@@ -4818,11 +4831,8 @@ HWY_API V NegMulAdd(V mul, V x, V add) {
   return Sub(add, Mul(mul, x));
 }
 
-template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
-HWY_API V MulSub(V mul, V x, V sub) {
-  return Sub(Mul(mul, x), sub);
-}
 #endif  // HWY_NATIVE_INT_FMA
+
 // ------------------------------ MulComplex* / MaskedMulComplex*
 
 #if (defined(HWY_NATIVE_CPLX) == defined(HWY_TARGET_TOGGLE))
@@ -4889,44 +4899,45 @@ HWY_API V MaskedMulComplexOr(V no, M mask, V a, V b) {
 
 #endif  // HWY_NATIVE_CPLX
 
-// ------------------------------ MaskedMulAddOr
-#if (defined(HWY_NATIVE_MASKED_INT_FMA) == defined(HWY_TARGET_TOGGLE))
-#ifdef HWY_NATIVE_MASKED_INT_FMA
-#undef HWY_NATIVE_MASKED_INT_FMA
-#else
-#define HWY_NATIVE_MASKED_INT_FMA
-#endif
+// ------------------------------ Merge-masked FMA
+
+// No target has native FMA + merge-masking because this would require 5 inputs.
+// If there is native masking, we can reduce energy use, otherwise just blend.
 
 template <class V, class M>
 HWY_API V MaskedMulAddOr(V no, M m, V mul, V x, V add) {
-  return IfThenElse(m, MulAdd(mul, x, add), no);
-}
-
-#endif  // HWY_NATIVE_MASKED_INT_FMA
-
-// ------------------------------ Integer MulSub / NegMulSub
-#if (defined(HWY_NATIVE_INT_FMSUB) == defined(HWY_TARGET_TOGGLE))
-#ifdef HWY_NATIVE_INT_FMSUB
-#undef HWY_NATIVE_INT_FMSUB
+#if HWY_NATIVE_MASK
+  return IfThenElse(m, MaskedMulAdd(m, mul, x, add), no);
 #else
-#define HWY_NATIVE_INT_FMSUB
+  return IfThenElse(m, MulAdd(mul, x, add), no);
 #endif
-
-template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
-HWY_API V MulSub(V mul, V x, V sub) {
-  const DFromV<decltype(mul)> d;
-  const RebindToSigned<decltype(d)> di;
-  return MulAdd(mul, x, BitCast(d, Neg(BitCast(di, sub))));
 }
 
-#endif  // HWY_NATIVE_INT_FMSUB
+template <class V, class M>
+HWY_API V MaskedNegMulAddOr(V no, M m, V mul, V x, V add) {
+#if HWY_NATIVE_MASK
+  return IfThenElse(m, MaskedNegMulAdd(m, mul, x, add), no);
+#else
+  return IfThenElse(m, NegMulAdd(mul, x, add), no);
+#endif
+}
 
-template <class V, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
-HWY_API V NegMulSub(V mul, V x, V sub) {
-  const DFromV<decltype(mul)> d;
-  const RebindToSigned<decltype(d)> di;
+template <class V, class M>
+HWY_API V MaskedMulSubOr(V no, M m, V mul, V x, V sub) {
+#if HWY_NATIVE_MASK
+  return IfThenElse(m, MaskedMulSub(m, mul, x, sub), no);
+#else
+  return IfThenElse(m, MulSub(mul, x, sub), no);
+#endif
+}
 
-  return BitCast(d, Neg(BitCast(di, MulAdd(mul, x, sub))));
+template <class V, class M>
+HWY_API V MaskedNegMulSubOr(V no, M m, V mul, V x, V sub) {
+#if HWY_NATIVE_MASK
+  return IfThenElse(m, MaskedNegMulSub(m, mul, x, sub), no);
+#else
+  return IfThenElse(m, NegMulSub(mul, x, sub), no);
+#endif
 }
 
 // ------------------------------ MulAddSub
@@ -5651,11 +5662,11 @@ HWY_API VFromD<DN> RoundingShiftRightAndDemoteTo(DN dn, V v) {
 
 #endif  // HWY_NATIVE_SHIFT_RIGHT_AND_DEMOTE
 
-// ------------------------------ ReorderShiftRightAndDemote2To (ReorderDemote2To)
-// ------------------------------ OrderedShiftRightAndDemote2To (OrderedDemote2To)
+// ---------------------------- ReorderShiftRightAndDemote2To (ReorderDemote2To)
+// ---------------------------- OrderedShiftRightAndDemote2To (OrderedDemote2To)
 
-// NEON overrides these with a fused saturating shift-narrow.
-// TODO: also override on SVE2/RVV/LSX/LASX.
+// NEON and RVV override these with a fused saturating shift-narrow.
+// TODO: also override on SVE2/LSX/LASX.
 #if (defined(HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2) == \
      defined(HWY_TARGET_TOGGLE))
 #ifdef HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2
@@ -7114,7 +7125,7 @@ HWY_INLINE Vec<D> Lookup8(D d, const T* HWY_RESTRICT table, VI indices) {
 
     // Now ensure indices for the second half of the table point to the second
     // vector. Note that SVE2_128 and SVE_256 are handled by the fixed-size case
-    // above. The adjustment factor is 0 for 128-bit SIMD, which can happen with
+    // above. The adjustment factor is 0 for 128-bit SIMD, which can happen with
     // 128-bit SVE1 hardware, but we do not know that at compile time.
     using TI = TFromD<decltype(di)>;
     const VI adjust = Set(di, static_cast<TI>(Lanes(d) - 4));
@@ -7180,7 +7191,7 @@ HWY_INLINE Vec<D> Lookup16(D d, const T* HWY_RESTRICT table, VI indices) {
 
     // Now ensure indices for the second half of the table point to the second
     // vector. Note that SVE2_128 and SVE_256 are handled by the fixed-size case
-    // above. The adjustment factor is 0 for 128-bit SIMD, which can happen with
+    // above. The adjustment factor is 0 for 128-bit SIMD, which can happen with
     // 128-bit SVE1 hardware, but we do not know that at compile time.
     using TI = TFromD<decltype(di)>;
     const VI adjust = Set(di, static_cast<TI>(Lanes(d) - 8));
@@ -7192,6 +7203,82 @@ HWY_INLINE Vec<D> Lookup16(D d, const T* HWY_RESTRICT table, VI indices) {
     indices = MaskedAddOr(indices, ge_8, indices, adjust);
 
     return TwoTablesLookupLanes(d, t0, t1, IndicesFromVec(d, indices));
+  }
+}
+
+// ------------------------------ Lookup32
+
+template <class D, typename T = TFromD<D>, class VI>
+HWY_INLINE Vec<D> Lookup32(D d, const T* HWY_RESTRICT table, VI indices) {
+  // `di` describes the indices given - same bits per lane, but `d` determines
+  // the actual lane count of the result and also of the table vectors, which
+  // is relevant for adjusting the index values, see below.
+  const DFromV<VI> di;
+  static_assert(sizeof(T) == sizeof(TFromD<decltype(di)>),
+                "Index/vector must have same lane size");
+  HWY_IF_CONSTEXPR(HWY_IS_DEBUG_BUILD) {
+    // Asserting Lanes(di) >= 16 not needed since both d and di have the same
+    // number of Lanes()
+    HWY_DASSERT(Lanes(d) >= 16);
+    HWY_DASSERT(AllTrue(di, Lt(indices, Set(di, 32))));
+  }
+
+  HWY_IF_CONSTEXPR(!HWY_HAVE_SCALABLE) {
+    // Fixed-size vectors: we know they are >= 128 bit, so either one or two
+    // tables are sufficient.
+    HWY_IF_CONSTEXPR(MaxLanes(d) >= 32) {
+      const CappedTag<T, 32> d32;
+      // We want to perform one lookup per index, hence resize. This has better
+      // codegen than ResizeBitCast.
+      const Vec<D> t0 = ZeroExtendResizeBitCast(d, d32, Load(d32, table));
+      return TableLookupLanes(t0, IndicesFromVec(d, indices));
+    }
+    HWY_IF_CONSTEXPR(MaxLanes(d) < 32) {
+      // Exactly 16 lanes per vector, because we ensured >= 16 above.
+      const Vec<D> t0 = Load(d, table);
+      const Vec<D> t1 = Load(d, table + 16);
+      return TwoTablesLookupLanes(d, t0, t1, IndicesFromVec(d, indices));
+    }
+  }
+
+  HWY_IF_CONSTEXPR(HWY_HAVE_SCALABLE) {
+    // Scalable: first we must load two halves of the table into two vectors,
+    // regardless of vector size. We always use two-vector lookups to avoid
+    // runtime branching. Note that RVV can have U8x32 even with 128-bit
+    // vectors (LMUL=2), hence we must use the given LMUL, not FixedTag, but we
+    // still want to cap at 16 lanes to avoid overrunning the table.
+    const CappedTag<T, 16, d.Pow2()> d16;
+
+    // We want to use native lookup instructions (more efficient on SVE than two
+    // lookups plus a blend), hence cast. This has no runtime cost. No LoadU
+    // required because + 16 is still aligned relative to `d16`.
+    const Vec<D> t0 = ResizeBitCast(d, Load(d16, table));
+    const Vec<D> t1 = ResizeBitCast(d, Load(d16, table + 16));
+
+#if HWY_TARGET_IS_SVE
+    const Mask<decltype(di)> ge_16 = detail::GeN(indices, 16);
+#else
+    const Mask<decltype(di)> ge_16 = Ge(indices, Set(di, 16));
+#endif
+
+    // For 8-bit lanes, adding (Lanes(d) - 16) to indices >= 16 can overflow
+    // uint8 when Lanes(d) >= 241. Use two separate lookups and blend instead.
+    HWY_IF_CONSTEXPR(sizeof(T) == 1) {
+      using TI = TFromD<decltype(di)>;
+      // Subtract 16 so indices >= 16 become 0..15 for t1 lookup.
+      // Wrapped values for indices < 16 are unused (masked out).
+      const VI idx_for_t1 = Sub(indices, Set(di, static_cast<TI>(16)));
+      const Vec<D> r0 = TableLookupLanes(t0, IndicesFromVec(d, indices));
+      const Vec<D> r1 = TableLookupLanes(t1, IndicesFromVec(d, idx_for_t1));
+      return IfThenElse(RebindMask(d, ge_16), r1, r0);
+    }
+    HWY_IF_CONSTEXPR(sizeof(T) != 1) {
+      // For wider types, the adjustment fits without overflow.
+      using TI = TFromD<decltype(di)>;
+      const VI adjust = Set(di, static_cast<TI>(Lanes(d) - 16));
+      indices = MaskedAddOr(indices, ge_16, indices, adjust);
+      return TwoTablesLookupLanes(d, t0, t1, IndicesFromVec(d, indices));
+    }
   }
 }
 
@@ -8003,6 +8090,22 @@ HWY_API VFromD<D> Slide1Down(D d, VFromD<D> v) {
 #endif  // HWY_TARGET != HWY_SCALAR
 
 #endif  // HWY_NATIVE_SLIDE1_UP_DOWN
+
+// ------------------------------ SlideUpLanesOr
+#if (defined(HWY_NATIVE_SLIDE_UP_LANES_OR) == defined(HWY_TARGET_TOGGLE))
+
+#ifdef HWY_NATIVE_SLIDE_UP_LANES_OR
+#undef HWY_NATIVE_SLIDE_UP_LANES_OR
+#else
+#define HWY_NATIVE_SLIDE_UP_LANES_OR
+#endif
+
+template <class D>
+HWY_API VFromD<D> SlideUpLanesOr(VFromD<D> lo, D d, VFromD<D> hi, size_t amt) {
+  return IfThenElse(FirstN(d, amt), lo, SlideUpLanes(d, hi, amt));
+}
+
+#endif  // HWY_NATIVE_SLIDE_UP_LANES_OR
 
 // ------------------------------ SlideUpBlocks
 

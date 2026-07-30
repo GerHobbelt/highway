@@ -28,6 +28,7 @@
 #define HWY_SVE_IS_POW2 1
 #endif
 
+#undef HWY_SVE_HAVE_2
 #if HWY_TARGET == HWY_SVE2 || HWY_TARGET == HWY_SVE2_128
 #define HWY_SVE_HAVE_2 1
 #else
@@ -36,6 +37,7 @@
 
 // HWY_SVE_HAVE_BF16_VEC is defined to 1 if the SVE svbfloat16_t vector type
 // is supported, even if HWY_SVE_HAVE_BF16_FEATURE (= intrinsics) is 0.
+#undef HWY_SVE_HAVE_BF16_VEC
 #if HWY_SVE_HAVE_BF16_FEATURE ||                                       \
     (HWY_COMPILER_CLANG >= 1200 && defined(__ARM_FEATURE_SVE_BF16)) || \
     HWY_COMPILER_GCC_ACTUAL >= 1000
@@ -47,6 +49,7 @@
 // HWY_SVE_HAVE_F32_TO_BF16C is defined to 1 if the SVE svcvt_bf16_f32_x
 // and svcvtnt_bf16_f32_x intrinsics are available, even if the __bf16 type
 // is disabled
+#undef HWY_SVE_HAVE_F32_TO_BF16C
 #if HWY_SVE_HAVE_BF16_VEC && defined(__ARM_FEATURE_SVE_BF16)
 #define HWY_SVE_HAVE_F32_TO_BF16C 1
 #else
@@ -1470,15 +1473,6 @@ HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGV, ApproximateReciprocal, recpe)
 // ------------------------------ Sqrt
 HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGPV, Sqrt, sqrt)
 
-// ------------------------------ MaskedSqrt
-#ifdef HWY_NATIVE_MASKED_SQRT
-#undef HWY_NATIVE_MASKED_SQRT
-#else
-#define HWY_NATIVE_MASKED_SQRT
-#endif
-
-HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMV_Z, MaskedSqrt, sqrt)
-
 // ------------------------------ ApproximateReciprocalSqrt
 #ifdef HWY_NATIVE_F64_APPROX_RSQRT
 #undef HWY_NATIVE_F64_APPROX_RSQRT
@@ -1488,9 +1482,8 @@ HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMV_Z, MaskedSqrt, sqrt)
 
 HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGV, ApproximateReciprocalSqrt, rsqrte)
 
-// ------------------------------ MulAdd
+// ------------------------------ [Neg]MulAdd
 
-// Per-target flag to prevent generic_ops-inl.h from defining int MulAdd.
 #ifdef HWY_NATIVE_INT_FMA
 #undef HWY_NATIVE_INT_FMA
 #else
@@ -1505,8 +1498,6 @@ HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGV, ApproximateReciprocalSqrt, rsqrte)
   }
 
 HWY_SVE_FOREACH(HWY_SVE_FMA, MulAdd, mad)
-
-// ------------------------------ NegMulAdd
 HWY_SVE_FOREACH(HWY_SVE_FMA, NegMulAdd, msb)
 
 // ------------------------------ MulSub
@@ -1768,7 +1759,6 @@ HWY_SVE_FOREACH(HWY_SVE_RETV_ARGMVV, MaskedMul, mul)
 HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMVV, MaskedDiv, div)
 HWY_SVE_FOREACH_UI32(HWY_SVE_RETV_ARGMVV, MaskedDiv, div)
 HWY_SVE_FOREACH_UI64(HWY_SVE_RETV_ARGMVV, MaskedDiv, div)
-HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMV, MaskedSqrt, sqrt)
 #if HWY_SVE_HAVE_2
 HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGMVV, MaskedSatAdd, qadd)
 HWY_SVE_FOREACH_UI(HWY_SVE_RETV_ARGMVV, MaskedSatSub, qsub)
@@ -1832,29 +1822,19 @@ HWY_API V MaskedSatSubOr(V no, M m, V a, V b) {
 }
 #endif
 
-// ------------------------------ MaskedMulAddOr
-namespace detail {
-HWY_SVE_FOREACH(HWY_SVE_RETV_ARGMVVV, MaskedMulAdd, mad)
-}
-
-// Per-target flag to prevent generic_ops-inl.h from defining int
-// MaskedMulAddOr.
-#ifdef HWY_NATIVE_MASKED_INT_FMA
-#undef HWY_NATIVE_MASKED_INT_FMA
+// ------------------------------ MaskedSqrt
+#ifdef HWY_NATIVE_MASKED_SQRT
+#undef HWY_NATIVE_MASKED_SQRT
 #else
-#define HWY_NATIVE_MASKED_INT_FMA
+#define HWY_NATIVE_MASKED_SQRT
 #endif
 
-template <class V, class M>
-HWY_API V MaskedMulAddOr(V no, M m, V mul, V x, V add) {
-  return IfThenElse(m, detail::MaskedMulAdd(m, mul, x, add), no);
-}
+HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMV_Z, MaskedSqrt, sqrt)
 
 template <class V, HWY_IF_FLOAT_V(V), class M>
 HWY_API V MaskedSqrtOr(V no, M m, V v) {
-  return IfThenElse(m, detail::MaskedSqrt(m, v), no);
+  return IfThenElse(m, MaskedSqrt(m, v), no);
 }
-
 // ================================================== REDUCE
 
 #ifdef HWY_NATIVE_REDUCE_SCALAR
@@ -1979,7 +1959,10 @@ HWY_SVE_FOREACH_UI32(HWY_SVE_RETV_ARGMVV_Z, MaskedDiv, div)
 HWY_SVE_FOREACH_UI64(HWY_SVE_RETV_ARGMVV_Z, MaskedDiv, div)
 HWY_SVE_FOREACH(HWY_SVE_RETV_ARGMVVV_Z, MaskedMulAdd, mad)
 HWY_SVE_FOREACH(HWY_SVE_RETV_ARGMVVV_Z, MaskedNegMulAdd, msb)
+HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMVVV_Z, MaskedMulSub, nmsb)
+HWY_SVE_FOREACH_F(HWY_SVE_RETV_ARGMVVV_Z, MaskedNegMulSub, nmad)
 
+// Integer MaskedMulSub and MaskedNegMulSub must come after inside-inl.h.
 // I8/U8/I16/U16 MaskedDiv is implemented after I8/U8/I16/U16 Div
 
 #if HWY_SVE_HAVE_2
@@ -3338,6 +3321,18 @@ HWY_SVE_FOREACH_UI64(HWY_SVE_RETV_ARGPV, NativePromoteEvenTo, extw)
 
 #include "hwy/ops/inside-inl.h"
 
+// ------------------------------ MaskedMulSub, MaskedNegMulSub (MulSub)
+
+template <class V, class M, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V MaskedMulSub(M m, V mul, V x, V sub) {
+  return IfThenElseZero(m, MulSub(mul, x, sub));
+}
+
+template <class V, class M, HWY_IF_NOT_FLOAT_NOR_SPECIAL_V(V)>
+HWY_API V MaskedNegMulSub(M m, V mul, V x, V sub) {
+  return IfThenElseZero(m, NegMulSub(mul, x, sub));
+}
+
 // ------------------------------ DemoteTo F
 
 // We already toggled HWY_NATIVE_F16C above.
@@ -4099,6 +4094,17 @@ HWY_API V TwoTablesLookupLanes(V a, V b,
 template <class D>
 HWY_API VFromD<D> SlideUpLanes(D d, VFromD<D> v, size_t amt) {
   return detail::Splice(v, Zero(d), FirstN(d, amt));
+}
+
+#ifdef HWY_NATIVE_SLIDE_UP_LANES_OR
+#undef HWY_NATIVE_SLIDE_UP_LANES_OR
+#else
+#define HWY_NATIVE_SLIDE_UP_LANES_OR
+#endif
+
+template <class D>
+HWY_API VFromD<D> SlideUpLanesOr(VFromD<D> lo, D d, VFromD<D> hi, size_t amt) {
+  return detail::Splice(hi, lo, FirstN(d, amt));
 }
 
 // ------------------------------ Slide1Up

@@ -2732,9 +2732,8 @@ HWY_NEON_DEF_FUNCTION_UI_8_16_32(AbsDiff, vabd, _, 2)  // no UI64
 #define HWY_NATIVE_INTEGER_ABS_DIFF
 #endif
 
-// ------------------------------ Integer multiply-add
+// ------------------------------ Integer [Neg]MulAdd
 
-// Per-target flag to prevent generic_ops-inl.h from defining int MulAdd.
 #ifdef HWY_NATIVE_INT_FMA
 #undef HWY_NATIVE_INT_FMA
 #else
@@ -8546,7 +8545,7 @@ HWY_API VFromD<D> OrderedDemote2To(D dbf16, VFromD<Repartition<float, D>> a,
 #define HWY_NATIVE_SHIFT_RIGHT_AND_REORDER_DEMOTE2
 #endif
 
-// TODO: also override on SVE2/RVV/LSX/LASX.
+// TODO: also override on SVE2/LSX/LASX.
 
 // Macro args: `intrinsic` is the vqshrn/vqshrun family prefix; `op_suffix` is
 // its trailing token (e.g. `_n_s16`); `shift` is `ShiftRight` (non-rounding) or
