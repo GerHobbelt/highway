@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Static cuckoo hashing for uint32_t keys.
+// Static cuckoo hashing for u32 and u64 keys.
 //
 // Keys are assigned to 16-slot buckets (64 bytes = one cache line) via two
 // hash functions (primary and secondary). Build-time placement uses
@@ -77,99 +77,181 @@ HWY_INLINE const V& GetRaw(const V& v, ...) {
 }
 
 // --------------------------------------------------------------------------
+// CuckooTraits: policy parameters for cuckoo hashing.
+// HashT must provide: LaneType typedef, operator()(LaneType), OneVec, TwoVec.
+// KeyT is derived from HashT::LaneType.
+
+template <typename HashT_ = WeakTwoMul, size_t kBucketSize_ = 16,
+          size_t kMinBuckets_ = 1>
+struct CuckooTraits {
+  using HashT = HashT_;
+  using KeyT = typename HashT::LaneType;
+  static constexpr size_t kBucketSize = kBucketSize_;
+  static constexpr size_t kLogBucketSize = CeilLog2(kBucketSize);
+  static constexpr size_t kMinBuckets = kMinBuckets_;
+
+  static_assert((kBucketSize_ & (kBucketSize_ - 1)) == 0 && kBucketSize_ > 0,
+                "kBucketSize_ must be a power of two");
+  static_assert((kMinBuckets_ & (kMinBuckets_ - 1)) == 0 && kMinBuckets_ > 0,
+                "kMinBuckets_ must be a power of two");
+};
+
+// --------------------------------------------------------------------------
 // CuckooConfig
 
-class CuckooConfig {
+template <typename Traits_ = CuckooTraits<>>
+class CuckooConfigT {
  public:
-  CuckooConfig() = default;
-  explicit CuckooConfig(uint32_t num_keys, double epsilon = 0.25)
+  using Traits = Traits_;
+  using KeyT = typename Traits::KeyT;
+
+  CuckooConfigT() = default;
+  explicit CuckooConfigT(size_t num_keys, double epsilon = 0.25)
       : num_keys_(num_keys), epsilon_(epsilon) {
+    constexpr size_t kSlotsPerBucket = Traits::kBucketSize;
+    constexpr size_t kMinBuckets = Traits::kMinBuckets;
+
     // Compute number of slots, rounded up to a multiple of kBucketSize.
-    const uint32_t raw_slots =
-        static_cast<uint32_t>(num_keys * (1.0 + epsilon)) + 1;
-    const uint32_t min_buckets = DivCeil(raw_slots, kBucketSize);
-    num_buckets_ = 1u << hwy::CeilLog2(HWY_MAX(min_buckets, 1u));
-    num_slots_ = num_buckets_ * kBucketSize;
+    const size_t raw_slots =
+        static_cast<size_t>(static_cast<double>(num_keys) * (1.0 + epsilon)) +
+        1;
+    const size_t min_buckets = DivCeil(raw_slots, kSlotsPerBucket);
+    num_buckets_ = RoundUpToPow2(HWY_MAX(kMinBuckets, min_buckets));
+    num_slots_ = num_buckets_ * kSlotsPerBucket;
     bucket_mask_ = num_buckets_ - 1;
-    fprintf(stderr, "Cuckoo hashing num buckets = %d\n", num_buckets_);
+    bucket_bits_ = hwy::CeilLog2(num_buckets_);
   }
 
-  uint32_t NumKeys() const { return num_keys_; }
-  uint32_t NumSlots() const { return num_slots_; }
-  uint32_t NumBuckets() const { return num_buckets_; }
-  uint32_t BucketMask() const { return bucket_mask_; }
+  size_t NumKeys() const { return num_keys_; }
+  size_t NumSlots() const { return num_slots_; }
+  size_t NumBuckets() const { return num_buckets_; }
+  KeyT BucketMask() const { return bucket_mask_; }
+  size_t BucketBits() const { return bucket_bits_; }
   double Epsilon() const { return epsilon_; }
 
-  static constexpr uint32_t kBucketSize = 16;  // slots per bucket
-  static constexpr uint32_t kBucketBytes = kBucketSize * sizeof(uint32_t);
-  // Sentinel value for empty slots. We reserve this value and keys must not
-  // equal it.
-  static constexpr uint32_t kEmpty = 0xFFFFFFFFu;
-  static constexpr uint32_t kUnmatched = 0xFFFFFFFFu;
+ private:
+  size_t num_keys_ = 0;
+  size_t num_slots_ = 0;
+  size_t num_buckets_ = 0;
+  size_t bucket_bits_ = 0;
+  double epsilon_ = 0.0;
+  KeyT bucket_mask_ = 0;
+};
+
+// Backward-compatible alias.
+using CuckooConfig = CuckooConfigT<>;
+
+// --------------------------------------------------------------------------
+// CuckooTable: query-time structure
+
+template <typename Traits_ = CuckooTraits<>>
+class CuckooTableT {
+  using Traits = Traits_;
+  using KeyT = typename Traits::KeyT;
+  using HashT = typename Traits::HashT;
+  using KeyType = KeyT;
+  using HashType = HashT;
+
+  // Internal constants.
   // Sentinel value for empty uint16_t fingerprint slots (tag=00).
   // Valid entries have tag 01 (primary) or 10 (secondary) and can never
   // match this value.
   static constexpr uint16_t kEmptyU16 = 0;
 
- private:
-  uint32_t num_keys_ = 0;
-  uint32_t num_slots_ = 0;
-  uint32_t num_buckets_ = 0;
-  uint32_t bucket_mask_ = 0;
-  double epsilon_ = 0.0;
-};
-
-// --------------------------------------------------------------------------
-// CuckooTable: query-time structure
-
-class CuckooTable {
  public:
-  CuckooTable() = default;
-  CuckooTable(CuckooConfig config, WeakTwoMul hash_primary,
-              WeakTwoMul hash_secondary, AlignedVector<uint32_t>&& slots,
-              uint32_t num_primary)
+  // Sentinel value for empty slots. We reserve this value and keys must not
+  // equal it.
+  static constexpr KeyT kEmpty = ~KeyT{0};
+
+  CuckooTableT() = default;
+  CuckooTableT(CuckooConfigT<Traits> config, HashT hash_primary,
+               HashT hash_secondary, AlignedVector<KeyT>&& slots,
+               uint32_t num_primary)
       : config_(config),
         hash_primary_(hash_primary),
         hash_secondary_(hash_secondary),
         slots_(std::move(slots)),
         num_primary_(num_primary) {}
 
-  CuckooTable(CuckooTable&&) = default;
-  CuckooTable& operator=(CuckooTable&&) = default;
+  CuckooTableT(const CuckooTableT&) = default;
+  CuckooTableT& operator=(const CuckooTableT&) = default;
+  CuckooTableT(CuckooTableT&&) = default;
+  CuckooTableT& operator=(CuckooTableT&&) = default;
+
+  static constexpr size_t kBucketSize = Traits::kBucketSize;
+  // Used to multiply/shift bucket indices to get slot indices.
+  static constexpr size_t kLogBucketSize = Traits::kLogBucketSize;
 
   bool IsEmpty() const { return config_.NumKeys() == 0; }
-  const CuckooConfig& Config() const { return config_; }
+  const CuckooConfigT<Traits>& GetConfig() const { return config_; }
 
   size_t AllocatedBytes() const {
-    return HasU16Slots() ? slots_u16_.size() * sizeof(uint16_t)
-                         : slots_.size() * sizeof(uint32_t);
+    return slots_.size() * sizeof(KeyT) + slots_u16_.size() * sizeof(uint16_t);
   }
 
-  const uint32_t* Slots32() const {
-    HWY_ASSERT(!HasU16Slots());
-    return slots_.data();
-  }
+  const KeyT* Slots() const { return slots_.data(); }
+  KeyT* MutableSlots() { return slots_.data(); }
 
   // Returns the number of keys placed in their primary bucket.
   uint32_t NumPrimary() const { return num_primary_; }
 
-  // Query a single bucket (kBucketSize slots) for `key`.
-  HWY_INLINE bool QueryBucket(uint32_t key, uint32_t b) const {
-    const CappedTag<uint32_t, kBucketSize> d;
-    HWY_LANES_CONSTEXPR size_t N = Lanes(d);
-    const auto vkey = Set(d, key);
-    const uint32_t* base = slots_.data() + b;
-    auto any_eq = MaskFalse(d);
-    for (size_t i = 0; i < kBucketSize; i += N) {
-      any_eq = Or(any_eq, Eq(vkey, Load(d, base + i)));
-    }
-    return !AllFalse(d, any_eq);
+  // Hash accessors for external use.
+  const HashT& HashPrimary() const { return hash_primary_; }
+  const HashT& HashSecondary() const { return hash_secondary_; }
+
+  // Scalar bucket offset: uses lower bits of hash to determine bucket index.
+  HWY_INLINE size_t PrimaryBucketOffset(KeyT key) const {
+    const KeyT hash = hash_primary_(key);
+    const KeyT bucket_idx = hash & config_.BucketMask();
+    return static_cast<size_t>(bucket_idx) * kBucketSize;
+  }
+
+  HWY_INLINE size_t SecondaryBucketOffset(KeyT key) const {
+    const KeyT hash = hash_secondary_(key);
+    const KeyT bucket_idx = hash & config_.BucketMask();
+    return static_cast<size_t>(bucket_idx) * kBucketSize;
   }
 
   // Query a single key. Returns true if found.
-  HWY_INLINE bool QueryOne(uint32_t key) const {
+  HWY_INLINE bool QueryOne(KeyT key) const {
     if (QueryBucket(key, PrimaryBucketOffset(key))) return true;
     return QueryBucket(key, SecondaryBucketOffset(key));
+  }
+
+  // Query a single bucket (kBucketSize slots) for `key`.
+  HWY_INLINE bool QueryBucket(KeyT key, uint32_t b) const {
+    const KeyT* base = slots_.data() + b;
+    for (uint32_t i = 0; i < kBucketSize; ++i) {
+      if (base[i] == key) return true;
+    }
+    return false;
+  }
+
+  // Scalar version: computes slot indices for a single key and returns hash
+  // values for fingerprint computation.
+  HWY_INLINE void LookupOneSlot(KeyT key, KeyT& h_pri, KeyT& h_sec,
+                                size_t& s_pri, size_t& s_sec) const {
+    h_pri = hash_primary_(key);
+    h_sec = hash_secondary_(key);
+    const KeyT bucket_mask = config_.BucketMask();
+    s_pri = static_cast<size_t>((h_pri & bucket_mask) * kBucketSize);
+    s_sec = static_cast<size_t>((h_sec & bucket_mask) * kBucketSize);
+  }
+
+  // Computes the primary and secondary slot indices for a vector of keys.
+  // This is useful for when the slots contain custom payloads, which must be
+  // compared by callers, because CuckooTable does not know their encoding.
+  // Also returns the primary and secondary hash vectors so callers can extract
+  // fingerprints without recomputing hashes.
+  template <class D, class V = Vec<D>>
+  HWY_INLINE void LookupSlotsAndHash(D d, V vkeys, V& b_pri, V& b_sec,
+                                     V& h_pri) const {
+    const TFromD<D> bucket_mask = config_.BucketMask();
+    const V vmask = Set(d, bucket_mask);
+    h_pri = hash_primary_.OneVec(d, vkeys);
+    b_pri = ShiftLeft<kLogBucketSize>(And(h_pri, vmask));
+    const V h_sec = hash_secondary_.OneVec(d, vkeys);
+    b_sec = ShiftLeft<kLogBucketSize>(And(h_sec, vmask));
   }
 
   // SIMD set membership for N u32 keys, checking both primary and secondary
@@ -251,25 +333,12 @@ class CuckooTable {
     return Eq(result, Zero(du32));
   }
 
-  // Computes the primary and secondary slot indices for a vector of keys.
-  // Useful for verifying larger keys, e.g. the inputs to `ShardMul`.
-  template <class DU32, class VU32 = Vec<DU32>, HWY_IF_U32_D(DU32)>
-  HWY_INLINE void LookupSlots(DU32 du32, VU32 vkeys, VU32& b_pri,
-                              VU32& b_sec) const {
-    const uint32_t bucket_mask = config_.BucketMask();
-    const VU32 vmask = Set(du32, bucket_mask);
-    const VU32 h_pri = hash_primary_.OneVec(du32, vkeys);
-    b_pri = ShiftLeft<kLogBucketSize>(And(h_pri, vmask));
-    const VU32 h_sec = hash_secondary_.OneVec(du32, vkeys);
-    b_sec = ShiftLeft<kLogBucketSize>(And(h_sec, vmask));
-  }
-
   // Returns true if the U16 fingerprint table has been built.
   bool HasU16Slots() const { return !slots_u16_.empty(); }
 
   // --------------------------------------------------------------------------
   // U16 fingerprint support: approximate set membership using 14-bit
-  // fingerprints plus 2-bit tags, following the cuckoo2x2 approach.
+  // fingerprints plus 2-bit tags, following the `Cuckoo2x2` approach.
   //
   // Each uint16_t slot stores:
   //   bits 0-13: 14-bit fingerprint (bits 18-31 of the hash)
@@ -296,18 +365,22 @@ class CuckooTable {
     return static_cast<uint16_t>((hash >> 18) | tag);
   }
 
+  // TODO: maybe this is no longer necessary, because callers can define their
+  // own slot layout and do comparisons themselves.
+
   // Builds the U16 fingerprint table from the existing key slots. For each
   // occupied slot, determines which hash function placed the key there
   // (primary or secondary) and stores the 14-bit fingerprint + 2-bit tag.
   // Must be called after CuckooBuild.
+  template <typename K = KeyT, HWY_IF_T_SIZE(K, 4)>
   void BuildU16Slots() {
     HWY_ASSERT_M(config_.NumBuckets() >= kMinBucketsU16,
                  "U16 fingerprints require >= 2^18 buckets");
     const uint32_t num_slots = config_.NumSlots();
     const uint32_t bucket_mask = config_.BucketMask();
-    slots_u16_.resize(num_slots, CuckooConfig::kEmptyU16);
+    slots_u16_.resize(num_slots, kEmptyU16);
     for (uint32_t s = 0; s < num_slots; ++s) {
-      if (slots_[s] == CuckooConfig::kEmpty) continue;
+      if (slots_[s] == kEmpty) continue;
       const uint32_t key = slots_[s];
       const uint32_t bucket = s / kBucketSize;
       const uint32_t h1 = hash_primary_(key);
@@ -325,12 +398,12 @@ class CuckooTable {
 
   // Query a single bucket (16 slots) of uint16_t fingerprints.
   HWY_INLINE bool QueryBucketU16(uint16_t fp, uint32_t b) const {
-    const CappedTag<uint16_t, 16> d;
+    const CappedTag<uint16_t, kBucketSize> d;
     HWY_LANES_CONSTEXPR size_t N = Lanes(d);
     const auto vfp = Set(d, fp);
     const uint16_t* base = slots_u16_.data() + b;
     auto any_eq = MaskFalse(d);
-    for (size_t i = 0; i < 16; i += N) {
+    for (size_t i = 0; i < kBucketSize; i += N) {
       any_eq = Or(any_eq, Eq(vfp, Load(d, base + i)));
     }
     return !AllFalse(d, any_eq);
@@ -358,7 +431,7 @@ class CuckooTable {
   // computed upfront. If false (default), secondary hashes are computed
   // on-the-fly only for lanes that missed in the primary.
   template <bool kPrecomputeSecondary = false, class DU32,
-            class MU32 = Mask<DU32>>
+            class MU32 = Mask<DU32>, typename K = KeyT, HWY_IF_T_SIZE(K, 4)>
   HWY_INLINE MU32 QueryBatchU16(DU32 du32,
                                 const uint32_t* HWY_RESTRICT keys) const {
     using VU32 = Vec<DU32>;
@@ -442,30 +515,16 @@ class CuckooTable {
   enum class PrefetchMode { kGather, kPrefetch };
   static constexpr PrefetchMode kPrefetchMode = PrefetchMode::kPrefetch;
 
-  // Returns slot offset of the primary bucket for `key`.
-  HWY_INLINE uint32_t PrimaryBucketOffset(uint32_t key) const {
-    const uint32_t hash = hash_primary_(key);
-    const uint32_t bucket_idx = hash & config_.BucketMask();
-    return bucket_idx * kBucketSize;
-  }
-
-  // Returns slot offset of the secondary bucket for `key`.
-  HWY_INLINE uint32_t SecondaryBucketOffset(uint32_t key) const {
-    const uint32_t hash = hash_secondary_(key);
-    const uint32_t bucket_idx = hash & config_.BucketMask();
-    return bucket_idx * kBucketSize;
-  }
-
-  static constexpr auto kBucketSize = CuckooConfig::kBucketSize;
-  static constexpr uint32_t kLogBucketSize = CeilLog2(kBucketSize);
-
-  CuckooConfig config_;
-  WeakTwoMul hash_primary_;
-  WeakTwoMul hash_secondary_;
-  AlignedVector<uint32_t> slots_;
+  CuckooConfigT<Traits> config_;
+  HashT hash_primary_;
+  HashT hash_secondary_;
+  AlignedVector<KeyT> slots_;
   AlignedVector<uint16_t> slots_u16_;
   uint32_t num_primary_ = 0;
 };
+
+// Backward-compatible alias.
+using CuckooTable = CuckooTableT<>;
 
 // --------------------------------------------------------------------------
 // Build statistics and metrics
@@ -486,9 +545,16 @@ struct CuckooBuildStats {
 // --------------------------------------------------------------------------
 // CuckooBuilder: Hopcroft-Karp bipartite matching
 
-class CuckooBuilder {
+template <typename Traits_ = CuckooTraits<>>
+class CuckooBuilderT {
+  using Traits = Traits_;
+  using KeyT = typename Traits::KeyT;
+  using HashT = typename Traits::HashT;
+  static constexpr uint32_t kUnmatched = ~uint32_t{0};
+  static constexpr size_t kBucketSize = Traits::kBucketSize;
+
  public:
-  explicit CuckooBuilder(CuckooConfig config)
+  explicit CuckooBuilderT(CuckooConfigT<Traits> config)
       : config_(config),
         num_keys_(config.NumKeys()),
         num_slots_(config.NumSlots()),
@@ -496,10 +562,9 @@ class CuckooBuilder {
 
   // Attempts to build with a given pair of hash functions.
   // Returns true on success (all keys matched).
-  bool Build(const uint32_t* keys, WeakTwoMul hash_primary,
-             WeakTwoMul hash_secondary, bool optimize_primary = false,
-             CuckooBuildStats* stats = nullptr) {
-    if (num_keys_ >= 1000000) {
+  bool Build(const KeyT* keys, HashT hash_primary, HashT hash_secondary,
+             bool optimize_primary = false, CuckooBuildStats* stats = nullptr) {
+    if (num_keys_ >= kMinKeysThresholdLog) {
       fprintf(stderr,
               "  CuckooBuilder::Build starting (optimize_primary=%d)...\n",
               optimize_primary);
@@ -513,8 +578,10 @@ class CuckooBuilder {
     secondary_bucket_.resize(num_keys_);
     const uint32_t bucket_mask = config_.BucketMask();
     for (uint32_t i = 0; i < num_keys_; ++i) {
-      primary_bucket_[i] = hash_primary_(keys[i]) & bucket_mask;
-      secondary_bucket_[i] = hash_secondary_(keys[i]) & bucket_mask;
+      primary_bucket_[i] =
+          static_cast<uint32_t>(hash_primary_(keys[i])) & bucket_mask;
+      secondary_bucket_[i] =
+          static_cast<uint32_t>(hash_secondary_(keys[i])) & bucket_mask;
     }
 
     // Initialize matching arrays.
@@ -555,12 +622,12 @@ class CuckooBuilder {
 
     if (matching_size == num_keys_) {
       if (stats) stats->num_unmatched_after_greedy = 0;
-      if (num_keys_ >= 1000000) {
+      if (num_keys_ >= kMinKeysThresholdLog) {
         auto t_greedy_end = platform::Now();
         double greedy_ms = (t_greedy_end - t_build_start) * 1000;
         fprintf(stderr,
                 "  Greedy phase finished in %.2f ms: Phase 1 matched=%u, "
-                "Phase 2 matched=%u, Total matched=%u/%u, unmatched=0\n",
+                "Phase 2 matched=%u, Total matched=%u/%zu, unmatched=0\n",
                 greedy_ms, phase1_matches, phase2_matches, matching_size,
                 num_keys_);
       }
@@ -579,12 +646,12 @@ class CuckooBuilder {
           static_cast<uint32_t>(unmatched_keys.size());
     }
 
-    if (num_keys_ >= 1000000) {
+    if (num_keys_ >= kMinKeysThresholdLog) {
       auto t_greedy_end = platform::Now();
       double greedy_ms = (t_greedy_end - t_build_start) * 1000;
       fprintf(stderr,
               "  Greedy phase finished in %.2f ms: Phase 1 matched=%u, "
-              "Phase 2 matched=%u, Total matched=%u/%u, unmatched=%zu\n",
+              "Phase 2 matched=%u, Total matched=%u/%zu, unmatched=%zu\n",
               greedy_ms, phase1_matches, phase2_matches, matching_size,
               num_keys_, unmatched_keys.size());
     }
@@ -632,7 +699,7 @@ class CuckooBuilder {
         }
         if (unmatched_L.empty()) break;
 
-        if (num_keys_ >= 1000000) {
+        if (num_keys_ >= kMinKeysThresholdLog) {
           fprintf(stderr, "\n  cur_path_cost=%d, unmatched=%zu\n",
                   cur_path_cost, unmatched_L.size());
         }
@@ -674,13 +741,14 @@ class CuckooBuilder {
           }
           auto t_dfs_end = platform::Now();
 
-          if (num_keys_ >= 1000000) {
+          if (num_keys_ >= kMinKeysThresholdLog) {
             double dfs_ms = (t_dfs_end - t_dfs_start) * 1000;
-            fprintf(stderr,
-                    "    round %u: |R0|=%zu, paths=%u, matched=%u/%u, DFS=%.2f "
-                    "ms\n",
-                    round_for_cur_path_cost, R0.size(), paths_found,
-                    matching_size, num_keys_, dfs_ms);
+            fprintf(
+                stderr,
+                "    round %u: |R0|=%zu, paths=%u, matched=%u/%zu, DFS=%.2f "
+                "ms\n",
+                round_for_cur_path_cost, R0.size(), paths_found, matching_size,
+                num_keys_, dfs_ms);
           }
 
           if (stats && stats->collect_path_cost_stats && paths_found > 0) {
@@ -729,19 +797,19 @@ class CuckooBuilder {
     }
   }
 
-  // Build the CuckooTable from a successful matching.
-  CuckooTable Take(const uint32_t* keys) {
-    AlignedVector<uint32_t> slots(num_slots_);
+  // Build the CuckooTableT from a successful matching.
+  CuckooTableT<Traits> Take(const KeyT* keys) {
+    AlignedVector<KeyT> slots(num_slots_);
     // Fill with sentinel.
     for (uint32_t i = 0; i < num_slots_; ++i) {
-      slots[i] = kEmpty;
+      slots[i] = static_cast<KeyT>(~KeyT{0});
     }
 
     uint32_t num_primary = 0;
     for (uint32_t k = 0; k < num_keys_; ++k) {
       const uint32_t slot = match_key_to_slot_[k];
       HWY_ASSERT(slot != kUnmatched);
-      HWY_ASSERT(slots[slot] == kEmpty);
+      HWY_ASSERT(slots[slot] == static_cast<KeyT>(~KeyT{0}));
       slots[slot] = keys[k];
 
       // Check if this key ended up in its primary bucket.
@@ -751,14 +819,16 @@ class CuckooBuilder {
       }
     }
 
-    CuckooTable table(config_, hash_primary_, hash_secondary_, std::move(slots),
-                      num_primary);
+    CuckooTableT<Traits> table(config_, hash_primary_, hash_secondary_,
+                               std::move(slots), num_primary);
     return table;
   }
 
  private:
+  static constexpr uint32_t kMinKeysThresholdLog = 1 << 21;
+
   void MaybeLogPhase3Stats(double t_phase3_start, uint32_t phase3_matches) {
-    if (num_keys_ < 1000000) return;
+    if (num_keys_ < kMinKeysThresholdLog) return;
     auto t_phase3_end = platform::Now();
     double phase_ms = (t_phase3_end - t_phase3_start) * 1000;
     fprintf(stderr, "  Phase 3 completed in %.2f ms: matched=%u\n", phase_ms,
@@ -920,7 +990,7 @@ class CuckooBuilder {
       }
     }
 
-    if (num_keys_ >= 1000000) {
+    if (num_keys_ >= kMinKeysThresholdLog) {
       auto t1 = platform::Now();
       double bfs_ms = (t1 - t0) * 1000;
       fprintf(stderr,
@@ -1067,17 +1137,13 @@ class CuckooBuilder {
     return false;
   }
 
-  static constexpr auto kBucketSize = CuckooConfig::kBucketSize;
-  static constexpr auto kUnmatched = CuckooConfig::kUnmatched;
-  static constexpr auto kEmpty = CuckooConfig::kEmpty;
+  CuckooConfigT<Traits> config_;
+  size_t num_keys_;
+  size_t num_slots_;
+  size_t num_buckets_;
 
-  CuckooConfig config_;
-  uint32_t num_keys_;
-  uint32_t num_slots_;
-  uint32_t num_buckets_;
-
-  WeakTwoMul hash_primary_;
-  WeakTwoMul hash_secondary_;
+  HashT hash_primary_;
+  HashT hash_secondary_;
 
   std::vector<uint32_t> primary_bucket_;    // [num_keys] → bucket index
   std::vector<uint32_t> secondary_bucket_;  // [num_keys] → bucket index
@@ -1109,10 +1175,12 @@ class CuckooBuilder {
   std::vector<uint32_t> sec_keys_;     // [num_keys_]
 };
 
+using CuckooBuilder = CuckooBuilderT<>;
+
 // --------------------------------------------------------------------------
 // Top-level build function
 
-// Builds a CuckooTable from distinct uint32_t keys.
+// Shared implementation for CuckooBuild and CuckooBuild64.
 // Tries multiple hash function seeds. Returns an empty table on failure.
 // If optimize_primary is true, runs a min-cost optimization phase after
 // finding a valid matching, moving keys from secondary to primary buckets
@@ -1121,11 +1189,12 @@ class CuckooBuilder {
 // Note about epsilon: epsilon is the load factor, i.e. the ratio of the number
 // of keys to the number of slots. The table has num_keys / epsilon slots.
 // We allow limited list of epsilons.
-static HWY_MAYBE_UNUSED CuckooTable
-CuckooBuild(const uint32_t* keys, uint32_t num_keys, double epsilon = 0.25,
-            uint32_t max_attempts = 100, bool optimize_primary = false,
-            CuckooBuildStats* stats = nullptr) {
-  constexpr double kEpsilons[] = {0.01, 0.05, 0.10, 0.25, 0.50};
+template <typename Traits>
+static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuildT(
+    const typename Traits::KeyT* keys, size_t num_keys, double epsilon,
+    uint32_t max_attempts, bool optimize_primary, CuckooBuildStats* stats) {
+  using HashT = typename Traits::HashT;
+  constexpr double kEpsilons[] = {0.01, 0.05, 0.10, 0.25, 0.50, 0.75};
   bool found_epsilon = false;
   for (double e : kEpsilons) {
     if (epsilon == e) {
@@ -1135,22 +1204,22 @@ CuckooBuild(const uint32_t* keys, uint32_t num_keys, double epsilon = 0.25,
   }
   if (!found_epsilon) {
     fprintf(stderr, "Unsupported epsilon: %f\n", epsilon);
-    return CuckooTable();
+    return CuckooTableT<Traits>();
   }
 
-  CuckooConfig config(num_keys, epsilon);
-  CuckooBuilder builder(config);
+  CuckooConfigT<Traits> config(num_keys, epsilon);
+  CuckooBuilderT<Traits> builder(config);
 
   AesCtrEngine engine(/*deterministic=*/true);
 
   for (uint32_t attempt = 0; attempt < max_attempts; ++attempt) {
     if (num_keys >= 1000000) {
-      fprintf(stderr, "CuckooBuild attempt %u for %u keys...\n", attempt,
+      fprintf(stderr, "CuckooBuild attempt %u for %zu keys...\n", attempt,
               num_keys);
     }
     // Use different seeds for primary and secondary hash functions.
-    WeakTwoMul h1(engine, attempt * 2);
-    WeakTwoMul h2(engine, attempt * 2 + 1);
+    HashT h1(engine, attempt * 2);
+    HashT h2(engine, attempt * 2 + 1);
 
     if (builder.Build(keys, h1, h2, optimize_primary, stats)) {
       if (stats) {
@@ -1158,7 +1227,7 @@ CuckooBuild(const uint32_t* keys, uint32_t num_keys, double epsilon = 0.25,
         stats->global_seed = attempt;
         stats->attempts = attempt + 1;
       }
-      CuckooTable table = builder.Take(keys);
+      auto table = builder.Take(keys);
       if (stats) {
         stats->num_primary = table.NumPrimary();
       }
@@ -1171,7 +1240,19 @@ CuckooBuild(const uint32_t* keys, uint32_t num_keys, double epsilon = 0.25,
     stats->success = false;
     stats->attempts = max_attempts;
   }
-  return CuckooTable();
+  return CuckooTableT<Traits>();
+}
+
+// Builds a CuckooTable with any Traits/key type. `optimize_primary` is for use
+// by cuckoo_test.cc.
+// TODO: Span interface, remove max_attempts/epsilon? Merge with CuckooBuildT?
+template <class Traits, typename KeyT = typename Traits::KeyT>
+static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuild(
+    Traits, const KeyT* keys, size_t num_keys, double epsilon = 0.25,
+    uint32_t max_attempts = 100, bool optimize_primary = false,
+    CuckooBuildStats* stats = nullptr) {
+  return CuckooBuildT<Traits>(keys, num_keys, epsilon, max_attempts,
+                              optimize_primary, stats);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

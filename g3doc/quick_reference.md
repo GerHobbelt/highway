@@ -2645,15 +2645,17 @@ The following `ReverseN` must not be called if `Lanes(D()) < N`:
     `TwoTablesLookupLanes(a, b, indices)` on RVV/SVE if `Lanes(d) <
     Lanes(DFromV<V>())`.
 
-Each of the `Lookup8`, `Lookup16`, `Lookup32` (let $X denote the 8/16/32) ops
-below return `GatherIndex(D(), tbl, indices)`, but are much more efficient, and
-are limited to $X elements. Results are undefined if any indices are >= $X. They
-are implemented using `TableLookupLanes` or `TwoTablesLookupLanes`. Let `T`
-denote `TFromD<D>`. These ops are guaranteed to work if `D` is a full vector,
-`HWY_TARGET != HWY_SCALAR` and `HWY_MIN_BYTES / sizeof(T) >= $X/2`. Use the
-constexpr function `CanLookup$X(D())` to verify this. Even if it returns false,
-the ops are still safe to call if `Lanes(D())` >= $X/2. Note that `tbl` must be
-$X-element aligned!
+Each of the `Lookup8`, `Lookup16`, `Lookup32`, `Lookup64` (let $X denote the
+8/16/32/64) ops below return `GatherIndex(D(), tbl, indices)`, but are much more
+efficient, and are limited to $X elements. Results are undefined if any indices
+are >= $X. They are implemented using `TableLookupLanes` or
+`TwoTablesLookupLanes`. Let `T` denote `TFromD<D>`. These ops are guaranteed to
+work if `D` is a full vector, `HWY_TARGET != HWY_SCALAR` and
+`HWY_MIN_BYTES / sizeof(T) >= $X/2`. `Lookup64` is also guaranteed for 128-bit
+AArch64 NEON vectors if `T` is byte-sized. Use the constexpr function
+`CanLookup$X(D())` to verify this. Even if it returns false, the ops are still
+safe to call if `Lanes(D()) >= $X/2`. Note that `tbl` must be $X-element
+aligned!
 
 *   `D`: {u,i,f}{16,32,64} \
     <code>Vec&lt;D&gt; **Lookup8**(D, const TFromD&lt;D&gt;* tbl, VI
@@ -2666,6 +2668,10 @@ $X-element aligned!
 *   `D`: {u,i}{8} \
     <code>Vec&lt;D&gt; **Lookup32**(D, const TFromD&lt;D&gt;* tbl, VI
     indices)</code>: as above, with $X = 32.
+
+*   `D`: {u,i}{8} \
+    <code>Vec&lt;D&gt; **Lookup64**(D, const TFromD&lt;D&gt;* tbl, VI
+    indices)</code>: as above, with $X = 64.
 
 *   <code>unspecified **IndicesFromVec**(D d, V idx)</code> prepares for
     `TableLookupLanes` or `TwoTablesLookupLanes` with integer indices in `idx`,
@@ -2737,6 +2743,12 @@ $X-element aligned!
 
     The results of SlideDownLanes is implementation-defined if `N >= Lanes(d)`.
 
+*   <code>V **SlideDownLanesOr**(V hi, D d, V lo, size_t N)</code>: slides down
+    `lo` by `N` lanes and returns `hi[i]` in the upper `N` lanes.
+
+    `SlideDownLanesOr(hi, d, lo, N)` is equivalent to `IfThenElse(FirstN(d,
+    Lanes(d) - N), SlideDownLanes(d, lo, N), hi)`, but potentially faster.
+
 *   <code>V **Slide1Up**(D d, V v)</code>: slides up `v` by 1 lane
 
     If `Lanes(d) == 1` is true, returns `Zero(d)`.
@@ -2745,6 +2757,11 @@ $X-element aligned!
     `SlideUpLanes(d, v, 1)`, but `Slide1Up(d, v)` is more efficient than
     `SlideUpLanes(d, v, 1)` on some platforms.
 
+*   <code>V **Slide1UpOr**(T no, D d, V v)</code>: slides up `v` by 1 lane, and
+    fills the bottom lane with `no`.
+
+    Equivalent to `InsertLane(Slide1Up(d, v), 0, no)`, but potentially faster.
+
 *   <code>V **Slide1Down**(D d, V v)</code>: slides down `v` by 1 lane
 
     If `Lanes(d) == 1` is true, returns `Zero(d)`.
@@ -2752,6 +2769,12 @@ $X-element aligned!
     If `Lanes(d) > 1` is true, `Slide1Down(d, v)` is equivalent to
     `SlideDownLanes(d, v, 1)`, but `Slide1Down(d, v)` is more efficient than
     `SlideDownLanes(d, v, 1)` on some platforms.
+
+*   <code>V **Slide1DownOr**(T no, D d, V v)</code>: slides down `v` by 1 lane,
+    and fills the top lane with `no`.
+
+    Equivalent to `InsertLane(Slide1Down(d, v), Lanes(d) - 1, no)`, but
+    potentially faster.
 
 *   <code>V **SlideUpBlocks**&lt;int kBlocks&gt;(D d, V v)</code> slides up `v`
     by `kBlocks` blocks.

@@ -56,6 +56,7 @@ HWY_NOINLINE void TestAllBatchQuery() {}
 HWY_NOINLINE void TestAllBatchQueryU16() {}
 HWY_NOINLINE void TestAllEpsilonSweep() {}
 HWY_NOINLINE void TestAllOptimizedBuild() {}
+HWY_NOINLINE void TestAllBucketSizeSweep() {}
 HWY_NOINLINE void TestAllMinCostFlowComparison() {}
 #else
 
@@ -73,7 +74,7 @@ static AlignedVector<uint32_t> GenerateKeys(size_t num_keys,
   for (size_t i = 0; i < num_keys; ++i) {
     keys[i] = perm(static_cast<uint32_t>(i));
     // Ensure no key equals the sentinel value.
-    if (keys[i] == CuckooConfig::kEmpty) keys[i] = 0;
+    if (keys[i] == CuckooTable::kEmpty) keys[i] = 0;
   }
   if (num_keys >= 1000000) {
     fprintf(stderr, "GenerateKeys(%zu) finished.\n", num_keys);
@@ -90,8 +91,8 @@ void TestKeys(size_t num_keys) {
 
   CuckooBuildStats stats;
   const double t0 = platform::Now();
-  CuckooTable table =
-      CuckooBuild(keys.data(), num_keys, /*epsilon=*/0.25,
+  auto table =
+      CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, /*epsilon=*/0.25,
                   /*max_attempts=*/100, /*optimize_primary=*/false, &stats);
   const double elapsed = platform::Now() - t0;
 
@@ -125,7 +126,8 @@ HWY_NOINLINE void TestAllQueryCorrectness() {
   const size_t num_keys = 5000;
   auto keys = GenerateKeys(num_keys);
 
-  CuckooTable table = CuckooBuild(keys.data(), num_keys, /*epsilon=*/0.25);
+  auto table =
+      CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, /*epsilon=*/0.25);
   HWY_ASSERT_M(!table.IsEmpty(), "Build failed");
 
   // Every inserted key must be found.
@@ -157,7 +159,8 @@ HWY_NOINLINE void TestAllBatchQuery() {
   const size_t num_keys = 2000;
   auto keys = GenerateKeys(num_keys);
 
-  CuckooTable table = CuckooBuild(keys.data(), num_keys, /*epsilon=*/0.25);
+  auto table =
+      CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, /*epsilon=*/0.25);
   HWY_ASSERT_M(!table.IsEmpty(), "Build failed");
 
   const ScalableTag<uint32_t> du32;
@@ -197,17 +200,17 @@ HWY_NOINLINE void TestAllBatchQueryU16() {
   fprintf(stderr, "=== TestBatchQueryU16 ===\n");
   // U16 fingerprints require >= 2^18 buckets. With epsilon=0.25 and
   // kBucketSize=16, we need ~3.4M keys to reach 2^18 buckets.
-  const uint32_t num_keys =
-      static_cast<uint32_t>(AdjustedReps(100'000));
+  const uint32_t num_keys = static_cast<uint32_t>(AdjustedReps(100'000));
   auto keys = GenerateKeys(num_keys);
 
-  CuckooTable table = CuckooBuild(keys.data(), num_keys, /*epsilon=*/0.25);
+  auto table =
+      CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, /*epsilon=*/0.25);
   HWY_ASSERT_M(!table.IsEmpty(), "Build failed");
 
   // Skip if not enough buckets for U16 scheme.
-  if (table.Config().NumBuckets() < CuckooTable::kMinBucketsU16) {
-    fprintf(stderr, "  SKIPPED: num_buckets=%u < 2^18 (need more keys)\n",
-            table.Config().NumBuckets());
+  if (table.GetConfig().NumBuckets() < CuckooTable::kMinBucketsU16) {
+    fprintf(stderr, "  SKIPPED: num_buckets=%zu < 2^18 (need more keys)\n",
+            table.GetConfig().NumBuckets());
     return;
   }
 
@@ -237,8 +240,8 @@ HWY_NOINLINE void TestAllBatchQueryU16() {
 
   fprintf(stderr,
           "  OK: U16 batch query found all %u member keys (no false "
-          "negatives), num_buckets=%u\n",
-          num_keys, table.Config().NumBuckets());
+          "negatives), num_buckets=%zu\n",
+          num_keys, table.GetConfig().NumBuckets());
 }
 
 // --------------------------------------------------------------------------
@@ -252,9 +255,9 @@ HWY_NOINLINE void TestAllEpsilonSweep() {
 
   for (double eps : {0.05, 0.10, 0.25, 0.50}) {
     CuckooBuildStats stats;
-    CuckooTable table = CuckooBuild(keys.data(), num_keys, eps,
-                                    /*max_attempts=*/200,
-                                    /*optimize_primary=*/false, &stats);
+    auto table = CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, eps,
+                             /*max_attempts=*/200,
+                             /*optimize_primary=*/false, &stats);
     (void)table;
 
     if (stats.success) {
@@ -280,12 +283,13 @@ HWY_NOINLINE void TestAllOptimizedBuild() {
   for (double eps : {0.05, 0.10, 0.25, 0.50}) {
     CuckooBuildStats stats_basic, stats_opt;
 
-    CuckooTable table_basic =
-        CuckooBuild(keys.data(), num_keys, eps, /*max_attempts=*/200,
-                    /*optimize_primary=*/false, &stats_basic);
-    CuckooTable table_opt =
-        CuckooBuild(keys.data(), num_keys, eps, /*max_attempts=*/200,
-                    /*optimize_primary=*/true, &stats_opt);
+    const CuckooTraits<> traits;
+    auto table_basic = CuckooBuild(traits, keys.data(), num_keys, eps,
+                                   /*max_attempts=*/200,
+                                   /*optimize_primary=*/false, &stats_basic);
+    auto table_opt = CuckooBuild(traits, keys.data(), num_keys, eps,
+                                 /*max_attempts=*/200,
+                                 /*optimize_primary=*/true, &stats_opt);
 
     if (stats_basic.success && stats_opt.success) {
       // Optimized should have at least as many keys in primary.
@@ -308,6 +312,54 @@ HWY_NOINLINE void TestAllOptimizedBuild() {
   }
 }
 
+// --------------------------------------------------------------------------
+// Test: sweep over bucket sizes and key counts, report primary/secondary stats
+
+template <uint32_t kBucketSize>
+void TestBucketSize() {
+  const size_t key_counts[] = {224'000};
+  for (size_t num_keys : key_counts) {
+    auto keys = GenerateKeys(num_keys);
+    CuckooBuildStats stats;
+    CuckooTraits<WeakTwoMul, kBucketSize> traits;
+    auto table = CuckooBuild(traits, keys.data(),
+                             static_cast<uint32_t>(num_keys), /*epsilon=*/1,
+                             /*max_attempts=*/200,
+                             /*optimize_primary=*/false, &stats);
+
+    if (!stats.success) {
+      fprintf(stderr, "  bucket_size=%u, keys=%zu: FAILED after %u attempts\n",
+              kBucketSize, num_keys, stats.attempts);
+      continue;
+    }
+
+      const uint32_t num_secondary =
+          static_cast<uint32_t>(num_keys) - stats.num_primary;
+      fprintf(stderr,
+              "  bucket_size=%u, keys=%zu: primary=%u (%.1f%%), "
+              "secondary=%u (%.1f%%), buckets=%zu\n",
+              kBucketSize, num_keys, stats.num_primary,
+              100.0 * stats.num_primary / num_keys, num_secondary,
+              100.0 * num_secondary / num_keys, table.GetConfig().NumBuckets());
+
+      // Verify query correctness for every key.
+      for (size_t i = 0; i < num_keys; ++i) {
+        HWY_ASSERT_M(table.QueryOne(keys[i]),
+                     "BucketSizeSweep: QueryOne missed a key");
+      }
+  }
+}
+
+HWY_NOINLINE void TestAllBucketSizeSweep() {
+  fprintf(stderr, "=== TestBucketSizeSweep ===\n");
+  TestBucketSize<1>();
+  TestBucketSize<2>();
+  TestBucketSize<4>();
+  TestBucketSize<8>();
+  TestBucketSize<16>();
+  TestBucketSize<32>();
+}
+
 // copybara:strip_begin
 #if HWY_HAVE_ORTOOLS
 // --------------------------------------------------------------------------
@@ -327,9 +379,9 @@ HWY_NOINLINE void TestAllMinCostFlowComparison() {
       CuckooBuildStats stats;
       stats.collect_path_cost_stats = true;
       auto t_cuckoo_start = platform::Now();
-      CuckooTable table =
-          CuckooBuild(keys.data(), num_keys, eps, /*max_attempts=*/200,
-                      /*optimize_primary=*/true, &stats);
+      auto table = CuckooBuild(CuckooTraits<>{}, keys.data(), num_keys, eps,
+                               /*max_attempts=*/200,
+                               /*optimize_primary=*/true, &stats);
       (void)table;
       auto t_cuckoo_end = platform::Now();
       double cuckoo_ms = (t_cuckoo_end - t_cuckoo_start) * 1000;
@@ -377,7 +429,7 @@ HWY_NOINLINE void TestAllMinCostFlowComparison() {
         for (uint32_t b = 0; b < num_buckets; ++b) {
           min_cost_flow.AddArcWithCapacityAndUnitCost(
               bucket_base + static_cast<int32_t>(b), sink,
-              CuckooConfig::kBucketSize, 0);
+              CuckooTraits<>::kBucketSize, 0);
         }
 
         const double t1 = platform::Now();
@@ -438,6 +490,7 @@ HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllBatchQuery);
 HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllBatchQueryU16);
 HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllEpsilonSweep);
 HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllOptimizedBuild);
+HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllBucketSizeSweep);
 #if HWY_HAVE_ORTOOLS
 HWY_EXPORT_AND_TEST_BEST_P(CuckooTest, TestAllMinCostFlowComparison);
 #endif
