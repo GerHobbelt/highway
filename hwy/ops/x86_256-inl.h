@@ -5839,6 +5839,12 @@ HWY_INLINE VFromD<D> TableLookupSlideDownLanes(D d, VFromD<D> v, size_t amt) {
 #endif
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator ==': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 template <class D, HWY_IF_V_SIZE_GT_D(D, 16),
           HWY_IF_T_SIZE_ONE_OF_D(D, (1 << 4) | ((HWY_TARGET <= HWY_AVX3)
                                                     ? ((1 << 2) | (1 << 8))
@@ -5853,6 +5859,10 @@ HWY_INLINE VFromD<D> TableLookupSlideDownLanes(D d, VFromD<D> v, size_t amt) {
   return IfThenElseZero(RebindMask(d, idx == masked_idx),
                         TableLookupLanes(v, IndicesFromVec(d, masked_idx)));
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #if HWY_TARGET > HWY_AVX3
 template <class D, HWY_IF_V_SIZE_D(D, 32), HWY_IF_T_SIZE_D(D, 8)>

@@ -660,6 +660,12 @@ HWY_INLINE Vec<RebindToSigned<D>> ComputeIndices8Intervals(
   const auto mask5 = RebindMask(DI(), Ge(y, t5));
   const auto mask6 = RebindMask(DI(), Ge(y, t6));
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4574: 'HWY_NATIVE_MASK' is defined to be '0': did you mean to use '#if HWY_NATIVE_MASK'? 
+#pragma warning(disable : 4574)
+#endif
+
 #ifdef HWY_NATIVE_MASK
   if constexpr (HWY_REGISTERS >= 32) {
     // Adder tree for native masks.
@@ -728,6 +734,10 @@ HWY_INLINE Vec<RebindToSigned<D>> ComputeIndices8Intervals(
 #endif
   return idx_i;
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace impl
 

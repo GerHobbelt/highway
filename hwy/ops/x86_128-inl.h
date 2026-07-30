@@ -3512,6 +3512,12 @@ HWY_API VFromD<D> Iota(D d, const T2 first) {
 
 // ------------------------------ FirstN (Iota, Lt)
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator <': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 template <class D, class M = MFromD<D>, HWY_IF_V_SIZE_LE_D(D, 16)>
 HWY_API M FirstN(D d, size_t num) {
   constexpr size_t kN = MaxLanes(d);
@@ -3532,6 +3538,10 @@ HWY_API M FirstN(D d, size_t num) {
   return RebindMask(d, detail::Iota0(di) < Set(di, static_cast<TI>(num)));
 #endif  // HWY_TARGET <= HWY_AVX3
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 // ------------------------------ InterleaveLower
 
@@ -7518,6 +7528,12 @@ HWY_API Vec128<double, N> MaskedApproximateReciprocalSqrt(Mask128<double, N> m,
 
 namespace detail {
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator >': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 template <typename T, size_t N>
 HWY_INLINE HWY_MAYBE_UNUSED Vec128<T, N> MinU(const Vec128<T, N> a,
                                               const Vec128<T, N> b) {
@@ -7525,9 +7541,13 @@ HWY_INLINE HWY_MAYBE_UNUSED Vec128<T, N> MinU(const Vec128<T, N> a,
   const RebindToUnsigned<decltype(d)> du;
   const RebindToSigned<decltype(d)> di;
   const auto msb = Set(du, static_cast<T>(T(1) << (sizeof(T) * 8 - 1)));
-  const auto gt = RebindMask(du, BitCast(di, a ^ msb) > BitCast(di, b ^ msb));
+  const auto gt = (RebindMask(du, BitCast(di, a ^ msb) > BitCast(di, b ^ msb)));
   return IfThenElse(gt, b, a);
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace detail
 
@@ -7612,6 +7632,13 @@ HWY_API Vec128<double, N> Min(Vec128<double, N> a, Vec128<double, N> b) {
 // ------------------------------ Max (Gt, IfThenElse)
 
 namespace detail {
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator >': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 template <typename T, size_t N>
 HWY_INLINE HWY_MAYBE_UNUSED Vec128<T, N> MaxU(const Vec128<T, N> a,
                                               const Vec128<T, N> b) {
@@ -7619,9 +7646,13 @@ HWY_INLINE HWY_MAYBE_UNUSED Vec128<T, N> MaxU(const Vec128<T, N> a,
   const RebindToUnsigned<decltype(d)> du;
   const RebindToSigned<decltype(d)> di;
   const auto msb = Set(du, static_cast<T>(T(1) << (sizeof(T) * 8 - 1)));
-  const auto gt = RebindMask(du, BitCast(di, a ^ msb) > BitCast(di, b ^ msb));
+  const auto gt = (RebindMask(du, BitCast(di, a ^ msb) > BitCast(di, b ^ msb)));
   return IfThenElse(gt, a, b);
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 }  // namespace detail
 
@@ -8562,6 +8593,12 @@ HWY_API T ExtractLane(const Vec128<T, 16> v, size_t i) {
 
 namespace detail {
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator ==': possible change in behavior, change in UDT return calling convention 
+#pragma warning(disable : 4686)
+#endif
+
 template <class V>
 HWY_INLINE V InsertLaneUsingBroadcastAndBlend(V v, size_t i, TFromV<V> t) {
   const DFromV<decltype(v)> d;
@@ -8572,11 +8609,15 @@ HWY_INLINE V InsertLaneUsingBroadcastAndBlend(V v, size_t i, TFromV<V> t) {
 #else
   const RebindToUnsigned<decltype(d)> du;
   using TU = TFromD<decltype(du)>;
-  const auto mask = RebindMask(d, Iota(du, 0) == Set(du, static_cast<TU>(i)));
+  const auto mask = (RebindMask(d, Iota(du, 0) == Set(du, static_cast<TU>(i))));
 #endif
 
   return IfThenElse(mask, Set(d, t), v);
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 template <size_t kLane, typename T, size_t N, HWY_IF_T_SIZE(T, 1)>
 HWY_INLINE Vec128<T, N> InsertLane(const Vec128<T, N> v, T t) {
@@ -10474,6 +10515,12 @@ HWY_API Vec128<T, N> TwoTablesLookupLanes(Vec128<T, N> a, Vec128<T, N> b,
   return LowerHalf(d, TableLookupLanes(Combine(dt, b, a), idx2));
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator >': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 template <typename T, HWY_IF_T_SIZE(T, 1)>
 HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
                                        Indices128<T> idx) {
@@ -10504,6 +10551,10 @@ HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
 #endif  // HWY_TARGET <= HWY_AVX3
 #endif  // HWY_TARGET <= HWY_AVX3_DL
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 template <typename T, HWY_IF_T_SIZE(T, 2)>
 HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
@@ -10558,6 +10609,12 @@ HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
 #endif  // HWY_TARGET <= HWY_AVX3
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator >': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 #if HWY_HAVE_FLOAT16
 HWY_API Vec128<float16_t> TwoTablesLookupLanes(Vec128<float16_t> a,
                                                Vec128<float16_t> b,
@@ -10592,6 +10649,10 @@ HWY_API Vec128<float> TwoTablesLookupLanes(Vec128<float> a, Vec128<float> b,
 #endif
 }
 
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
 template <typename T, HWY_IF_UI64(T)>
 HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
                                        Indices128<T> idx) {
@@ -10620,6 +10681,12 @@ HWY_API Vec128<T> TwoTablesLookupLanes(Vec128<T> a, Vec128<T> b,
 #endif  // HWY_TARGET <= HWY_AVX3
 }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4686: 'hwy::N_AVX2::operator >': possible change in behavior, change in UDT return calling convention
+#pragma warning(disable : 4686)
+#endif
+
 HWY_API Vec128<double> TwoTablesLookupLanes(Vec128<double> a, Vec128<double> b,
                                             Indices128<double> idx) {
 #if HWY_TARGET <= HWY_AVX3
@@ -10644,6 +10711,10 @@ HWY_API Vec128<double> TwoTablesLookupLanes(Vec128<double> a, Vec128<double> b,
   return IfThenElse(sel_hi_mask, hi_lookup_result, lo_lookup_result);
 #endif  // HWY_TARGET <= HWY_AVX3
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 // ------------------------------ OddEven (IfThenElse)
 

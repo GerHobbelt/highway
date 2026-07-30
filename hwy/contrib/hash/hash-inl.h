@@ -304,8 +304,18 @@ class MaskedMoremur {
     return kBits == 64 ? "Moremur" : "MaskedMoremur";
   }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4293: '<<': shift count negative or too big, undefined behavior 
+#pragma warning(disable : 4293)
+#endif
+
   static constexpr uint64_t kMask =
       kBits == 64 ? ~uint64_t{0} : (uint64_t{1} << kBits) - 1;
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
   MaskedMoremur() = default;
   MaskedMoremur(AesCtrEngine& engine, uint64_t seed)
@@ -376,8 +386,18 @@ class MaskedWeakXMX {
     return kBits == 64 ? "WeakXMX" : "MaskedWeakXMX";
   }
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+// warning C4293: '<<': shift count negative or too big, undefined behavior
+#pragma warning(disable : 4293)
+#endif
+
   static constexpr uint64_t kMask =
       kBits == 64 ? ~uint64_t{0} : (uint64_t{1} << kBits) - 1;
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
   MaskedWeakXMX() = default;
   explicit MaskedWeakXMX(uint64_t key)
