@@ -328,7 +328,7 @@ int main(int argc, char** argv) {
   hwy::g_fxn1 = fxn1;
   hwy::g_fxn2 = fxn2;
 
-  HWY_DYNAMIC_DISPATCH(hwy::RunAllBenchmarks)();
+  hwy::HWY_DYNAMIC_DISPATCH(RunAllBenchmarks)();
   return 0;
 }
 #endif  // HWY_ONCE

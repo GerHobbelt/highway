@@ -151,7 +151,7 @@ class MaskedWeakTwoMul {
   }
 
   static constexpr uint32_t kMask =
-      kBits == 32 ? ~uint32_t{0} : (uint32_t{1} << kBits) - 1;
+      kBits == 32 ? ~uint32_t{0} : uint32_t{(uint64_t{1} << kBits) - 1};
 
   MaskedWeakTwoMul() = default;
   explicit MaskedWeakTwoMul(uint32_t key) : key_(key) {}
@@ -220,7 +220,7 @@ class MaskedTriple32 {
   }
 
   static constexpr uint32_t kMask =
-      kBits == 32 ? ~uint32_t{0} : (uint32_t{1} << kBits) - 1;
+      kBits == 32 ? ~uint32_t{0} : uint32_t{(uint64_t{1} << kBits) - 1};
 
   MaskedTriple32() = default;
   explicit MaskedTriple32(uint32_t key) : key_(key) {}
