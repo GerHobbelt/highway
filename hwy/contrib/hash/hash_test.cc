@@ -18,6 +18,8 @@
 
 #include <cmath>
 
+#include "hwy/base.h"
+
 #ifndef HWY_DISABLED_TARGETS
 #define HWY_DISABLED_TARGETS (HWY_SSE2 | HWY_SSSE3 | HWY_SSE4)
 #endif  // HWY_DISABLED_TARGETS
@@ -87,7 +89,7 @@ static HWY_NOINLINE void TestAvalanche(const Hash& hash) {
     // flips. `flip_count[input_bit][output_bit]` = output bit flips.
     uint32_t flip_count[32][32] = {};
 
-    constexpr size_t kNumTrials = 10 * 1000;
+    constexpr size_t kNumTrials = AdjustedReps(10'000);
     for (size_t trial = 0; trial < kNumTrials; ++trial) {
       const uint32_t base = static_cast<uint32_t>(rng() & 0xFFFFFFFFu);
 
@@ -119,9 +121,9 @@ static HWY_NOINLINE void TestAvalanche(const Hash& hash) {
 
     for (size_t ibit = 0; ibit < 32; ++ibit) {
       for (size_t obit = 0; obit < 32; ++obit) {
-        const int32_t actual = flip_count[ibit][obit];
+        const int32_t actual = static_cast<int32_t>(flip_count[ibit][obit]);
         const int32_t abs_diff = std::abs(actual - expected);
-        sum_abs_diff += abs_diff;
+        sum_abs_diff = sum_abs_diff + static_cast<uint64_t>(abs_diff);
         max_abs_diff = HWY_MAX(max_abs_diff, abs_diff);
 
         if (actual < lo || actual > hi) {
@@ -136,7 +138,7 @@ static HWY_NOINLINE void TestAvalanche(const Hash& hash) {
       }
     }
 
-    all_max_abs_diff[worker * 8] = max_abs_diff;
+    all_max_abs_diff[worker * 8] = static_cast<size_t>(max_abs_diff);
     const double avg_abs_diff = static_cast<double>(sum_abs_diff) / (32 * 32);
     WarnIfNotNear("avg abs diff", 40.0, avg_abs_diff, 0.06);
 
@@ -174,7 +176,7 @@ static HWY_NOINLINE void TestBias(const Hash& hash) {
 
     uint32_t bit_count[32] = {};  // Count of 1s in each output bit position.
 
-    constexpr uint32_t kNumTrials = 100 * 1000;
+    constexpr uint32_t kNumTrials = AdjustedReps(100'000);
     for (uint32_t trial = 0; trial < kNumTrials; ++trial) {
       const uint32_t val = static_cast<uint32_t>(rng() & 0xFFFFFFFFu);
       const uint32_t h = hash(val);
@@ -209,9 +211,11 @@ static HWY_NOINLINE void TestAllBias() {
 }
 
 // Enumerates all 2^32 inputs and computes histogram of hash values.
-// Parallelized and vectorized, < 1 sec.
+// Parallelized and vectorized, < 1 sec in opt builds.
 template <class Hash>
 static HWY_NOINLINE void TestBuckets(const Hash& hash) {
+  if constexpr (HWY_IS_DEBUG_BUILD) return;  // too slow
+
   // Each worker hashes a range of inputs and updates its bucket counts.
   constexpr size_t kNumBuckets = 0x10000;  // one per 64k output values
 
@@ -230,11 +234,11 @@ static HWY_NOINLINE void TestBuckets(const Hash& hash) {
     HWY_LANES_CONSTEXPR size_t N = Lanes(du32);
     HWY_ALIGN uint32_t out[2 * MaxLanes(du32)];
 
-    const size_t in_begin = task << 24;
-    const size_t in_end = (task + 1) << 24;
-    for (size_t in_pos = in_begin; in_pos < in_end; in_pos += 2 * N) {
-      VU32 v0 = Iota(du32, in_pos + 0 * N);
-      VU32 v1 = Iota(du32, in_pos + 1 * N);
+    const uint64_t in_begin = task << 24;
+    const uint64_t in_end = (task + 1) << 24;
+    for (uint64_t in_pos = in_begin; in_pos < in_end; in_pos += 2 * N) {
+      VU32 v0 = Iota(du32, static_cast<uint32_t>(in_pos + 0 * N));
+      VU32 v1 = Iota(du32, static_cast<uint32_t>(in_pos + 1 * N));
       hash.TwoVec(du32, v0, v1);
       Store(v0, du32, out);
       Store(v1, du32, out + N);
@@ -258,7 +262,7 @@ static HWY_NOINLINE void TestBuckets(const Hash& hash) {
   Stats s_bucket;
   for (size_t i = 0; i < kNumBuckets; ++i) {
     sum += all_buckets[i];
-    s_bucket.Notify(all_buckets[i]);
+    s_bucket.Notify(static_cast<float>(all_buckets[i]));
   }
   HWY_ASSERT(sum == (uint64_t{1} << 32));
 
@@ -312,21 +316,22 @@ static HWY_NOINLINE void TestBijection(const Hash& hash) {
   // Here, all workers must test the same permutation!
 
   ThreadPool pool = MakePool(HWY_MIN(pool::kMaxThreads, 255));
-  pool.Run(0, 256, [&](uint64_t task, size_t worker) {
+  pool.Run(0, 256, [&](uint64_t task, size_t /*worker*/) {
     const ScalableTag<uint32_t> du32;
     using VU32 = Vec<decltype(du32)>;
 
     HWY_LANES_CONSTEXPR size_t N = Lanes(du32);
     HWY_ALIGN uint32_t out[4 * MaxLanes(du32)];
-    const VU32 out_first = Set(du32, task << 24);
-    const VU32 out_last = Set(du32, ((task + 1) << 24) - 1);
+    const VU32 out_first = Set(du32, static_cast<uint32_t>(task << 24));
+    const VU32 out_last =
+        Set(du32, static_cast<uint32_t>(((task + 1) << 24) - 1));
     HWY_ASSERT(GetLane(out_last) - GetLane(out_first) == kNumU32 / 256 - 1);
 
-    for (size_t in_pos = 0; in_pos < kNumU32; in_pos += 4 * N) {
-      VU32 v0 = Iota(du32, in_pos + 0 * N);
-      VU32 v1 = Iota(du32, in_pos + 1 * N);
-      VU32 v2 = Iota(du32, in_pos + 2 * N);
-      VU32 v3 = Iota(du32, in_pos + 3 * N);
+    for (uint64_t in_pos = 0; in_pos < kNumU32; in_pos += 4 * N) {
+      VU32 v0 = Iota(du32, static_cast<uint32_t>(in_pos + 0 * N));
+      VU32 v1 = Iota(du32, static_cast<uint32_t>(in_pos + 1 * N));
+      VU32 v2 = Iota(du32, static_cast<uint32_t>(in_pos + 2 * N));
+      VU32 v3 = Iota(du32, static_cast<uint32_t>(in_pos + 3 * N));
       hash.TwoVec(du32, v0, v1);
       hash.TwoVec(du32, v2, v3);
       // Only keep if in range (2x speedup vs. scalar branching)
@@ -370,7 +375,7 @@ static HWY_NOINLINE void TestLanesEqual(const Hash& hash) {
 
     HWY_ALIGN uint32_t out[2 * MaxLanes(du32)];
 
-    constexpr size_t kNumTrials = 50 * 1000;
+    constexpr size_t kNumTrials = AdjustedReps(50'000);
     for (size_t trial = 0; trial < kNumTrials; ++trial) {
       VU32 vout0 = Set(du32, static_cast<uint32_t>(rng()));
       VU32 vout1 = vout0;

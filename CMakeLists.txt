@@ -87,6 +87,14 @@ set(HWY_ENABLE_EXAMPLES ON CACHE BOOL "Build examples")
 set(HWY_ENABLE_INSTALL ON CACHE BOOL "Install library")
 set(HWY_ENABLE_TESTS ON CACHE BOOL "Enable HWY tests")
 
+# CMake 3.21 introduces PROJECT_IS_TOP_LEVEL / <PROJECT-NAME>_IS_TOP_LEVEL
+if(NOT DEFINED PROJECT_IS_TOP_LEVEL OR NOT DEFINED ${PROJECT_NAME}_IS_TOP_LEVEL)
+  set(PROJECT_IS_TOP_LEVEL ${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+  set(${PROJECT_NAME}_IS_TOP_LEVEL ${PROJECT_IS_TOP_LEVEL})
+endif()
+
+set(HWY_ENABLE_LIST_TARGETS ${PROJECT_IS_TOP_LEVEL} CACHE BOOL "Build hwy_list_targets")
+
 if (MSVC)
 set(HWY_TEST_STANDALONE ON CACHE BOOL "Disable use of googletest")
 else()
@@ -223,6 +231,9 @@ list(APPEND HWY_CONTRIB_SOURCES
     hwy/contrib/hash/phast.cc
     hwy/contrib/hash/phast.h
     hwy/contrib/hash/phast-inl.h
+    hwy/contrib/hash/cuckoo2x2.cc
+    hwy/contrib/hash/cuckoo2x2.h
+    hwy/contrib/hash/cuckoo2x2-inl.h
     hwy/contrib/image/image.cc
     hwy/contrib/image/image.h
     hwy/contrib/math/fast_math-inl.h
@@ -625,7 +636,7 @@ if(UNIX AND NOT APPLE)
 endif()
 endif()  # HWY_ENABLE_TESTS
 
-if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+if (HWY_ENABLE_LIST_TARGETS)
 # -------------------------------------------------------- hwy_list_targets
 # Generate a tool to print the compiled-in targets as defined by the current
 # flags. This tool will print to stderr at build time, after building hwy.
@@ -956,16 +967,17 @@ list(APPEND HWY_TEST_FILES
   hwy/contrib/algo/transform_test.cc
   hwy/contrib/bit_pack/bit_pack_test.cc
   hwy/contrib/dot/dot_test.cc
-  hwy/contrib/matvec/matvec_test.cc
-  hwy/contrib/intdiv/intdiv_test.cc
+  hwy/contrib/hash/cuckoo2x2_test.cc
+  hwy/contrib/hash/hash_test.cc
+  hwy/contrib/hash/phast_test.cc
   hwy/contrib/image/image_test.cc
-  # Disabled due to SIGILL in clang7 debug build during gtest discovery phase,
-  # not reproducible locally. Still tested via bazel build.
-  hwy/contrib/math/math_test.cc
+  hwy/contrib/intdiv/intdiv_test.cc
   hwy/contrib/math/fast_math_test.cc
   hwy/contrib/math/math_hyper_test.cc
   hwy/contrib/math/math_tan_test.cc
+  hwy/contrib/math/math_test.cc
   hwy/contrib/math/math_trig_test.cc
+  hwy/contrib/matvec/matvec_test.cc
   hwy/contrib/random/random_test.cc
   hwy/contrib/sort/bench_sort.cc
   hwy/contrib/sort/sort_test.cc

@@ -38,9 +38,6 @@ template <class D, class V = VFromD<D>>
 HWY_INLINE void ReduceAngleTan(D d, V ang, V& x_red, V& sign) {
   using T = TFromD<D>;
   const auto pi = Set(d, static_cast<T>(3.14159265358979323846));
-  const auto zero = Set(d, static_cast<T>(0.0));
-  const auto one = Set(d, static_cast<T>(1.0));
-  const auto minus_one = Set(d, static_cast<T>(-1.0));
 
   const auto inv_pi = Set(d, static_cast<T>(0.31830988618379067153777));
 
@@ -50,8 +47,7 @@ HWY_INLINE void ReduceAngleTan(D d, V ang, V& x_red, V& sign) {
   auto ang_mod = NegMulAdd(quotient, pi, ang);
 
   // Determine sign
-  auto mask_neg = Lt(ang_mod, zero);
-  sign = IfThenElse(mask_neg, minus_one, one);
+  sign = ang_mod;
 
   // Absolute value
   x_red = Abs(ang_mod);
@@ -507,9 +503,9 @@ HWY_INLINE V FastTan(D d, V x) {
  * Fast approximation of atan(x).
  *
  * Valid Lane Types: float32, float64
- * Max Relative Error: 0.0034%
- * Average Relative Error : 0.0002% for float32
- *                          0.0002% for float64
+ * Max Relative Error: 0.0006%
+ * Average Relative Error : 0.00014% for float32
+ *                          0.000024% for float64
  * Valid Range: float32: [-1e35, +1e35]
  *              float64: [-1e305, +1e305]
  *
@@ -533,22 +529,31 @@ HWY_INLINE V FastAtan(D d, V val) {
   // Domain reduction: map [1, inf) to [0, 1]
   const V mapped_y = MaskedDivOr(y, gt1_mask, kOne, y);
 
-  // Degree 4 polynomial for atan(x) / x over [0, 1]
-  const V c0 = Set(d, static_cast<T>(0.9999653683169244));
-  const V c1 = Set(d, static_cast<T>(-0.3315525587266785));
-  const V c2 = Set(d, static_cast<T>(0.1844770291758270));
-  const V c3 = Set(d, static_cast<T>(-0.0907475543745560));
-  const V c4 = Set(d, static_cast<T>(0.0232748721030191));
+  // Degree 5 polynomial in z = x^2 for atan(x) / x over [0, 1]
+  const V p0 = Set(d, static_cast<T>(0.99999612569809));
+  const V p1 = Set(d, static_cast<T>(-0.333017796278));
+  const V p2 = Set(d, static_cast<T>(0.195822671055794));
+  const V p3 = Set(d, static_cast<T>(-0.121763534843922));
+  const V p4 = Set(d, static_cast<T>(0.0580778792500496));
+  const V p5 = Set(d, static_cast<T>(-0.0137210292741656));
 
   const V z = Mul(mapped_y, mapped_y);
   const V z2 = Mul(z, z);
+  const V z4 = Mul(z2, z2);
 
-  const V p01 = MulAdd(c1, z, c0);
-  const V p23 = MulAdd(c3, z, c2);
-  const V p234 = MulAdd(z2, c4, p23);
-  const V p = MulAdd(z2, p234, p01);
+  // Estrin scheme for polynomial in z
+  // term0 = p1*z + p0
+  const V term0 = MulAdd(p1, z, p0);
+  // term1 = p3*z + p2
+  const V term1 = MulAdd(p3, z, p2);
+  // term2 = p5*z + p4
+  const V term2 = MulAdd(p5, z, p4);
+  // term3 = term1 * z^2 + term0
+  const V term3 = MulAdd(term1, z2, term0);
+  // p_val = term2 * z^4 + term3
+  const V p_val = MulAdd(term2, z4, term3);
 
-  const V poly = Mul(mapped_y, p);
+  const V poly = Mul(mapped_y, p_val);
 
   const V kPiOverTwo = Set(d, static_cast<T>(1.57079632679489661923));
   auto result = MaskedSubOr(poly, gt1_mask, kPiOverTwo, poly);
@@ -581,6 +586,9 @@ HWY_INLINE V FastAtan2(const D d, V y, V x) {
   const V ax = Abs(x);
   const V ay = Abs(y);
 
+  // Pre-sort to ensure num <= den, mapping the input to the [0, 1] range.
+  // This avoids a second division that would otherwise occur inside FastAtan()
+  // flow for domain reduction.
   const V num = Min(ax, ay);
   const V den = Max(ax, ay);
 
@@ -588,22 +596,31 @@ HWY_INLINE V FastAtan2(const D d, V y, V x) {
   V mapped_y = MaskedDivOr(k0, Ne(den, k0), num, den);
   mapped_y = IfThenElse(is_inf, kOne, mapped_y);
 
-  // Degree 4 polynomial for atan(x) / x over [0, 1]
-  const V c0 = Set(d, static_cast<T>(0.9999653683169244));
-  const V c1 = Set(d, static_cast<T>(-0.3315525587266785));
-  const V c2 = Set(d, static_cast<T>(0.1844770291758270));
-  const V c3 = Set(d, static_cast<T>(-0.0907475543745560));
-  const V c4 = Set(d, static_cast<T>(0.0232748721030191));
+  // Degree 5 polynomial in z = x^2 for atan(x) / x over [0, 1]
+  const V p0 = Set(d, static_cast<T>(0.99999612569809));
+  const V p1 = Set(d, static_cast<T>(-0.333017796278));
+  const V p2 = Set(d, static_cast<T>(0.195822671055794));
+  const V p3 = Set(d, static_cast<T>(-0.121763534843922));
+  const V p4 = Set(d, static_cast<T>(0.0580778792500496));
+  const V p5 = Set(d, static_cast<T>(-0.0137210292741656));
 
   const V z = Mul(mapped_y, mapped_y);
   const V z2 = Mul(z, z);
+  const V z4 = Mul(z2, z2);
 
-  const V p01 = MulAdd(c1, z, c0);
-  const V p23 = MulAdd(c3, z, c2);
-  const V p234 = MulAdd(z2, c4, p23);
-  const V p = MulAdd(z2, p234, p01);
+  // Estrin scheme for polynomial in z
+  // term0 = p1*z + p0
+  const V term0 = MulAdd(p1, z, p0);
+  // term1 = p3*z + p2
+  const V term1 = MulAdd(p3, z, p2);
+  // term2 = p5*z + p4
+  const V term2 = MulAdd(p5, z, p4);
+  // term3 = term1 * z^2 + term0
+  const V term3 = MulAdd(term1, z2, term0);
+  // p_val = term2 * z^4 + term3
+  const V p_val = MulAdd(term2, z4, term3);
 
-  const V poly = Mul(mapped_y, p);
+  const V poly = Mul(mapped_y, p_val);
 
   const M ay_gt_ax = Gt(ay, ax);
   V angle = MaskedSubOr(poly, ay_gt_ax, kPiOverTwo, poly);
@@ -1010,13 +1027,13 @@ HWY_INLINE V FastTanh(D d, V val) {
   const auto y2 = Mul(y, y);
   // term0 = e*y + f
   const auto term0 = MulAdd(e, y, f);
-  // term1 = c*y + d
+  // term1 = c*y + d_val
   const auto term1 = MulAdd(c, y, d_val);
   // term2 = a*y + b
   const auto term2 = MulAdd(a, y, b);
-  // term3 = term2 * y2 + term1
+  // term3 = term2 * y^2 + term1
   const auto term3 = MulAdd(term2, y2, term1);
-  // result = term3 * y2 + term0
+  // result = term3 * y^2 + term0
   auto result = MulAdd(term3, y2, term0);
 
   const auto kSmall = Set(d, static_cast<T>(0.001));
@@ -1252,10 +1269,14 @@ HWY_INLINE V FastLog(D d, V x) {
                                    a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
+  // Using Estrin's scheme
   const auto z2 = Mul(z, z);
-  const auto pab = MulAdd(a, z, b);
-  const auto pcd = MulAdd(c, z, d_val);
-  approx = MulAdd(pab, z2, pcd);
+  // term0 = a*z + b
+  const auto term0 = MulAdd(a, z, b);
+  // term1 = c*z + d_val
+  const auto term1 = MulAdd(c, z, d_val);
+  // approx = term0 * z^2 + term1
+  approx = MulAdd(term0, z2, term1);
 
   return MulAdd(exp, kLn2, approx);
 }
@@ -1560,10 +1581,14 @@ HWY_INLINE V FastLog2(D d, V x) {
                                    a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
+  // Using Estrin's scheme
   const auto z2 = Mul(z, z);
-  const auto pab = MulAdd(a, z, b);
-  const auto pcd = MulAdd(c, z, d_val);
-  approx = MulAdd(pab, z2, pcd);
+  // term0 = a*z + b
+  const auto term0 = MulAdd(a, z, b);
+  // term1 = c*z + d_val
+  const auto term1 = MulAdd(c, z, d_val);
+  // approx = term0 * z^2 + term1
+  approx = MulAdd(term0, z2, term1);
 
   return Add(exp, approx);
 }
@@ -1648,10 +1673,14 @@ HWY_INLINE V FastLog10(D d, V x) {
                                    a, b, c, d_val);
   }
   // Math: approx = (a*z + b)*z^2 + (c*z + d_val)
+  // Using Estrin's scheme
   const auto z2 = Mul(z, z);
-  const auto pab = MulAdd(a, z, b);
-  const auto pcd = MulAdd(c, z, d_val);
-  approx = MulAdd(pab, z2, pcd);
+  // term0 = a*z + b
+  const auto term0 = MulAdd(a, z, b);
+  // term1 = c*z + d_val
+  const auto term1 = MulAdd(c, z, d_val);
+  // approx = term0 * z^2 + term1
+  approx = MulAdd(term0, z2, term1);
 
   const auto kLog10_2 = Set(d, static_cast<T>(0.3010299956639812));  // log10(2)
   // Computes exp * log10(2) + approx. Since approx was scaled by 1/Ln(10)

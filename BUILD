@@ -445,16 +445,20 @@ cc_library(
 cc_library(
     name = "hash",
     srcs = [
+        "hwy/contrib/hash/cuckoo2x2.cc",
         "hwy/contrib/hash/phast.cc",
     ],
     hdrs = [
+        "hwy/contrib/hash/cuckoo2x2.h",
         "hwy/contrib/hash/phast.h",
     ],
     compatible_with = [],
     copts = COPTS,
     textual_hdrs = [
+        "hwy/contrib/hash/cuckoo-inl.h",
         "hwy/contrib/hash/hash-inl.h",
         "hwy/contrib/hash/phast-inl.h",
+        "hwy/contrib/hash/cuckoo2x2-inl.h",
     ],
     deps = [
         ":algo",
@@ -649,6 +653,20 @@ HWY_TEST_DEPS = [
     "//conditions:default": ["@com_google_googletest//:gtest_main"],
 })
 
+config_setting(
+    name = "linux_x64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+# tcmalloc does not build on all platforms.
+HWY_MALLOC = select({
+    ":linux_x64": "//third_party/tcmalloc",
+    "//conditions:default": "//base:system_malloc",
+})
+
 [
     [
         cc_test(
@@ -706,6 +724,86 @@ cc_test(
     ],
     deps = HWY_TEST_DEPS + [
         ":math",
+    ],
+)
+
+cc_test(
+    name = "hash_eval",
+    size = "medium",
+    timeout = "long",
+    srcs = ["hwy/contrib/hash/hash_eval.cc"],
+    copts = COPTS + HWY_TEST_COPTS,
+    local_defines = ["HWY_IS_TEST"],
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = HWY_TEST_DEPS + [
+        ":hash",
+        ":profiler",
+        ":random",
+        ":stats",
+        ":thread_pool",
+        ":topology",
+        "//hwy/contrib/sort:vqsort",
+    ],
+)
+
+cc_test(
+    name = "hash_prospector16",
+    size = "medium",
+    timeout = "long",
+    srcs = ["hwy/contrib/hash/hash_prospector16.cc"],
+    copts = COPTS + HWY_TEST_COPTS,
+    local_defines = ["HWY_IS_TEST"],
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = HWY_TEST_DEPS + [
+        ":random",
+        ":thread_pool",
+        ":topology",
+    ],
+)
+
+cc_test(
+    name = "hash_bench",
+    size = "medium",
+    timeout = "long",
+    srcs = ["hwy/contrib/hash/hash_bench.cc"],
+    copts = COPTS + HWY_TEST_COPTS,
+    local_defines = ["HWY_IS_TEST"],
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = HWY_TEST_DEPS + [
+        ":hash",
+        ":random",
+    ],
+)
+
+cc_test(
+    name = "phast_bench",
+    size = "medium",
+    timeout = "long",
+    srcs = ["hwy/contrib/hash/phast_bench.cc"],
+    copts = COPTS + HWY_TEST_COPTS,
+    local_defines = ["HWY_IS_TEST"],
+    tags = [
+        "manual",
+        "notap",
+    ],
+    deps = HWY_TEST_DEPS + [
+        ":hash",
+        ":profiler",
+        ":random",
+        ":robust_statistics",
+        ":thread_pool",
+        ":topology",
+        # Placeholder for flat_hash_set, do not remove
+        # Placeholder2 for flat_hash_set, do not remove
     ],
 )
 
