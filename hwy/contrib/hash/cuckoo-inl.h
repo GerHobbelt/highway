@@ -81,19 +81,22 @@ HWY_INLINE const V& GetRaw(const V& v, ...) {
 // HashT must provide: LaneType typedef, operator()(LaneType), OneVec, TwoVec.
 // KeyT is derived from HashT::LaneType.
 
-template <typename HashT_ = WeakTwoMul, size_t kBucketSize_ = 16,
+template <typename HashT_ = WeakTwoMul, size_t kBucketSize_ = 0,
           size_t kMinBuckets_ = 1>
 struct CuckooTraits {
   using HashT = HashT_;
   using KeyT = typename HashT::LaneType;
-  static constexpr size_t kBucketSize = kBucketSize_;
+
+  static constexpr size_t kBucketSize =
+      kBucketSize_ ? kBucketSize_ : 64 / sizeof(KeyT);
   static constexpr size_t kLogBucketSize = CeilLog2(kBucketSize);
+
   static constexpr size_t kMinBuckets = kMinBuckets_;
 
-  static_assert((kBucketSize_ & (kBucketSize_ - 1)) == 0 && kBucketSize_ > 0,
-                "kBucketSize_ must be a power of two");
-  static_assert((kMinBuckets_ & (kMinBuckets_ - 1)) == 0 && kMinBuckets_ > 0,
-                "kMinBuckets_ must be a power of two");
+  static_assert((kBucketSize & (kBucketSize - 1)) == 0 && kBucketSize > 0,
+                "kBucketSize must be a power of two");
+  static_assert((kMinBuckets & (kMinBuckets - 1)) == 0 && kMinBuckets > 0,
+                "kMinBuckets must be a power of two");
 };
 
 // --------------------------------------------------------------------------
@@ -220,11 +223,15 @@ class CuckooTableT {
 
   // Query a single bucket (kBucketSize slots) for `key`.
   HWY_INLINE bool QueryBucket(KeyT key, uint32_t b) const {
-    const KeyT* base = slots_.data() + b;
-    for (uint32_t i = 0; i < kBucketSize; ++i) {
-      if (base[i] == key) return true;
+    const CappedTag<uint32_t, kBucketSize> d;
+    HWY_LANES_CONSTEXPR size_t N = Lanes(d);
+    const auto vkey = Set(d, key);
+    const uint32_t* base = slots_.data() + b;
+    auto ne = SetMask(d, true);
+    for (size_t i = 0; i < kBucketSize; i += N) {
+      ne = MaskedNe(ne, vkey, Load(d, base + i));
     }
-    return false;
+    return !AllTrue(d, ne);
   }
 
   // Scalar version: computes slot indices for a single key and returns hash
@@ -527,7 +534,25 @@ class CuckooTableT {
 using CuckooTable = CuckooTableT<>;
 
 // --------------------------------------------------------------------------
-// Build statistics and metrics
+// Build algorithms, statistics, and metrics
+
+enum class CuckooBuildAlgo {
+  // Basic Hopcroft-Karp BFS+DFS bipartite matching. Runs in O(num_slots *
+  // log(num_slots)) (see paper Bast et al. "Matching algorithms are fast in
+  // sparse random graphs"). Produces decent primiary placement but not
+  // Min-cost augmenting paths (Dietzfelbinger et al. "Cuckoo Hashing with
+  // maximized. For maximized primary placement, use kMinCost, but kHopcroftKarp
+  // is faster.
+  kHopcroftKarp,
+  // Min-cost augmenting paths (Dietzfelbinger et al. "Cuckoo Hashing with
+  // Pages"). Finds placement of keys maximizing number of keys in primary
+  // buckets. Reduces number of cache misses for positive queries.
+  kMinCost,
+  // Local Search Allocation (Khosla and Anand). Runs in O(num_slots) times.
+  // Use for fast placement of keys when primary placement maximization is not
+  // needed.
+  kLocalSearch,
+};
 
 struct CuckooBuildStats {
   bool success = false;
@@ -563,11 +588,12 @@ class CuckooBuilderT {
   // Attempts to build with a given pair of hash functions.
   // Returns true on success (all keys matched).
   bool Build(const KeyT* keys, HashT hash_primary, HashT hash_secondary,
-             bool optimize_primary = false, CuckooBuildStats* stats = nullptr) {
+
+             CuckooBuildAlgo algo = CuckooBuildAlgo::kHopcroftKarp,
+             CuckooBuildStats* stats = nullptr) {
     if (num_keys_ >= kMinKeysThresholdLog) {
-      fprintf(stderr,
-              "  CuckooBuilder::Build starting (optimize_primary=%d)...\n",
-              optimize_primary);
+      fprintf(stderr, "  CuckooBuilder::Build starting (algo=%d)...\n",
+              static_cast<int>(algo));
     }
     auto t_build_start = platform::Now();
     hash_primary_ = hash_primary;
@@ -659,7 +685,7 @@ class CuckooBuilderT {
     dist_.resize(num_keys_);
     min_cost_dist_.resize(num_keys_);
 
-    if (optimize_primary) {
+    if (algo == CuckooBuildAlgo::kMinCost) {
       // Phase 3: (Min-Cost): Algorithm 1 from Section 3.1 of
       // Dietzfelbinger et al. "Cuckoo Hashing with Pages". This algorithm
       // gradually finds augmenting paths of increasing cost (variable
@@ -772,6 +798,75 @@ class CuckooBuilderT {
         }
 
         ++cur_path_cost;
+      }
+      MaybeLogPhase3Stats(t_phase3_start, phase3_matches);
+      return matching_size == num_keys_;
+    } else if (algo == CuckooBuildAlgo::kLocalSearch) {
+      // --- Phase 3: Local Search Allocation (LSA) ---
+      // From Khosla & Anand: "A Faster Algorithm for Cuckoo Insertion and
+      // Bipartite Matching in Large Graphs".
+      uint32_t phase3_matches = 0;
+      auto t_phase3_start = platform::Now();
+
+      labels_.assign(num_buckets_, 0);
+      AesCtrEngine engine(/*deterministic=*/true);
+      RngStream rng(engine, 0);
+
+      const uint32_t max_label = (num_buckets_ > 1) ? (num_buckets_ - 1) : 1u;
+      const size_t max_total_moves =
+          static_cast<size_t>(num_keys_) * 128 + 10000;
+      size_t total_moves = 0;
+
+      for (uint32_t init_k : unmatched_keys) {
+        if (match_key_to_slot_[init_k] != kUnmatched) continue;
+        uint32_t cur_key = init_k;
+        bool placed = false;
+
+        while (!placed) {
+          if (++total_moves >= max_total_moves) {
+            MaybeLogPhase3Stats(t_phase3_start, phase3_matches);
+            return false;
+          }
+
+          const uint32_t b1 = primary_bucket_[cur_key];
+          const uint32_t b2 = secondary_bucket_[cur_key];
+
+          // Choose vertex v among the choices of cur_key with minimum label.
+          const uint32_t v = (labels_[b1] <= labels_[b2]) ? b1 : b2;
+          const uint32_t u = (v == b1) ? b2 : b1;
+
+          if (labels_[v] >= max_label) {
+            MaybeLogPhase3Stats(t_phase3_start, phase3_matches);
+            return false;
+          }
+
+          if (bucket_fill_[v] == kBucketSize) {
+            // Bucket v is full (Items(v) == s).
+            // Update label: L(v) = 1 + min(L(u) | u != v and u in choices).
+            labels_[v] = 1 + labels_[u];
+
+            // Choose an item randomly from the s items in bucket v.
+            const uint32_t slot_idx =
+                static_cast<uint32_t>(rng() & (kBucketSize - 1));
+            const uint32_t slot = v * kBucketSize + slot_idx;
+            const uint32_t evicted_key = match_slot_to_key_[slot];
+            HWY_ASSERT(evicted_key != kUnmatched);
+
+            match_key_to_slot_[cur_key] = slot;
+            match_slot_to_key_[slot] = cur_key;
+
+            cur_key = evicted_key;
+          } else {
+            // Bucket v has space (Items(v) < s). Place cur_key in v.
+            const uint32_t slot = v * kBucketSize + bucket_fill_[v];
+            match_key_to_slot_[cur_key] = slot;
+            match_slot_to_key_[slot] = cur_key;
+            ++bucket_fill_[v];
+            ++matching_size;
+            ++phase3_matches;
+            placed = true;
+          }
+        }
       }
       MaybeLogPhase3Stats(t_phase3_start, phase3_matches);
       return matching_size == num_keys_;
@@ -1152,6 +1247,7 @@ class CuckooBuilderT {
   std::vector<uint32_t> match_slot_to_key_;  // [num_slots] → key index
   std::vector<uint32_t> dist_;               // [num_keys] BFS distance
   std::vector<int32_t> min_cost_dist_;       // [num_keys] Min-cost distance
+  std::vector<uint32_t> labels_;             // [num_buckets] LSA labels
   std::vector<uint32_t> bucket_fill_;        // [num_buckets] slots used
 
   // Phase 3 optimal Hopcroft-Karp data structures
@@ -1182,9 +1278,12 @@ using CuckooBuilder = CuckooBuilderT<>;
 
 // Shared implementation for CuckooBuild and CuckooBuild64.
 // Tries multiple hash function seeds. Returns an empty table on failure.
-// If optimize_primary is true, runs a min-cost optimization phase after
-// finding a valid matching, moving keys from secondary to primary buckets
+// If algo is CuckooBuildAlgo::kMinCost, runs a min-cost optimization phase
+// after finding a valid matching, moving keys from secondary to primary buckets
 // via displacement chains (Section 3.1 of arXiv:1104.5111).
+// If algo is CuckooBuildAlgo::kLocalSearch, runs Local Search Allocation
+// (Khosla and Anand, arXiv:1611.07786) during Phase 3 to match remaining keys.
+// If algo is CuckooBuildAlgo::kHopcroftKarp (default), uses Hopcroft-Karp.
 //
 // Note about epsilon: epsilon is the load factor, i.e. the ratio of the number
 // of keys to the number of slots. The table has num_keys / epsilon slots.
@@ -1192,7 +1291,9 @@ using CuckooBuilder = CuckooBuilderT<>;
 template <typename Traits>
 static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuildT(
     const typename Traits::KeyT* keys, size_t num_keys, double epsilon,
-    uint32_t max_attempts, bool optimize_primary, CuckooBuildStats* stats) {
+    uint32_t max_attempts,
+    CuckooBuildAlgo algo = CuckooBuildAlgo::kHopcroftKarp,
+    CuckooBuildStats* stats = nullptr) {
   using HashT = typename Traits::HashT;
   constexpr double kEpsilons[] = {0.01, 0.05, 0.10, 0.25, 0.50, 0.75};
   bool found_epsilon = false;
@@ -1221,7 +1322,7 @@ static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuildT(
     HashT h1(engine, attempt * 2);
     HashT h2(engine, attempt * 2 + 1);
 
-    if (builder.Build(keys, h1, h2, optimize_primary, stats)) {
+    if (builder.Build(keys, h1, h2, algo, stats)) {
       if (stats) {
         stats->success = true;
         stats->global_seed = attempt;
@@ -1249,10 +1350,11 @@ static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuildT(
 template <class Traits, typename KeyT = typename Traits::KeyT>
 static HWY_MAYBE_UNUSED CuckooTableT<Traits> CuckooBuild(
     Traits, const KeyT* keys, size_t num_keys, double epsilon = 0.25,
-    uint32_t max_attempts = 100, bool optimize_primary = false,
+    uint32_t max_attempts = 100,
+    CuckooBuildAlgo algo = CuckooBuildAlgo::kHopcroftKarp,
     CuckooBuildStats* stats = nullptr) {
-  return CuckooBuildT<Traits>(keys, num_keys, epsilon, max_attempts,
-                              optimize_primary, stats);
+  return CuckooBuildT<Traits>(keys, num_keys, epsilon, max_attempts, algo,
+                              stats);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
