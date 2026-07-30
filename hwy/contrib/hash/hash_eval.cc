@@ -16,6 +16,13 @@
 // For testing quality of hash functions. Parts are derived from smhasher.
 // This code is parallelized and mostly vectorized.
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_hash_eval_main
+#define RunAll				highway_hash_eval_RunAll
+#define GetRunAll			highway_hash_eval_GetRunAll
+#define GetFuncAndNames		highway_hash_eval_GetFuncAndNames
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 

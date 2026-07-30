@@ -13,6 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_math_benchmark_main
+#define RunAll				highway_math_benchmark_RunAll
+#define GetRunAll			highway_math_benchmark_GetRunAll
+#define GetFuncAndNames		highway_math_benchmark_GetFuncAndNames
+#endif
+
 // clang-format off
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/contrib/math/math_benchmark.cc"
@@ -275,7 +283,7 @@ HWY_EXPORT(RunAllBenchmarks);
 }  // namespace
 }  // namespace hwy
 
-int main(int argc, char** argv) {
+int main(int argc, const char** argv) {
   const char* fxn1 = nullptr;
   const char* fxn2 = nullptr;
 

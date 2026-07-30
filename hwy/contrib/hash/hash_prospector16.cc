@@ -25,6 +25,13 @@
 // Finally, tries a moderate random subset of possible multiplier values and
 // prints the best 8.
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_hash_prospector16_main
+#define RunAll				highway_hash_prospector16_RunAll
+#define GetRunAll			highway_hash_prospector16_GetRunAll
+#define GetFuncAndNames		highway_hash_prospector16_GetFuncAndNames
+#endif
+
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>

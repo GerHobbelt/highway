@@ -18,6 +18,13 @@
 // 1. If we can build a valid Cuckoo hash table.
 // 2. How many keys can be inserted in primary and secondary buckets.
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_cuckoo_load_factor_sweep_main
+#define RunAll				highway_cuckoo_load_factor_sweep_RunAll
+#define GetRunAll			highway_cuckoo_load_factor_sweep_GetRunAll
+#define GetFuncAndNames		highway_cuckoo_load_factor_sweep_GetFuncAndNames
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -171,7 +178,7 @@ void Run(size_t num_keys) {
 }  // namespace
 }  // namespace hwy
 
-int main(int argc, char** argv) {
+int main(int argc, const char** argv) {
   size_t num_keys = 224000;
   for (int i = 1; i < argc; ++i) {
     if (strncmp(argv[i], "--num_keys=", 11) == 0) {

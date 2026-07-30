@@ -13,6 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_hash_bench_main
+#define RunAll				highway_hash_bench_RunAll
+#define GetRunAll			highway_hash_bench_GetRunAll
+#define GetFuncAndNames		highway_hash_bench_GetFuncAndNames
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 

@@ -17,6 +17,13 @@
 #define HWY_HAVE_ABSL 0
 #define HWY_HAVE_TCMALLOC 0
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_phast_main
+#define RunAll				highway_phast_RunAll
+#define GetRunAll			highway_phast_GetRunAll
+#define GetFuncAndNames		highway_phast_GetFuncAndNames
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 

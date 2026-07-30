@@ -13,6 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(BUILD_MONOLITHIC)
+#define main				highway_print_network_main
+#define RunAll				highway_print_network_RunAll
+#define GetRunAll			highway_print_network_GetRunAll
+#define GetFuncAndNames		highway_print_network_GetFuncAndNames
+#endif
+
 #include <stdio.h>
 
 #include <vector>
@@ -80,7 +87,7 @@ static void PrintMergeNetwork(int rows, int cols) {
   printf("\n");
 }
 
-int main(int /*argc*/, char** /*argv*/) {
+int main(int /*argc*/, const char** /*argv*/) {
   PrintMergeNetwork(8, 2);
   PrintMergeNetwork(8, 4);
   PrintMergeNetwork(16, 4);
