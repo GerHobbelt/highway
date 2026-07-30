@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <algorithm>  // std::sort, std::unique
+#include <algorithm>  // std::sort
 #include <utility>    // std::move
 #include <vector>
 
@@ -88,7 +88,10 @@ static AlignedVector<PhastConfig> EnumerateConfigs(size_t num_keys,
                                                    size_t num_workers,
                                                    size_t& reps_per_config) {
   const size_t min_slice_length = MinSliceLength(num_keys);
-  HWY_ASSERT(num_keys == 1 || min_slice_length < num_keys);
+  // MinSliceLength may equal num_keys (num_keys == 1, and num_keys == 64 where
+  // it returns 64); MakeConfig clamps num_slots to at least slice_length, so
+  // equality is fine. Only min_slice_length > num_keys would be a bug.
+  HWY_ASSERT(min_slice_length <= num_keys);
 
   const std::vector<int> kHeadroomPercents = {1, 2, 3, 4, 10, 15, 20};
   const std::vector<size_t> kSliceShifts = {0, 1};
@@ -599,9 +602,10 @@ static PhastData BuildPhastImpl(Span<const uint32_t> keys,
   HashArray(Triple32(engine, 0), keys.data(), per_worker[0].MutableHashes(),
             num_keys);
   VQSortStatic(per_worker[0].MutableHashes(), num_keys, SortAscending());
-  uint32_t* end = per_worker[0].MutableHashes() + num_keys;
-  HWY_ASSERT_M(end == std::unique(per_worker[0].MutableHashes(), end),
-               "Collision detected");
+  const ScalableTag<uint32_t> du32;
+  HWY_ASSERT_M(
+      num_keys == Unique(du32, per_worker[0].MutableHashes(), num_keys),
+      "Collision detected");
 
   // Enumerate configs sorted by AllocatedBytes ascending.
   size_t reps_per_config;
